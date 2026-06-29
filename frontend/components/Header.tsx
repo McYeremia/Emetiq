@@ -14,6 +14,9 @@ const NAV_LINKS = [
 export default function Header() {
   const pathname = usePathname();
 
+  // Landing page ('/') ships its own navigation — hide the app chrome there.
+  if (pathname === '/') return null;
+
   return (
     <header className="fixed top-0 w-full z-50 bg-[#0A0A0A] border-b-2 border-white/10">
       <div className="max-w-[1400px] mx-auto px-6 h-[60px] flex justify-between items-center">

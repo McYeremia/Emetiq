@@ -3,684 +3,1022 @@
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
 
-// ── Types ──────────────────────────────────────────────────
-interface LiveTicker {
-  symbol: string;
-  price: string;
-  change: string;
-  up: boolean;
+// ── Design tokens (from Landing.dc.html) ──────────────────────
+const ACCENT = '#F26A1B';
+const RADIUS = '11px';
+const SANS = "'Plus Jakarta Sans', system-ui, sans-serif";
+const MONO = "'IBM Plex Mono', monospace";
+
+// ── Screener presets (ported from DCLogic.renderVals) ─────────
+interface Preset {
+  name: string;
+  desc: string;
+  match: number;
+  tag: string;
 }
 
-interface IhsgData {
-  price: string;
-  change: string;
-  changePct: string;
-  up: boolean;
-  date: string;
-}
-
-// ── Constants ──────────────────────────────────────────────
-const API = process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:8000';
-
-// Tickers to show on landing page (in order of priority)
-const WATCH_LIST = ['BBCA', 'BMRI', 'TLKM', 'ASII', 'GOTO', 'BREN', 'BRIS', 'ICBP', 'MDKA', 'UNVR', 'BBRI', 'BBNI'];
-
-const STRATEGIES = [
-  'TRIPLE CONFIRMATION',
-  'VOLATILITY SNIPER',
-  'INSTITUTIONAL TREND',
-  'EXHAUSTION PLAY',
-  'TREND ACCELERATOR',
-  'PURE MOMENTUM',
-  'DEFENSIVE BULL',
-  'STOCH-RSI HYBRID',
-  'RSI REVERSION',
-  'MA CROSS',
+const PRESETS: Preset[] = [
+  { name: 'Golden Cross', desc: 'MA50 memotong MA200 ke atas — sinyal tren naik jangka menengah.', match: 8, tag: 'Teknikal' },
+  { name: 'Foreign Inflow', desc: 'Net buy asing terbesar dalam 5 hari terakhir.', match: 14, tag: 'Flow' },
+  { name: 'Undervalue PBV<1', desc: 'Harga di bawah nilai buku dengan ROE sehat.', match: 21, tag: 'Fundamental' },
+  { name: 'Bandarmology', desc: 'Akumulasi bandar terdeteksi dari pola broker summary.', match: 6, tag: 'Flow' },
+  { name: 'High Dividend', desc: 'Yield dividen di atas 6% dengan payout stabil.', match: 11, tag: 'Income' },
+  { name: '52W High Breakout', desc: 'Tembus harga tertinggi 52 minggu dengan konfirmasi volume.', match: 9, tag: 'Teknikal' },
 ];
 
-const NAV_LINKS = [
-  { label: 'MARKET',      href: '/dashboard' },
-  { label: 'SCREENER',    href: '/screener' },
-  { label: 'PORTOFOLIO',  href: '/portfolio' },
-  { label: 'BACKTEST',    href: '/backtest' },
-  { label: 'BROKER FLOW', href: '/broker-flow' },
+const WATCHLIST = [
+  { ticker: 'BBCA', name: 'Bank Central Asia', price: '9.875', chg: '+1,28%', up: true },
+  { ticker: 'GOTO', name: 'GoTo Gojek Tokopedia', price: '68', chg: '+3,03%', up: true },
+  { ticker: 'TLKM', name: 'Telkom Indonesia', price: '2.890', chg: '-0,34%', up: false },
+  { ticker: 'BMRI', name: 'Bank Mandiri', price: '6.025', chg: '+0,84%', up: true },
 ];
 
-// Fallback static data (shown while loading / if backend offline)
-const STATIC_TICKERS: LiveTicker[] = [
-  { symbol: 'BBCA', price: '–', change: '–', up: true },
-  { symbol: 'BMRI', price: '–', change: '–', up: true },
-  { symbol: 'TLKM', price: '–', change: '–', up: false },
-  { symbol: 'ASII', price: '–', change: '–', up: true },
-  { symbol: 'GOTO', price: '–', change: '–', up: false },
-  { symbol: 'BREN', price: '–', change: '–', up: true },
-  { symbol: 'BRIS', price: '–', change: '–', up: true },
-  { symbol: 'ICBP', price: '–', change: '–', up: false },
-  { symbol: 'MDKA', price: '–', change: '–', up: true },
-  { symbol: 'UNVR', price: '–', change: '–', up: false },
+const BREAKOUT = [
+  { ticker: 'PGAS', price: '1.640', chg: '+6,1%', vol: '3,8×' },
+  { ticker: 'ADRO', price: '2.910', chg: '+4,7%', vol: '2,9×' },
+  { ticker: 'INCO', price: '4.180', chg: '+3,2%', vol: '2,1×' },
 ];
 
-const STATIC_IHSG: IhsgData = {
-  price: '–', change: '–', changePct: '–', up: true, date: '',
-};
+const MUTED = '#56564F';
+const HAIR = '#ECEBE6';
 
-// ── Formatters ─────────────────────────────────────────────
-function fmtPrice(n: number | null): string {
-  if (n == null || n === 0) return '–';
-  return n.toLocaleString('id-ID');
-}
-
-function fmtChange(n: number | null): string {
-  if (n == null) return '–';
-  return `${n >= 0 ? '+' : ''}${n.toFixed(2)}%`;
-}
-
-function fmtAbsChange(n: number | null): string {
-  if (n == null) return '–';
-  return `${n >= 0 ? '+' : ''}${n.toLocaleString('id-ID', { maximumFractionDigits: 2 })}`;
-}
-
-// ── Component ──────────────────────────────────────────────
 export default function LandingPage() {
-  useEffect(() => { document.title = 'IDXAnalyst — Market Terminal'; }, []);
-  const [activeTick, setActiveTick] = useState(0);
-  const [tickers, setTickers]       = useState<LiveTicker[]>(STATIC_TICKERS);
-  const [ihsg, setIhsg]             = useState<IhsgData>(STATIC_IHSG);
-  const [dataDate, setDataDate]      = useState('MEMUAT DATA...');
+  const [featureOpen, setFeatureOpen] = useState(false);
+  const [activeMenu, setActiveMenu] = useState('home');
 
-  // Rotating highlight in terminal
   useEffect(() => {
-    const id = setInterval(() => setActiveTick(t => (t + 1) % 10), 1800);
-    return () => clearInterval(id);
+    document.title = 'EMETIQ — Monitoring Saham';
   }, []);
 
-  // Fetch live market data from backend
-  useEffect(() => {
-    async function loadMarketData() {
-      try {
-        // Fetch stocks and IHSG in parallel
-        const [stocksRes, ihsgRes] = await Promise.all([
-          fetch(`${API}/stocks`),
-          fetch(`${API}/stocks/ihsg`),
-        ]);
+  const menuItemStyle = (key: string): React.CSSProperties => ({
+    textDecoration: 'none',
+    color: activeMenu === key ? ACCENT : 'inherit',
+    fontWeight: activeMenu === key ? 700 : 500,
+    background: activeMenu === key ? `color-mix(in oklab, ${ACCENT}, white 88%)` : 'transparent',
+    padding: '8px 14px',
+    borderRadius: 999,
+    transition: 'color .15s ease, background .15s ease',
+    cursor: 'pointer',
+  });
 
-        if (stocksRes.ok) {
-          const stocks: {
-            ticker: string;
-            last_price: number | null;
-            change_pct: number | null;
-            last_date: string | null;
-          }[] = await stocksRes.json();
+  const dropdownStyle: React.CSSProperties = {
+    position: 'absolute',
+    top: '100%',
+    left: 0,
+    paddingTop: '10px',
+    zIndex: 60,
+    opacity: featureOpen ? 1 : 0,
+    visibility: featureOpen ? 'visible' : 'hidden',
+    transform: featureOpen ? 'translateY(0)' : 'translateY(6px)',
+    pointerEvents: featureOpen ? 'auto' : 'none',
+    transition: 'opacity .16s ease, transform .16s ease',
+  };
 
-          // Build a lookup map
-          const stockMap = new Map(stocks.map(s => [s.ticker, s]));
-
-          // Map WATCH_LIST order, skip if not in DB
-          const live: LiveTicker[] = WATCH_LIST
-            .map(sym => {
-              const s = stockMap.get(sym);
-              if (!s || s.last_price == null) return null;
-              return {
-                symbol: sym,
-                price: fmtPrice(s.last_price),
-                change: fmtChange(s.change_pct),
-                up: (s.change_pct ?? 0) >= 0,
-              };
-            })
-            .filter(Boolean) as LiveTicker[];
-
-          if (live.length > 0) {
-            setTickers(live.slice(0, 10));
-
-            // Use last_date of first available stock for the data date label
-            const anyDate = stocks.find(s => s.last_date)?.last_date;
-            if (anyDate) {
-              setDataDate(`DATA PER ${anyDate} — EOD`);
-            }
-          }
-        }
-
-        if (ihsgRes.ok) {
-          const ihsgData: {
-            price: number | null;
-            change: number | null;
-            change_pct: number | null;
-            date: string | null;
-          } = await ihsgRes.json();
-
-          if (ihsgData.price != null) {
-            setIhsg({
-              price: fmtPrice(ihsgData.price),
-              change: fmtAbsChange(ihsgData.change),
-              changePct: fmtChange(ihsgData.change_pct),
-              up: (ihsgData.change_pct ?? 0) >= 0,
-              date: ihsgData.date ?? '',
-            });
-          }
-        }
-      } catch {
-        // Backend offline — keep static placeholders
-        setDataDate('BACKEND OFFLINE');
-      }
-    }
-
-    loadMarketData();
-  }, []);
+  const lockedPresets = PRESETS.slice(0, 3);
+  const fadedPresets = PRESETS.slice(3);
 
   return (
-    <div className="min-h-screen bg-[#0A0A0A] text-white selection:bg-[#3B82F6]/40 selection:text-white">
+    <div
+      id="top"
+      style={{
+        minHeight: '100vh',
+        background: '#FCFCFB',
+        color: '#14140F',
+        fontFamily: SANS,
+        WebkitFontSmoothing: 'antialiased',
+      }}
+    >
+      {/* Fonts — React 19 hoists these into <head> */}
+      <link rel="preconnect" href="https://fonts.googleapis.com" />
+      <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="" />
+      <link
+        href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500;600&display=swap"
+        rel="stylesheet"
+      />
 
-      {/* ── HERO ───────────────────────────────────────────────── */}
-      <section className="relative min-h-screen pt-[60px] border-b-2 border-white/10 overflow-hidden">
-        <div
-          className="absolute inset-0 opacity-[0.025] pointer-events-none"
+      {/* ── NAV ─────────────────────────────────────────────── */}
+      <header
+        style={{
+          position: 'sticky',
+          top: 0,
+          zIndex: 50,
+          background: 'rgba(252,252,251,.82)',
+          backdropFilter: 'saturate(140%) blur(12px)',
+          borderBottom: `1px solid ${HAIR}`,
+        }}
+      >
+        <nav
           style={{
-            backgroundImage:
-              'linear-gradient(#ffffff 1px, transparent 1px), linear-gradient(90deg, #ffffff 1px, transparent 1px)',
-            backgroundSize: '64px 64px',
+            maxWidth: 1200,
+            margin: '0 auto',
+            height: 68,
+            padding: '0 28px',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: 20,
           }}
-        />
-        <div className="absolute top-1/3 left-1/4 w-[600px] h-[400px] bg-[#3B82F6]/5 blur-[120px] pointer-events-none" />
+        >
+          <Link
+            href="/"
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              textDecoration: 'none',
+              color: 'inherit',
+              fontWeight: 800,
+              fontSize: 20,
+              letterSpacing: '.06em',
+            }}
+          >
+            EMETIQ
+          </Link>
 
-        <div className="max-w-[1400px] mx-auto px-6 pt-14 pb-24 relative">
-          {/* Meta strip */}
-          <div className="flex flex-wrap items-center gap-x-6 gap-y-2 mb-12 pb-6 border-b border-white/10">
-            <span className="text-[9px] font-mono text-[#22C55E] tracking-[0.3em] uppercase">◆ IDX80 COVERAGE</span>
-            <span className="text-[9px] font-mono text-gray-700">|</span>
-            <span className="text-[9px] font-mono text-gray-600 tracking-[0.25em] uppercase">3 AI AGENTS COMPETING</span>
-            <span className="text-[9px] font-mono text-gray-700">|</span>
-            <span className="text-[9px] font-mono text-gray-600 tracking-[0.25em] uppercase">10 QUANT ALGORITHMS</span>
-            <span className="text-[9px] font-mono text-gray-700">|</span>
-            <span className="text-[9px] font-mono text-gray-600 tracking-[0.25em] uppercase">EOD DATA — YAHOO FINANCE</span>
-          </div>
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 6,
+              fontSize: 14.5,
+              fontWeight: 500,
+              color: '#55554E',
+            }}
+          >
+            <a href="#top" style={menuItemStyle('home')} onClick={() => setActiveMenu('home')}>
+              Home
+            </a>
 
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-0">
-            {/* Left: Main copy */}
-            <div className="lg:col-span-7 lg:border-r lg:border-white/10 lg:pr-14">
-              <div className="mb-6">
-                <span className="text-[9px] font-mono text-[#3B82F6] tracking-[0.4em] uppercase border border-[#3B82F6]/30 bg-[#3B82F6]/5 px-3 py-1.5">
-                  AI TRADING COMPETITION — PAPER TRADE
-                </span>
-              </div>
-
-              <h1 className="font-black leading-[0.86] tracking-tighter uppercase mb-8 text-[clamp(52px,7.5vw,108px)]">
-                DOMINATE<br />
-                THE IDX<br />
-                <span className="text-[#3B82F6]">MARKET.</span>
-              </h1>
-
-              <p className="text-gray-400 text-base md:text-lg max-w-xl mb-10 leading-relaxed font-medium">
-                Platform intelijen saham IDX yang menggabungkan analisis fundamental dengan 10 algoritma quant otonom.
-                Adu strategi Anda melawan Gemini dan Claude dalam AI Battle.
-              </p>
-
-              <div className="flex flex-wrap gap-3 mb-12">
-                <Link
-                  href="/dashboard"
-                  className="bg-[#3B82F6] text-white px-8 py-4 text-[11px] font-black tracking-[0.3em] uppercase hover:bg-blue-400 transition-colors duration-100 inline-flex items-center gap-2"
+            <div
+              style={{ position: 'relative', display: 'flex', alignItems: 'center', height: 68 }}
+              onMouseEnter={() => setFeatureOpen(true)}
+              onMouseLeave={() => setFeatureOpen(false)}
+            >
+              <a
+                href="#fitur"
+                onClick={() => setActiveMenu('feature')}
+                style={{ ...menuItemStyle('feature'), display: 'inline-flex', alignItems: 'center', gap: 6, textDecoration: 'none' }}
+              >
+                Feature
+                <span
+                  style={{
+                    width: 6,
+                    height: 6,
+                    borderRight: '1.6px solid #9A9A92',
+                    borderBottom: '1.6px solid #9A9A92',
+                    transform: 'rotate(45deg)',
+                    marginTop: -2,
+                  }}
+                />
+              </a>
+              <div style={dropdownStyle}>
+                <div
+                  style={{
+                    background: '#fff',
+                    border: `1px solid ${HAIR}`,
+                    borderRadius: 14,
+                    boxShadow: '0 20px 44px -22px rgba(20,20,15,.32)',
+                    padding: 7,
+                    display: 'flex',
+                    flexDirection: 'column',
+                    minWidth: 222,
+                  }}
                 >
-                  ENTER TERMINAL <span className="text-sm">→</span>
-                </Link>
-                <Link
-                  href="/backtest"
-                  className="border-2 border-white/20 text-white px-8 py-4 text-[11px] font-black tracking-[0.3em] uppercase hover:border-[#3B82F6] hover:text-[#3B82F6] transition-colors duration-100"
-                >
-                  BACKTEST
-                </Link>
-              </div>
-
-              {/* Mini stats */}
-              <div className="flex flex-wrap gap-10 pt-8 border-t border-white/10">
-                {[
-                  { num: '900+', label: 'IDX STOCKS' },
-                  { num: '10', label: 'ALGORITHMS' },
-                  { num: 'Rp 45M', label: 'TOTAL STAKES' },
-                ].map((s, i) => (
-                  <div key={i}>
-                    <div className="text-3xl font-black text-[#3B82F6] tracking-tight leading-none">{s.num}</div>
-                    <div className="text-[9px] font-mono text-gray-600 tracking-[0.25em] mt-1.5 uppercase">{s.label}</div>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            {/* Right: Market Terminal — live data */}
-            <div className="lg:col-span-5 pt-8 lg:pt-0 lg:pl-14">
-              <div className="border-2 border-white/15 bg-[#111111] h-full min-h-[440px]">
-                {/* Terminal header */}
-                <div className="border-b-2 border-white/10 px-5 py-3.5 flex items-center justify-between bg-[#0F0F0F]">
-                  <div className="flex items-center gap-2">
-                    <span className="w-2 h-2 rounded-full bg-[#22C55E] animate-pulse" />
-                    <span className="text-[9px] font-mono text-gray-500 tracking-[0.2em] uppercase">
-                      MARKET TERMINAL — LIVE EOD
+                  {/* Watchlist */}
+                  <Link href="/dashboard" className="lp-menuitem">
+                    <span
+                      style={{
+                        width: 30,
+                        height: 30,
+                        borderRadius: 9,
+                        background: `color-mix(in oklab, ${ACCENT}, white 88%)`,
+                        display: 'flex',
+                        flexDirection: 'column',
+                        justifyContent: 'center',
+                        gap: 3,
+                        padding: '0 8px',
+                        flex: 'none',
+                      }}
+                    >
+                      <span style={{ height: 2.5, borderRadius: 2, background: ACCENT, width: '100%' }} />
+                      <span style={{ height: 2.5, borderRadius: 2, background: ACCENT, width: '70%', opacity: 0.55 }} />
+                      <span style={{ height: 2.5, borderRadius: 2, background: ACCENT, width: '85%', opacity: 0.4 }} />
                     </span>
-                  </div>
-                  <span className="text-[9px] font-mono text-gray-700 tracking-wider">IDX.JK</span>
-                </div>
+                    <span style={{ display: 'flex', flexDirection: 'column' }}>
+                      <span style={{ fontWeight: 700, fontSize: 14, lineHeight: 1.2 }}>Watchlist</span>
+                      <span style={{ fontSize: 11.5, color: '#9A9A92', fontWeight: 500 }}>Daftar saham pantauanmu</span>
+                    </span>
+                  </Link>
 
-                <div className="p-5">
-                  {/* IHSG */}
-                  <div className={`border p-4 mb-4 ${ihsg.up ? 'border-[#22C55E]/25 bg-[#22C55E]/5' : 'border-[#EF4444]/25 bg-[#EF4444]/5'}`}>
-                    <div className="flex items-end justify-between">
-                      <div>
-                        <div className="text-[8px] font-mono text-gray-600 tracking-[0.3em] uppercase mb-1.5">
-                          IHSG COMPOSITE
-                          {ihsg.date ? <span className="ml-2 text-gray-700">({ihsg.date})</span> : null}
-                        </div>
-                        <div className="text-4xl font-black text-white tracking-tight leading-none tabular-nums">
-                          {ihsg.price}
-                        </div>
-                      </div>
-                      <div className="text-right">
-                        <div className={`font-black text-base tabular-nums ${ihsg.up ? 'text-[#22C55E]' : 'text-[#EF4444]'}`}>
-                          {ihsg.change}
-                        </div>
-                        <div className={`font-mono text-sm tabular-nums ${ihsg.up ? 'text-[#22C55E]' : 'text-[#EF4444]'}`}>
-                          {ihsg.changePct}
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Ticker rows */}
-                  <div>
-                    {tickers.map((t, i) => (
-                      <Link
-                        key={t.symbol}
-                        href={`/stocks/${t.symbol}`}
-                        className={`block flex items-center justify-between px-3 py-2.5 border-b border-white/[0.04] transition-colors duration-200 cursor-pointer ${
-                          i === activeTick % tickers.length ? 'bg-[#3B82F6]/8' : 'hover:bg-white/[0.03]'
-                        }`}
+                  {/* Porto */}
+                  <Link href="/portfolio" className="lp-menuitem">
+                    <span
+                      style={{
+                        width: 30,
+                        height: 30,
+                        borderRadius: 9,
+                        background: `color-mix(in oklab, ${ACCENT}, white 88%)`,
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        flex: 'none',
+                      }}
+                    >
+                      <span
+                        style={{
+                          width: 18,
+                          height: 18,
+                          borderRadius: '50%',
+                          background: `conic-gradient(${ACCENT} 0 62%, color-mix(in oklab, ${ACCENT}, white 60%) 62% 100%)`,
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                        }}
                       >
-                        <div className="flex items-center gap-3">
-                          <span className="text-[9px] font-mono text-gray-700 w-4 tabular-nums">
-                            {String(i + 1).padStart(2, '0')}
-                          </span>
-                          <span className="text-[11px] font-black text-white tracking-wider">{t.symbol}</span>
-                        </div>
-                        <div className="flex items-center gap-5">
-                          <span className="text-[11px] font-mono text-gray-400 tabular-nums">{t.price}</span>
-                          <span
-                            className={`text-[10px] font-black w-16 text-right tabular-nums ${
-                              t.up ? 'text-[#22C55E]' : 'text-[#EF4444]'
-                            }`}
-                          >
-                            {t.change}
-                          </span>
-                        </div>
-                      </Link>
-                    ))}
-                  </div>
-
-                  <div className="mt-4 pt-4 border-t border-white/10 text-center">
-                    <span className="text-[9px] font-mono text-gray-700 tracking-[0.25em] uppercase">
-                      {dataDate}
+                        <span style={{ width: 8, height: 8, borderRadius: '50%', background: `color-mix(in oklab, ${ACCENT}, white 88%)` }} />
+                      </span>
                     </span>
-                  </div>
+                    <span style={{ display: 'flex', flexDirection: 'column' }}>
+                      <span style={{ fontWeight: 700, fontSize: 14, lineHeight: 1.2 }}>Porto</span>
+                      <span style={{ fontSize: 11.5, color: '#9A9A92', fontWeight: 500 }}>Posisi &amp; P&amp;L kamu</span>
+                    </span>
+                  </Link>
+
+                  {/* Screener */}
+                  <Link href="/screener" className="lp-menuitem">
+                    <span
+                      style={{
+                        width: 30,
+                        height: 30,
+                        borderRadius: 9,
+                        background: `color-mix(in oklab, ${ACCENT}, white 88%)`,
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        position: 'relative',
+                        flex: 'none',
+                      }}
+                    >
+                      <span style={{ width: 13, height: 13, borderRadius: '50%', border: `2.5px solid ${ACCENT}` }} />
+                      <span
+                        style={{
+                          position: 'absolute',
+                          width: 6,
+                          height: 2.5,
+                          borderRadius: 2,
+                          background: ACCENT,
+                          transform: 'rotate(45deg)',
+                          right: 7,
+                          bottom: 7,
+                        }}
+                      />
+                    </span>
+                    <span style={{ display: 'flex', flexDirection: 'column' }}>
+                      <span style={{ fontWeight: 700, fontSize: 14, lineHeight: 1.2 }}>Screener</span>
+                      <span style={{ fontSize: 11.5, color: '#9A9A92', fontWeight: 500 }}>Saring saham per sinyal</span>
+                    </span>
+                  </Link>
                 </div>
               </div>
             </div>
-          </div>
-        </div>
-      </section>
 
-      {/* ── TICKER TAPE — live data ─────────────────────────────── */}
-      <div className="bg-[#1D4ED8] py-4 overflow-hidden border-y-2 border-[#1E40AF]">
-        <div className="flex animate-marquee whitespace-nowrap gap-10 uppercase">
-          {[...tickers, ...tickers].map((t, i) => (
-            <span key={i} className="flex items-center gap-2.5 text-[10px] font-black text-white tracking-[0.15em]">
-              <span className="font-mono">{t.symbol}</span>
-              <span className="font-mono text-white/50">{t.price}</span>
-              <span className={`font-black ${t.up ? 'text-[#86EFAC]' : 'text-[#FCA5A5]'}`}>{t.change}</span>
-              <span className="text-white/20 mx-1">◆</span>
-            </span>
-          ))}
-        </div>
-      </div>
-
-      {/* ── FEATURES / ARSENAL ─────────────────────────────────── */}
-      <section className="border-b-2 border-white/10">
-        <div className="max-w-[1400px] mx-auto">
-          <div className="px-6 py-7 border-b border-white/10 flex items-center justify-between">
-            <div className="flex items-center gap-4">
-              <span className="text-[9px] font-mono text-[#3B82F6] tracking-[0.4em] uppercase">◆ ARSENAL</span>
-              <span className="text-[9px] font-mono text-gray-700">—</span>
-              <span className="text-[9px] font-mono text-gray-600 tracking-[0.2em] uppercase">TRADING WEAPONS</span>
-            </div>
-            <span className="text-[9px] font-mono text-gray-700 tracking-[0.3em]">03 CORE MODULES</span>
+            <a href="#cara" style={menuItemStyle('works')} onClick={() => setActiveMenu('works')}>
+              How It Works
+            </a>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-3">
-            {[
-              {
-                num: '01',
-                title: 'AI BATTLEGROUND',
-                desc: 'Tiga portofolio bersaing: USER, CLAUDE, GEMINI. Modal Rp 15 juta per agen. Siapa yang menghasilkan return tertinggi?',
-                accent: '#3B82F6',
-                tag: 'AUTONOMOUS',
-              },
-              {
-                num: '02',
-                title: '10 QUANT ALGORITHMS',
-                desc: 'Triple Confirmation, Volatility Sniper, Institutional Trend, dan 7 strategi lainnya. Screener berbasis sinyal multi-konfirmasi.',
-                accent: '#22C55E',
-                tag: 'ALGORITHMIC',
-              },
-              {
-                num: '03',
-                title: 'TECHNO-FUNDAMENTAL',
-                desc: 'Validasi teknikal + fundamental PE/PBV/Dividen. Setiap entry dikonfirmasi dari dua sisi — momentum dan nilai intrinsik.',
-                accent: '#60A5FA',
-                tag: 'HYBRID ANALYSIS',
-              },
-            ].map((feat, i) => (
-              <div
-                key={i}
-                className="p-10 border-r border-b border-white/10 last:border-r-0 group hover:bg-white/[0.025] transition-colors duration-150"
-              >
-                <div className="flex items-start justify-between mb-8">
-                  <span className="text-6xl font-black text-white/[0.06] tracking-tight leading-none select-none">
-                    {feat.num}
-                  </span>
-                  <span
-                    className="text-[8px] font-mono tracking-[0.3em] px-2 py-1 border"
-                    style={{ color: feat.accent, borderColor: feat.accent + '40' }}
-                  >
-                    {feat.tag}
-                  </span>
-                </div>
-                <h3
-                  className="text-lg font-black uppercase tracking-tight mb-4 leading-tight"
-                  style={{ color: feat.accent }}
-                >
-                  {feat.title}
-                </h3>
-                <p className="text-gray-500 text-sm leading-relaxed">{feat.desc}</p>
-              </div>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      {/* ── BATTLEGROUND ───────────────────────────────────────── */}
-      <section className="border-b-2 border-white/10">
-        <div className="max-w-[1400px] mx-auto">
-          <div className="px-6 py-7 border-b border-white/10 flex items-center gap-4">
-            <span className="text-[9px] font-mono text-[#3B82F6] tracking-[0.4em] uppercase">◆ THE COMPETITION</span>
-            <span className="text-[9px] font-mono text-gray-700">—</span>
-            <span className="text-[9px] font-mono text-gray-600 tracking-[0.2em] uppercase">3 AGENTS. 1 WINNER.</span>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-3">
-            {[
-              {
-                agent: 'HUMAN',
-                by: 'YOU',
-                desc: 'Strategi manual berbasis intuisi dan pengalaman pasar. Baca grafik, analisa berita, eksekusi sendiri dengan penuh kontrol.',
-                accent: '#60A5FA',
-                initial: 'H',
-                highlight: false,
-              },
-              {
-                agent: 'CLAUDE AI',
-                by: 'ANTHROPIC',
-                desc: 'Konservatif dan value-oriented. Prioritas fundamental kuat, PE rendah, PBV wajar — proteksi modal lebih utama dari kejaran return.',
-                accent: '#3B82F6',
-                initial: 'C',
-                highlight: true,
-              },
-              {
-                agent: 'GEMINI AI',
-                by: 'GOOGLE',
-                desc: 'Agresif momentum-based. Mengejar sinyal teknikal cepat dengan risk appetite lebih tinggi dan eksekusi reaktif.',
-                accent: '#22C55E',
-                initial: 'G',
-                highlight: false,
-              },
-            ].map((agent, i) => (
-              <div
-                key={i}
-                className={`p-10 border-r border-b border-white/10 last:border-r-0 relative overflow-hidden ${
-                  agent.highlight ? 'bg-[#3B82F6]/[0.05]' : 'hover:bg-white/[0.02]'
-                } transition-colors`}
-              >
-                {agent.highlight && (
-                  <div className="absolute top-0 left-0 right-0 h-0.5 bg-[#3B82F6]" />
-                )}
-                <div className="flex items-center justify-between mb-8">
-                  <div
-                    className="w-12 h-12 flex items-center justify-center border-2 font-black text-xl"
-                    style={{ borderColor: agent.accent, color: agent.accent }}
-                  >
-                    {agent.initial}
-                  </div>
-                  <span className="text-[8px] font-mono text-gray-700 tracking-[0.3em] uppercase">{agent.by}</span>
-                </div>
-                <h3
-                  className="text-xl font-black uppercase tracking-tight mb-1 leading-tight"
-                  style={{ color: agent.accent }}
-                >
-                  {agent.agent}
-                </h3>
-                <div className="text-[8px] font-mono text-gray-700 tracking-[0.2em] mb-5 uppercase">
-                  Rp 15,000,000 MODAL AWAL
-                </div>
-                <p className="text-gray-500 text-sm leading-relaxed">{agent.desc}</p>
-              </div>
-            ))}
-          </div>
-
-          <div className="px-6 py-5 border-t border-white/10 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
-            <span className="text-[9px] font-mono text-gray-700 tracking-[0.2em] uppercase">
-              PAPER TRADING — NO REAL MONEY INVOLVED
-            </span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
             <Link
               href="/portfolio"
-              className="text-[9px] font-mono text-[#3B82F6] tracking-[0.2em] uppercase hover:text-white transition-colors"
+              className="lp-navbtn"
+              style={{
+                textDecoration: 'none',
+                color: '#fff',
+                background: ACCENT,
+                fontWeight: 700,
+                fontSize: 14.5,
+                padding: '10px 18px',
+                borderRadius: RADIUS,
+                boxShadow: `0 2px 10px color-mix(in oklab, ${ACCENT}, transparent 64%)`,
+                transition: 'transform .18s ease',
+              }}
             >
-              VIEW LEADERBOARD →
+              Open Portofolio
             </Link>
+          </div>
+        </nav>
+      </header>
+
+      {/* ── HERO ────────────────────────────────────────────── */}
+      <section
+        style={{
+          maxWidth: 1200,
+          margin: '0 auto',
+          padding: '74px 28px 84px',
+          display: 'grid',
+          gridTemplateColumns: '1.04fr .96fr',
+          gap: 60,
+          alignItems: 'center',
+        }}
+        className="lp-hero"
+      >
+        <div>
+          <div
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 8,
+              background: `color-mix(in oklab, ${ACCENT}, white 88%)`,
+              color: `color-mix(in oklab, ${ACCENT}, black 22%)`,
+              fontFamily: MONO,
+              fontSize: 12,
+              fontWeight: 600,
+              letterSpacing: '.04em',
+              textTransform: 'uppercase',
+              padding: '7px 12px',
+              borderRadius: 999,
+            }}
+          >
+            <span style={{ width: 7, height: 7, borderRadius: '50%', background: ACCENT }} />
+            Data EOD • Refresh 16:00 WIB
+          </div>
+          <h1 style={{ margin: '22px 0 0', fontSize: 'clamp(40px,5vw,60px)', lineHeight: 1.04, fontWeight: 800, letterSpacing: '-.03em' }}>
+            Pantau Saham,
+            <br />
+            <span style={{ color: ACCENT }}>Raih Peluang.</span>
+          </h1>
+          <p style={{ margin: '22px 0 0', fontSize: 18, lineHeight: 1.55, color: MUTED, maxWidth: 468 }}>
+            Satu dashboard untuk watchlist, portofolio, dan screener. Lihat harga penutupan dan P&amp;L kamu dalam satu layar
+            yang bersih, diperbarui tiap sore.
+          </p>
+          <div style={{ display: 'flex', gap: 12, marginTop: 30, flexWrap: 'wrap' }}>
+            <Link
+              href="/dashboard"
+              style={{
+                textDecoration: 'none',
+                color: '#fff',
+                background: ACCENT,
+                fontWeight: 700,
+                fontSize: 16,
+                padding: '15px 26px',
+                borderRadius: RADIUS,
+                boxShadow: `0 6px 20px color-mix(in oklab, ${ACCENT}, transparent 60%)`,
+              }}
+            >
+              Masuk Market
+            </Link>
+            <Link
+              href="/portfolio"
+              style={{
+                textDecoration: 'none',
+                color: '#14140F',
+                background: '#fff',
+                border: '1px solid #E2E1DB',
+                fontWeight: 700,
+                fontSize: 16,
+                padding: '15px 26px',
+                borderRadius: RADIUS,
+              }}
+            >
+              Open Portofolio
+            </Link>
+          </div>
+          <p style={{ margin: '22px 0 0', fontFamily: MONO, fontSize: 12.5, color: '#8C8C84', letterSpacing: '.01em' }}>
+            Data end-of-day • Refresh otomatis tiap hari 16:00 WIB
+          </p>
+        </div>
+
+        {/* MOCK PANEL */}
+        <div style={{ position: 'relative' }}>
+          <div
+            style={{
+              position: 'absolute',
+              inset: '-26px -10px -10px',
+              background: `radial-gradient(60% 55% at 70% 25%, color-mix(in oklab, ${ACCENT}, transparent 84%), transparent 70%)`,
+              filter: 'blur(6px)',
+            }}
+          />
+          <div
+            style={{
+              position: 'relative',
+              background: '#fff',
+              border: `1px solid ${HAIR}`,
+              borderRadius: 18,
+              boxShadow: '0 24px 60px -24px rgba(20,20,15,.28), 0 4px 14px -6px rgba(20,20,15,.1)',
+              padding: '18px 18px 8px',
+              animation: 'lpFloatY 7s ease-in-out infinite',
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontWeight: 700, fontSize: 14 }}>
+                Watchlist
+                <span
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 5,
+                    fontFamily: MONO,
+                    fontSize: 10.5,
+                    fontWeight: 500,
+                    color: '#8C8C84',
+                    background: '#F2F1EC',
+                    padding: '3px 8px',
+                    borderRadius: 999,
+                  }}
+                >
+                  EOD 16:00
+                </span>
+              </div>
+              <span style={{ fontFamily: MONO, fontSize: 11, color: '#9A9A92' }}>29 Jun</span>
+            </div>
+
+            <div style={{ background: '#FBFBF9', border: '1px solid #F0EFEA', borderRadius: 13, padding: '14px 15px', marginBottom: 14 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end' }}>
+                <div>
+                  <div style={{ fontSize: 12, color: '#83837B', fontWeight: 600 }}>IHSG</div>
+                  <div style={{ fontFamily: MONO, fontSize: 25, fontWeight: 600, letterSpacing: '-.01em', marginTop: 2 }}>7.298,21</div>
+                </div>
+                <div style={{ textAlign: 'right', fontFamily: MONO }}>
+                  <div style={{ color: '#138A50', fontSize: 14, fontWeight: 600 }}>+46,18</div>
+                  <div style={{ color: '#138A50', fontSize: 12 }}>+0,64%</div>
+                </div>
+              </div>
+              <svg viewBox="0 0 520 96" preserveAspectRatio="none" style={{ width: '100%', height: 70, marginTop: 8, display: 'block', overflow: 'visible' }}>
+                <defs>
+                  <linearGradient id="lpSpk" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor={ACCENT} stopOpacity=".26" />
+                    <stop offset="100%" stopColor={ACCENT} stopOpacity="0" />
+                  </linearGradient>
+                </defs>
+                <polygon
+                  points="0,72 40,64 80,68 120,50 160,56 200,40 240,47 280,30 320,37 360,22 400,29 440,16 480,21 520,8 520,96 0,96"
+                  fill="url(#lpSpk)"
+                />
+                <polyline
+                  points="0,72 40,64 80,68 120,50 160,56 200,40 240,47 280,30 320,37 360,22 400,29 440,16 480,21 520,8"
+                  fill="none"
+                  stroke={ACCENT}
+                  strokeWidth="2.4"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  style={{ strokeDasharray: 760, animation: 'lpDrawLine 1.8s ease forwards' }}
+                />
+              </svg>
+            </div>
+
+            <div>
+              {WATCHLIST.map((row, i) => (
+                <div
+                  key={row.ticker}
+                  style={{
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    padding: '11px 2px',
+                    borderBottom: i < WATCHLIST.length - 1 ? '1px solid #F2F1EC' : 'none',
+                  }}
+                >
+                  <div style={{ display: 'flex', flexDirection: 'column' }}>
+                    <span style={{ fontWeight: 700, fontSize: 14 }}>{row.ticker}</span>
+                    <span style={{ fontSize: 11.5, color: '#9A9A92' }}>{row.name}</span>
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                    <span style={{ fontFamily: MONO, fontSize: 14 }}>{row.price}</span>
+                    <span
+                      style={{
+                        fontFamily: MONO,
+                        fontSize: 12,
+                        color: row.up ? '#138A50' : '#D23B3B',
+                        background: row.up ? '#E7F6EE' : '#FBE9E9',
+                        padding: '3px 8px',
+                        borderRadius: 7,
+                      }}
+                    >
+                      {row.chg}
+                    </span>
+                  </div>
+                </div>
+              ))}
+            </div>
           </div>
         </div>
       </section>
 
-      {/* ── STRATEGIES GRID (Deep Navy) ─────────────────────────── */}
-      <section className="bg-[#0D1B2A] border-b-2 border-white/10">
-        <div className="max-w-[1400px] mx-auto">
-          <div className="px-6 py-7 border-b border-white/10 flex items-center justify-between">
-            <div className="flex items-center gap-4">
-              <span className="text-[9px] font-mono text-[#60A5FA] tracking-[0.4em] uppercase">◆ QUANT STRATEGIES</span>
-              <span className="text-[9px] font-mono text-white/20">—</span>
-              <span className="text-[9px] font-mono text-white/40 tracking-[0.2em] uppercase">10 ALGORITHMS ACTIVE</span>
+      {/* ── FITUR ───────────────────────────────────────────── */}
+      <section id="fitur" style={{ maxWidth: 1200, margin: '0 auto', padding: '36px 28px 20px' }}>
+        <div style={{ maxWidth: 560 }}>
+          <div style={{ fontFamily: MONO, fontSize: 12, fontWeight: 600, letterSpacing: '.06em', textTransform: 'uppercase', color: ACCENT }}>
+            Fitur
+          </div>
+          <h2 style={{ margin: '12px 0 0', fontSize: 'clamp(28px,3.4vw,38px)', fontWeight: 800, letterSpacing: '-.02em', lineHeight: 1.1 }}>
+            Semua yang kamu butuh untuk pantau market
+          </h2>
+          <p style={{ margin: '14px 0 0', fontSize: 16.5, lineHeight: 1.55, color: MUTED }}>
+            Dirancang ringkas — fokus ke angka, bukan ke clutter.
+          </p>
+        </div>
+
+        <div className="lp-grid-4" style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 18, marginTop: 34 }}>
+          {/* watchlist */}
+          <div className="lp-card" style={featureCardStyle}>
+            <div
+              style={{
+                width: 46,
+                height: 46,
+                borderRadius: 13,
+                background: `color-mix(in oklab, ${ACCENT}, white 88%)`,
+                display: 'flex',
+                flexDirection: 'column',
+                justifyContent: 'center',
+                gap: 4,
+                padding: '0 12px',
+              }}
+            >
+              <span style={{ height: 3, borderRadius: 2, background: ACCENT, width: '100%' }} />
+              <span style={{ height: 3, borderRadius: 2, background: ACCENT, width: '72%', opacity: 0.6 }} />
+              <span style={{ height: 3, borderRadius: 2, background: ACCENT, width: '86%', opacity: 0.4 }} />
             </div>
+            <h3 style={{ margin: '18px 0 0', fontSize: 17, fontWeight: 700 }}>Watchlist Harian</h3>
+            <p style={{ margin: '8px 0 0', fontSize: 14, lineHeight: 1.5, color: '#67675F' }}>
+              Susun daftar saham favorit dan lihat harga penutupannya, diperbarui tiap sore.
+            </p>
+          </div>
+          {/* portfolio */}
+          <div className="lp-card" style={featureCardStyle}>
+            <div
+              style={{
+                width: 46,
+                height: 46,
+                borderRadius: 13,
+                background: `color-mix(in oklab, ${ACCENT}, white 88%)`,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+              }}
+            >
+              <span
+                style={{
+                  width: 24,
+                  height: 24,
+                  borderRadius: '50%',
+                  background: `conic-gradient(${ACCENT} 0 62%, color-mix(in oklab, ${ACCENT}, white 60%) 62% 100%)`,
+                  position: 'relative',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                }}
+              >
+                <span style={{ width: 11, height: 11, borderRadius: '50%', background: `color-mix(in oklab, ${ACCENT}, white 88%)` }} />
+              </span>
+            </div>
+            <h3 style={{ margin: '18px 0 0', fontSize: 17, fontWeight: 700 }}>Analisa Portofolio</h3>
+            <p style={{ margin: '8px 0 0', fontSize: 14, lineHeight: 1.5, color: '#67675F' }}>
+              Alokasi aset, bobot tiap saham, dan komposisi yang gampang dibaca.
+            </p>
+          </div>
+          {/* pnl */}
+          <div className="lp-card" style={featureCardStyle}>
+            <div
+              style={{
+                width: 46,
+                height: 46,
+                borderRadius: 13,
+                background: `color-mix(in oklab, ${ACCENT}, white 88%)`,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+              }}
+            >
+              <span style={{ width: 0, height: 0, borderLeft: '9px solid transparent', borderRight: '9px solid transparent', borderBottom: `15px solid ${ACCENT}` }} />
+            </div>
+            <h3 style={{ margin: '18px 0 0', fontSize: 17, fontWeight: 700 }}>Profit &amp; Loss</h3>
+            <p style={{ margin: '8px 0 0', fontSize: 14, lineHeight: 1.5, color: '#67675F' }}>
+              P&amp;L harian &amp; total dengan persentase return per posisi, otomatis.
+            </p>
+          </div>
+          {/* screener */}
+          <div className="lp-card" style={featureCardStyle}>
+            <div
+              style={{
+                width: 46,
+                height: 46,
+                borderRadius: 13,
+                background: `color-mix(in oklab, ${ACCENT}, white 88%)`,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                position: 'relative',
+              }}
+            >
+              <span style={{ width: 16, height: 16, borderRadius: '50%', border: `3px solid ${ACCENT}` }} />
+              <span
+                style={{
+                  position: 'absolute',
+                  width: 8,
+                  height: 3,
+                  borderRadius: 2,
+                  background: ACCENT,
+                  transform: 'rotate(45deg)',
+                  right: 11,
+                  bottom: 11,
+                }}
+              />
+            </div>
+            <h3 style={{ margin: '18px 0 0', fontSize: 17, fontWeight: 700 }}>Smart Screener</h3>
+            <p style={{ margin: '8px 0 0', fontSize: 14, lineHeight: 1.5, color: '#67675F' }}>
+              Saring ratusan saham pakai preset sinyal teknikal &amp; fundamental.
+            </p>
+          </div>
+        </div>
+      </section>
+
+      {/* ── SCREENER HIGHLIGHT ───────────────────────────────── */}
+      <section id="screener" style={{ maxWidth: 1200, margin: '0 auto', padding: '64px 28px 24px' }}>
+        <div className="lp-screener-split" style={{ display: 'grid', gridTemplateColumns: '.9fr 1.1fr', gap: 48, alignItems: 'center' }}>
+          <div>
+            <div style={{ fontFamily: MONO, fontSize: 12, fontWeight: 600, letterSpacing: '.06em', textTransform: 'uppercase', color: ACCENT }}>
+              Screener
+            </div>
+            <h2 style={{ margin: '12px 0 0', fontSize: 'clamp(28px,3.4vw,38px)', fontWeight: 800, letterSpacing: '-.02em', lineHeight: 1.1 }}>
+              Temukan saham bergerak sebelum yang lain
+            </h2>
+            <p style={{ margin: '14px 0 0', fontSize: 16.5, lineHeight: 1.55, color: MUTED }}>
+              Preset <b>Volume Breakout</b> sudah aktif untuk semua orang. Preset lanjutan terbuka saat kamu connect portofolio.
+            </p>
             <Link
               href="/screener"
-              className="text-[9px] font-mono text-[#3B82F6] font-black tracking-[0.2em] uppercase hover:text-white transition-colors"
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 8,
+                marginTop: 22,
+                textDecoration: 'none',
+                color: '#fff',
+                background: ACCENT,
+                fontWeight: 700,
+                fontSize: 15,
+                padding: '13px 22px',
+                borderRadius: RADIUS,
+                boxShadow: `0 6px 20px color-mix(in oklab, ${ACCENT}, transparent 62%)`,
+              }}
             >
-              OPEN SCREENER →
+              Buka semua preset →
             </Link>
           </div>
 
-          <div className="grid grid-cols-2 md:grid-cols-5">
-            {STRATEGIES.map((s, i) => (
+          <div style={{ background: '#fff', border: `1px solid ${HAIR}`, borderRadius: 18, boxShadow: '0 18px 44px -28px rgba(20,20,15,.24)', padding: 18 }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 9, fontWeight: 700, fontSize: 14.5 }}>
+                <span style={{ width: 8, height: 8, borderRadius: '50%', background: ACCENT }} />
+                Volume Breakout
+              </div>
+              <span style={{ fontFamily: MONO, fontSize: 11, color: '#138A50', background: '#E7F6EE', padding: '3px 9px', borderRadius: 999 }}>
+                12 match
+              </span>
+            </div>
+            <div style={{ border: '1px solid #F0EFEA', borderRadius: 12, overflow: 'hidden' }}>
               <div
-                key={i}
-                className="px-6 py-8 border-r border-b border-white/[0.07] last:border-r-0 group hover:bg-[#3B82F6] transition-colors duration-100 cursor-default"
+                style={{
+                  display: 'grid',
+                  gridTemplateColumns: '1.4fr 1fr .9fr 1fr',
+                  background: '#FBFBF9',
+                  fontFamily: MONO,
+                  fontSize: 10.5,
+                  color: '#9A9A92',
+                  textTransform: 'uppercase',
+                  letterSpacing: '.04em',
+                  padding: '9px 14px',
+                }}
               >
-                <div className="text-[8px] font-mono text-white/25 group-hover:text-white/50 mb-2 tabular-nums">
-                  {String(i + 1).padStart(2, '0')}
+                <span>Saham</span>
+                <span style={{ textAlign: 'right' }}>Harga</span>
+                <span style={{ textAlign: 'right' }}>Chg</span>
+                <span style={{ textAlign: 'right' }}>Vol ×avg</span>
+              </div>
+              {BREAKOUT.map((row) => (
+                <div
+                  key={row.ticker}
+                  style={{
+                    display: 'grid',
+                    gridTemplateColumns: '1.4fr 1fr .9fr 1fr',
+                    alignItems: 'center',
+                    padding: '11px 14px',
+                    borderTop: '1px solid #F2F1EC',
+                    fontSize: 13.5,
+                  }}
+                >
+                  <span style={{ fontWeight: 700 }}>{row.ticker}</span>
+                  <span style={{ fontFamily: MONO, textAlign: 'right' }}>{row.price}</span>
+                  <span style={{ fontFamily: MONO, textAlign: 'right', color: '#138A50' }}>{row.chg}</span>
+                  <span style={{ fontFamily: MONO, textAlign: 'right', color: ACCENT }}>{row.vol}</span>
                 </div>
-                <div className="text-[10px] font-black text-white/60 group-hover:text-white tracking-wide leading-tight uppercase transition-colors">
-                  {s}
+              ))}
+            </div>
+          </div>
+        </div>
+
+        {/* locked presets grid */}
+        <div style={{ marginTop: 40 }}>
+          <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8 }}>
+            <h3 style={{ margin: 0, fontSize: 18, fontWeight: 700 }}>Preset screener lainnya</h3>
+            <span style={{ fontFamily: MONO, fontSize: 12.5, color: '#9A9A92' }}>6 preset terkunci</span>
+          </div>
+          <div className="lp-grid-3" style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 18, marginTop: 18 }}>
+            {lockedPresets.map((p) => (
+              <div key={p.name} className="lp-card" style={{ position: 'relative', background: '#fff', border: `1px solid ${HAIR}`, borderRadius: 16, padding: 22, overflow: 'hidden', minHeight: 150 }}>
+                <div style={{ filter: 'blur(5px)', userSelect: 'none', pointerEvents: 'none', opacity: 0.85 }}>
+                  <div style={{ fontWeight: 700, fontSize: 16 }}>{p.name}</div>
+                  <p style={{ margin: '8px 0 0', fontSize: 13.5, lineHeight: 1.5, color: '#67675F' }}>{p.desc}</p>
+                  <div style={{ display: 'flex', gap: 6, marginTop: 16 }}>
+                    <span style={{ fontFamily: MONO, fontSize: 12, background: '#F4F3EE', padding: '4px 9px', borderRadius: 7 }}>{p.match} match</span>
+                    <span style={{ fontFamily: MONO, fontSize: 12, background: '#F4F3EE', padding: '4px 9px', borderRadius: 7 }}>{p.tag}</span>
+                  </div>
+                </div>
+                <div
+                  style={{
+                    position: 'absolute',
+                    inset: 0,
+                    display: 'flex',
+                    flexDirection: 'column',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: 10,
+                    background: 'linear-gradient(180deg, rgba(255,255,255,.45), rgba(255,255,255,.72))',
+                  }}
+                >
+                  <span style={{ position: 'relative', width: 30, height: 34 }}>
+                    <span style={{ position: 'absolute', bottom: 0, left: 0, width: 30, height: 22, borderRadius: 6, background: ACCENT }} />
+                    <span style={{ position: 'absolute', top: 0, left: 7, width: 16, height: 18, border: `3px solid ${ACCENT}`, borderBottom: 'none', borderRadius: '9px 9px 0 0' }} />
+                    <span style={{ position: 'absolute', bottom: 7, left: 13, width: 4, height: 8, borderRadius: 2, background: '#fff' }} />
+                  </span>
+                  <span
+                    style={{
+                      fontFamily: MONO,
+                      fontSize: 12,
+                      fontWeight: 600,
+                      color: `color-mix(in oklab, ${ACCENT}, black 18%)`,
+                      background: `color-mix(in oklab, ${ACCENT}, white 84%)`,
+                      padding: '5px 12px',
+                      borderRadius: 999,
+                    }}
+                  >
+                    Terkunci
+                  </span>
                 </div>
               </div>
             ))}
-          </div>
-        </div>
-      </section>
-
-      {/* ── BIG STATS ──────────────────────────────────────────── */}
-      <section className="border-b-2 border-white/10">
-        <div className="max-w-[1400px] mx-auto">
-          <div className="grid grid-cols-2 md:grid-cols-4">
-            {[
-              { num: '900+', label: 'IDX STOCKS', sub: 'COVERED' },
-              { num: '16', label: 'INDICATORS', sub: 'TECHNICAL' },
-              { num: '5Y', label: 'HISTORY', sub: 'BACKTEST DATA' },
-              { num: '3', label: 'AI AGENTS', sub: 'COMPETING NOW' },
-            ].map((s, i) => (
+            {fadedPresets.map((p) => (
               <div
-                key={i}
-                className="px-8 py-14 border-r border-b border-white/10 last:border-r-0 hover:bg-white/[0.02] transition-colors"
+                key={p.name}
+                style={{
+                  position: 'relative',
+                  background: '#fff',
+                  border: `1px solid ${HAIR}`,
+                  borderRadius: 16,
+                  padding: 22,
+                  overflow: 'hidden',
+                  minHeight: 150,
+                  opacity: 0.5,
+                  maskImage: 'linear-gradient(to bottom, #000 0%, #000 30%, transparent 88%)',
+                  WebkitMaskImage: 'linear-gradient(to bottom, #000 0%, #000 30%, transparent 88%)',
+                }}
               >
-                <div className="text-5xl md:text-6xl font-black text-white tracking-tight leading-none mb-3 tabular-nums">
-                  {s.num}
+                <div style={{ filter: 'blur(6px)', userSelect: 'none', pointerEvents: 'none', opacity: 0.8 }}>
+                  <div style={{ fontWeight: 700, fontSize: 16 }}>{p.name}</div>
+                  <p style={{ margin: '8px 0 0', fontSize: 13.5, lineHeight: 1.5, color: '#67675F' }}>{p.desc}</p>
+                  <div style={{ display: 'flex', gap: 6, marginTop: 16 }}>
+                    <span style={{ fontFamily: MONO, fontSize: 12, background: '#F4F3EE', padding: '4px 9px', borderRadius: 7 }}>{p.match} match</span>
+                    <span style={{ fontFamily: MONO, fontSize: 12, background: '#F4F3EE', padding: '4px 9px', borderRadius: 7 }}>{p.tag}</span>
+                  </div>
                 </div>
-                <div className="text-[9px] font-mono text-[#3B82F6] tracking-[0.3em] uppercase mb-1">{s.label}</div>
-                <div className="text-[8px] font-mono text-gray-700 tracking-[0.2em] uppercase">{s.sub}</div>
+                <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <span style={{ position: 'relative', width: 26, height: 30, animation: 'lpBob 3s ease-in-out infinite' }}>
+                    <span style={{ position: 'absolute', bottom: 0, left: 0, width: 26, height: 19, borderRadius: 5, background: ACCENT }} />
+                    <span style={{ position: 'absolute', top: 0, left: 6, width: 14, height: 16, border: `3px solid ${ACCENT}`, borderBottom: 'none', borderRadius: '8px 8px 0 0' }} />
+                  </span>
+                </div>
               </div>
             ))}
           </div>
         </div>
       </section>
 
-      {/* ── HOW IT WORKS ───────────────────────────────────────── */}
-      <section className="border-b-2 border-white/10">
-        <div className="max-w-[1400px] mx-auto">
-          <div className="px-6 py-7 border-b border-white/10 flex items-center gap-4">
-            <span className="text-[9px] font-mono text-[#3B82F6] tracking-[0.4em] uppercase">◆ HOW IT WORKS</span>
-            <span className="text-[9px] font-mono text-gray-700">—</span>
-            <span className="text-[9px] font-mono text-gray-600 tracking-[0.2em] uppercase">4 STEPS</span>
+      {/* ── CARA KERJA ──────────────────────────────────────── */}
+      <section id="cara" style={{ maxWidth: 1200, margin: '0 auto', padding: '72px 28px 24px' }}>
+        <div style={{ textAlign: 'center', maxWidth: 560, margin: '0 auto' }}>
+          <div style={{ fontFamily: MONO, fontSize: 12, fontWeight: 600, letterSpacing: '.06em', textTransform: 'uppercase', color: ACCENT }}>
+            Cara Kerja
           </div>
+          <h2 style={{ margin: '12px 0 0', fontSize: 'clamp(28px,3.4vw,38px)', fontWeight: 800, letterSpacing: '-.02em', lineHeight: 1.1 }}>
+            Mulai dalam 3 langkah
+          </h2>
+        </div>
+        <div className="lp-grid-3" style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 18, marginTop: 38 }}>
+          {[
+            { n: '01', title: 'Buat watchlist', desc: 'Tambahkan saham yang ingin kamu pantau dari 900+ emiten IDX.' },
+            { n: '02', title: 'Pantau tiap sore', desc: 'Data ditarik saat market tutup (16:00 WIB) — harga, P&L, dan sinyal screener langsung diperbarui.' },
+            { n: '03', title: 'Raih peluang', desc: 'Open portofolio dan ambil keputusan dengan data di depan mata.' },
+          ].map((step) => (
+            <div key={step.n} className="lp-card" style={{ background: '#fff', border: `1px solid ${HAIR}`, borderRadius: 16, padding: 28 }}>
+              <div
+                style={{
+                  fontFamily: MONO,
+                  fontSize: 13,
+                  fontWeight: 600,
+                  color: '#fff',
+                  background: ACCENT,
+                  width: 34,
+                  height: 34,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  borderRadius: 10,
+                }}
+              >
+                {step.n}
+              </div>
+              <h3 style={{ margin: '18px 0 0', fontSize: 17.5, fontWeight: 700 }}>{step.title}</h3>
+              <p style={{ margin: '8px 0 0', fontSize: 14.5, lineHeight: 1.55, color: '#67675F' }}>{step.desc}</p>
+            </div>
+          ))}
+        </div>
+      </section>
 
-          <div className="grid grid-cols-1 md:grid-cols-4">
-            {[
-              {
-                step: '01',
-                title: 'PILIH SAHAM',
-                desc: 'Buka Market atau Screener. Filter dari 900+ saham IDX berdasarkan sinyal quant dan fundamental.',
-                link: '/screener',
-              },
-              {
-                step: '02',
-                title: 'ANALISA',
-                desc: 'Lihat candlestick, RSI, MACD, Bollinger Bands, dan 13 indikator lainnya dalam satu view.',
-                link: '/dashboard',
-              },
-              {
-                step: '03',
-                title: 'BACKTEST',
-                desc: 'Uji strategi Anda pada data 5 tahun historis. Lihat win rate, drawdown, dan Sharpe ratio.',
-                link: '/backtest',
-              },
-              {
-                step: '04',
-                title: 'BATTLE',
-                desc: 'Masuk ke AI Battleground. Eksekusi trade manual dan pantau performa Anda vs Claude dan Gemini.',
-                link: '/portfolio',
-              },
-            ].map((s, i) => (
+      {/* ── CTA ─────────────────────────────────────────────── */}
+      <section style={{ maxWidth: 1200, margin: '0 auto', padding: '72px 28px' }}>
+        <div style={{ position: 'relative', overflow: 'hidden', background: '#16160F', color: '#fff', borderRadius: 24, padding: '64px 40px', textAlign: 'center' }}>
+          <div
+            style={{
+              position: 'absolute',
+              inset: 0,
+              background: `radial-gradient(50% 80% at 50% 0%, color-mix(in oklab, ${ACCENT}, transparent 70%), transparent 70%)`,
+              animation: 'lpGlowPulse 5s ease-in-out infinite',
+            }}
+          />
+          <div style={{ position: 'relative' }}>
+            <h2 style={{ margin: 0, fontSize: 'clamp(30px,3.8vw,44px)', fontWeight: 800, letterSpacing: '-.02em', lineHeight: 1.08 }}>
+              Siap raih peluang berikutnya?
+            </h2>
+            <p style={{ margin: '16px auto 0', fontSize: 17, lineHeight: 1.55, color: '#B9B9AE', maxWidth: 480 }}>
+              Mulai pantau saham kamu hari ini. Gratis untuk monitoring, tanpa kartu kredit.
+            </p>
+            <div style={{ display: 'flex', gap: 12, justifyContent: 'center', marginTop: 30, flexWrap: 'wrap' }}>
               <Link
-                key={i}
-                href={s.link}
-                className="p-8 border-r border-b border-white/10 last:border-r-0 group hover:bg-white/[0.025] transition-colors duration-150 block"
+                href="/dashboard"
+                style={{
+                  textDecoration: 'none',
+                  color: '#fff',
+                  background: ACCENT,
+                  fontWeight: 700,
+                  fontSize: 16,
+                  padding: '15px 28px',
+                  borderRadius: RADIUS,
+                  boxShadow: `0 6px 22px color-mix(in oklab, ${ACCENT}, transparent 55%)`,
+                }}
               >
-                <div className="text-5xl font-black text-white/[0.06] tracking-tight leading-none mb-6 tabular-nums select-none">
-                  {s.step}
-                </div>
-                <div className="w-8 h-0.5 bg-[#3B82F6] mb-5 group-hover:w-16 transition-all duration-200" />
-                <h3 className="text-sm font-black text-white uppercase tracking-wider mb-3">{s.title}</h3>
-                <p className="text-gray-500 text-sm leading-relaxed">{s.desc}</p>
-                <div className="text-[9px] font-mono text-[#3B82F6] tracking-[0.2em] uppercase mt-5 opacity-0 group-hover:opacity-100 transition-opacity duration-150">
-                  OPEN →
-                </div>
+                Masuk Market
               </Link>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      {/* ── CTA ────────────────────────────────────────────────── */}
-      <section className="py-24 border-b-2 border-white/10">
-        <div className="max-w-[1400px] mx-auto px-6">
-          <div className="border-2 border-[#3B82F6] p-12 md:p-20 relative overflow-hidden bg-[#3B82F6]/[0.03]">
-            <div className="absolute top-6 right-6 text-[9px] font-mono text-[#3B82F6]/25 tracking-[0.3em] uppercase select-none">
-              IDXAnalyst — AI BATTLE v1.0
-            </div>
-            <div className="absolute bottom-0 right-0 text-[180px] font-black text-[#3B82F6]/[0.05] leading-none tracking-tighter select-none pointer-events-none">
-              IDX
-            </div>
-
-            <div className="relative max-w-3xl">
-              <div className="text-[9px] font-mono text-[#3B82F6] tracking-[0.4em] uppercase mb-6">
-                ◆ READY TO COMPETE?
-              </div>
-              <h2 className="text-4xl md:text-6xl font-black uppercase tracking-tighter leading-[0.88] mb-8 text-white">
-                BEAT THE AI.<br />
-                BEAT THE MARKET.
-              </h2>
-              <p className="text-gray-500 text-base mb-10 max-w-xl leading-relaxed">
-                Mulai analisis sekarang — gunakan 10 strategi quant, pantau AI Battle secara real-time, dan uji portofolio Anda secara bebas tanpa modal nyata.
-              </p>
-              <div className="flex flex-wrap gap-4">
-                <Link
-                  href="/dashboard"
-                  className="bg-[#3B82F6] text-white px-10 py-5 font-black text-sm tracking-[0.3em] uppercase hover:bg-blue-400 transition-colors duration-100 inline-flex items-center gap-3"
-                >
-                  ENTER TERMINAL <span className="text-base">→</span>
-                </Link>
-                <Link
-                  href="/portfolio"
-                  className="border-2 border-white/20 text-white px-10 py-5 font-black text-sm tracking-[0.3em] uppercase hover:border-[#3B82F6] hover:text-[#3B82F6] transition-colors duration-100"
-                >
-                  VIEW BATTLEGROUND
-                </Link>
-              </div>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      {/* ── FOOTER ─────────────────────────────────────────────── */}
-      <footer className="py-10">
-        <div className="max-w-[1400px] mx-auto px-6 flex flex-col md:flex-row justify-between items-center gap-6">
-          <div className="flex items-center gap-3">
-            <div className="w-7 h-7 bg-[#3B82F6] flex items-center justify-center font-black text-[10px] text-white">
-              IX
-            </div>
-            <span className="text-sm font-black tracking-tighter uppercase">
-              IDX<span className="text-[#3B82F6]">Analyst</span>
-            </span>
-          </div>
-
-          <div className="flex flex-wrap items-center gap-6">
-            {NAV_LINKS.map(link => (
               <Link
-                key={link.label}
-                href={link.href}
-                className="text-[9px] font-mono text-gray-700 hover:text-[#3B82F6] tracking-[0.2em] uppercase transition-colors"
+                href="/portfolio"
+                style={{
+                  textDecoration: 'none',
+                  color: '#fff',
+                  background: 'rgba(255,255,255,.08)',
+                  border: '1px solid rgba(255,255,255,.16)',
+                  fontWeight: 700,
+                  fontSize: 16,
+                  padding: '15px 28px',
+                  borderRadius: RADIUS,
+                }}
               >
-                {link.label}
+                Open Portofolio
               </Link>
-            ))}
+            </div>
           </div>
+        </div>
+      </section>
 
-          <p className="text-[9px] font-mono text-gray-800 tracking-[0.3em] uppercase">
-            © 2026 IDXAnalyst. Paper Trading Only.
-          </p>
+      {/* ── FOOTER ──────────────────────────────────────────── */}
+      <footer style={{ borderTop: `1px solid ${HAIR}`, background: '#FCFCFB' }}>
+        <div className="lp-footer-grid" style={{ maxWidth: 1200, margin: '0 auto', padding: '48px 28px', display: 'grid', gridTemplateColumns: '1.6fr 1fr 1fr 1fr', gap: 32 }}>
+          <div>
+            <div style={{ display: 'flex', alignItems: 'center', fontWeight: 800, fontSize: 20, letterSpacing: '.06em' }}>
+              EMETIQ
+            </div>
+            <p style={{ margin: '14px 0 0', fontSize: 14, lineHeight: 1.55, color: '#7C7C74', maxWidth: 280 }}>
+              Dashboard monitoring saham pribadi. Pantau watchlist, portofolio, dan screener dalam satu tempat.
+            </p>
+            <p style={{ margin: '16px 0 0', fontFamily: MONO, fontSize: 11.5, color: '#A6A69E' }}>
+              Bukan rekomendasi beli/jual. Risiko di tangan kamu.
+            </p>
+          </div>
+          <div>
+            <div style={{ fontSize: 13, fontWeight: 700, color: '#14140F', marginBottom: 14 }}>Produk</div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10, fontSize: 14, color: '#7C7C74' }}>
+              <a href="#fitur" style={{ textDecoration: 'none', color: 'inherit' }}>Fitur</a>
+              <a href="#screener" style={{ textDecoration: 'none', color: 'inherit' }}>Screener</a>
+              <Link href="/portfolio" style={{ textDecoration: 'none', color: 'inherit' }}>Portofolio</Link>
+            </div>
+          </div>
+          <div>
+            <div style={{ fontSize: 13, fontWeight: 700, color: '#14140F', marginBottom: 14 }}>Sumber</div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10, fontSize: 14, color: '#7C7C74' }}>
+              <a href="#" style={{ textDecoration: 'none', color: 'inherit' }}>Dokumentasi</a>
+              <a href="#cara" style={{ textDecoration: 'none', color: 'inherit' }}>Cara Kerja</a>
+              <a href="#" style={{ textDecoration: 'none', color: 'inherit' }}>Status Data</a>
+            </div>
+          </div>
+          <div>
+            <div style={{ fontSize: 13, fontWeight: 700, color: '#14140F', marginBottom: 14 }}>Lainnya</div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10, fontSize: 14, color: '#7C7C74' }}>
+              <a href="#" style={{ textDecoration: 'none', color: 'inherit' }}>Privasi</a>
+              <a href="#" style={{ textDecoration: 'none', color: 'inherit' }}>Ketentuan</a>
+              <a href="#" style={{ textDecoration: 'none', color: 'inherit' }}>Kontak</a>
+            </div>
+          </div>
+        </div>
+        <div style={{ borderTop: `1px solid ${HAIR}` }}>
+          <div
+            style={{
+              maxWidth: 1200,
+              margin: '0 auto',
+              padding: '18px 28px',
+              display: 'flex',
+              justifyContent: 'space-between',
+              flexWrap: 'wrap',
+              gap: 8,
+              fontFamily: MONO,
+              fontSize: 12,
+              color: '#A6A69E',
+            }}
+          >
+            <span>© 2026 EMETIQ</span>
+            <span>Data IDX • update 16:00 WIB</span>
+          </div>
         </div>
       </footer>
 
-      <style jsx>{`
-        @keyframes marquee {
-          0% { transform: translateX(0); }
-          100% { transform: translateX(-50%); }
+      <style jsx global>{`
+        @keyframes lpFloatY {
+          0%, 100% { transform: translateY(0); }
+          50% { transform: translateY(-10px); }
         }
-        .animate-marquee {
+        @keyframes lpDrawLine {
+          from { stroke-dashoffset: 760; }
+          to { stroke-dashoffset: 0; }
+        }
+        @keyframes lpGlowPulse {
+          0%, 100% { opacity: .5; }
+          50% { opacity: 1; }
+        }
+        @keyframes lpBob {
+          0%, 100% { transform: translateY(0); }
+          50% { transform: translateY(-5px); }
+        }
+        .lp-card {
+          transition: transform .2s ease, box-shadow .2s ease;
+        }
+        .lp-card:hover {
+          transform: translateY(-4px);
+          box-shadow: 0 18px 38px -22px rgba(20, 20, 15, .28);
+        }
+        .lp-navbtn:hover {
+          transform: translateY(-1px);
+        }
+        .lp-menuitem {
           display: flex;
-          animation: marquee 28s linear infinite;
+          align-items: center;
+          gap: 11px;
+          padding: 9px 10px;
+          border-radius: 10px;
+          text-decoration: none;
+          color: #14140f;
+          transition: background .15s ease;
+        }
+        .lp-menuitem:hover {
+          background: color-mix(in oklab, #f26a1b, white 90%);
+        }
+        ::selection {
+          background: color-mix(in oklab, #f26a1b, white 70%);
+        }
+        @media (max-width: 900px) {
+          .lp-hero { grid-template-columns: 1fr !important; }
+          .lp-screener-split { grid-template-columns: 1fr !important; }
+          .lp-grid-4 { grid-template-columns: repeat(2, 1fr) !important; }
+          .lp-grid-3 { grid-template-columns: 1fr !important; }
+          .lp-footer-grid { grid-template-columns: 1fr 1fr !important; }
+        }
+        @media (max-width: 560px) {
+          .lp-grid-4 { grid-template-columns: 1fr !important; }
         }
       `}</style>
     </div>
   );
 }
+
+// ── Shared style objects ──────────────────────────────────────
+const featureCardStyle: React.CSSProperties = {
+  background: '#fff',
+  border: `1px solid ${HAIR}`,
+  borderRadius: 16,
+  padding: 24,
+};

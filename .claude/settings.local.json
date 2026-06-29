@@ -39,7 +39,8 @@
       "Bash(python3 *)",
       "Bash(mkdir -p .superpowers/sdd)",
       "Bash(cat .superpowers/sdd/progress.md)",
-      "Bash(git diff *)"
+      "Bash(git diff *)",
+      "Bash(npm install *)"
     ]
   },
   "enableAllProjectMcpServers": true,
