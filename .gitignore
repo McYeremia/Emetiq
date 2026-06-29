@@ -1,6 +1,8 @@
 /docs
+/docs/superpowers
 .claude
 .claude/settings.local.json
+.superpowers/sdd
 
 # Database — jangan commit file DB yang besar ke git
 backend/idxanalyst.db
