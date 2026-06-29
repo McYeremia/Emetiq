@@ -1,5 +1,5 @@
 /docs
-/.claude
+.claude
 .claude/settings.local.json
 
 # Database — jangan commit file DB yang besar ke git
