@@ -1,75 +1,81 @@
-# 🚀 IDXAnalyst — Next-Gen AI Trading Terminal
+# 📈 EMETIQ — Monitoring Saham IDX
 
-IDXAnalyst adalah platform intelijen dan simulasi trading saham Indonesia (IDX) yang menggabungkan presisi **Quant Algorithms** dengan kekuatan **Agentic AI (Gemini & Claude)**. Dirancang sebagai "Battleground" strategi, platform ini memungkinkan Anda mengadu strategi manual melawan kecerdasan statistik AI.
+**EMETIQ** adalah dashboard untuk **memantau dan menganalisis saham Indonesia (IDX)**
+memakai data **End-of-Day (EOD)**. Fokusnya sederhana: satu tempat untuk watchlist,
+portofolio, dan screener, dengan tampilan bersih yang diperbarui tiap sore.
 
-![Landing Page](https://via.placeholder.com/800x400?text=IDXAnalyst+Terminal+Preview)
+> Proyek ini sedang bertransformasi dari konsep lama *"IDXAnalyst AI Battle"*
+> (paper-trading AI vs manusia) menjadi aplikasi **monitoring pribadi** bertema terang.
+> Sebagian halaman sudah memakai brand & tema baru **EMETIQ**, sebagian masih dalam proses.
 
-## 🌟 Fitur Utama
+---
 
-### 1. ⚔️ AI Portfolio Battleground
-Bandingkan performa tiga entitas berbeda dalam satu dashboard:
-*   **User Strategy:** Portofolio untuk eksekusi manual Anda.
-*   **Gemini Core:** Eksekusi otomatis berbasis probabilitas oleh Gemini AI.
-*   **Claude Core:** Analisis dan eksekusi otonom oleh Claude AI.
+## 🌟 Fitur
 
-### 2. 🛡️ 10 Quant Intelligence Algorithms
-Dilengkapi dengan 10 algoritma quant siap pakai yang telah di-backtest selama 5 tahun:
-*   *Triple Confirmation (RSI + MACD + MA20)*
-*   *Institutional Trend (MA200 + EMA Cross)*
-*   *Volatility Sniper (Bollinger Bands + Stoch)*
-*   *Dan 7 strategi pro lainnya.*
+### 🏠 Overview
+Halaman masuk aplikasi: ringkasan **IHSG hari ini**, **Watchlist** kamu, serta
+**Top Gainer** dan **Top Loser** pasar hari ini.
 
-### 3. 🧬 Techno-Fundamental Intelligence
-AI tidak hanya melihat grafik. Setiap sinyal teknikal divalidasi dengan data fundamental real-time:
-*   **PE Ratio & PBV Tracking**
-*   **Dividend Yield Analysis**
-*   **Market Cap Classification**
+### 📊 Market
+Daftar saham dengan **filter cepat indeks** (IDX30, LQ45, SRI-KEHATI, JII, ISSI),
+pengurutan (nama / harga / %), pemuatan bertahap (infinite scroll), dan grafik IHSG
+garis yang warnanya mengikuti arah (hijau saat naik, merah saat turun).
 
-### 4. 📊 Advanced Market Screener
-Penyaring saham otomatis yang adaptif. Kolom data akan berubah secara dinamis sesuai dengan strategi yang Anda pilih untuk memberikan informasi yang paling relevan.
+### 🔎 Screener (3 mode)
+- **Strategi Teknikal** — pindai pasar memakai preset strategi (Triple Confirmation, Institutional Trend, Volatility Sniper, dll).
+- **Fundamental** — saring berdasarkan PE, PBV, dividend yield, dan sektor.
+- **Backtest** — pilih aset, jalankan semua strategi, lihat **ranking** hasilnya.
 
-### 5. 🔌 MCP (Model Context Protocol) Integration
-Terhubung langsung dengan Claude Desktop atau Gemini CLI, memungkinkan AI untuk:
-*   Menganalisis saham melalui perintah suara/chat.
-*   Membuka posisi otonom berdasarkan instruksi Anda.
-*   Melaporkan status portofolio secara real-time.
+### 💼 Portofolio
+Posisi aktif (invested + avg price, market value + lot, P&L), grafik pertumbuhan,
+**Analitik** (win rate, max drawdown, alokasi, P&L bulanan), dan **Riwayat** transaksi.
+
+### 🤖 Trade with AI *(direncanakan)*
+Integrasi eksekusi otonom berbasis AI lewat **Model Context Protocol (MCP)** masih dalam
+pengembangan. Tombolnya sudah ada di UI, fungsinya menyusul.
 
 ---
 
 ## 🏗️ Tech Stack
 
-*   **Frontend:** Next.js 15 (App Router), Tailwind CSS, Lightweight Charts (TradingView).
-*   **Backend:** FastAPI (Python), SQLAlchemy, Pydantic.
-*   **Database:** SQLite.
-*   **Data Source:** Yahoo Finance API (yfinance).
-*   **Intelligence:** Model Context Protocol (MCP), TA-Lib (Technical Analysis Library).
+| Lapisan | Teknologi |
+|---|---|
+| **Frontend** | Next.js (App Router), React 19, Tailwind CSS v4, Lightweight Charts |
+| **Backend** | FastAPI (Python), SQLAlchemy, Pydantic |
+| **Database** | SQLite |
+| **Data** | Yahoo Finance (`yfinance`), EOD (refresh ~16:00 WIB) |
+| **AI (rencana)** | Model Context Protocol (MCP) |
+
+**Tema EMETIQ:** latar `#FCFCFB`, accent oranye `#F26A1B`, font Plus Jakarta Sans + IBM Plex Mono.
 
 ---
 
-## 🚀 Instalasi & Persiapan
+## 🚀 Instalasi & Menjalankan
 
-### 1. Prasyarat
-*   Python 3.10+
-*   Node.js 18+
+### Prasyarat
+- Python 3.10+
+- Node.js 18+
 
-### 2. Setup Backend
+### Backend
 ```bash
 cd backend
 python -m venv venv
-source venv/bin/activate  # atau .\venv\Scripts\activate di Windows
+.\venv\Scripts\activate        # Windows  (atau: source venv/bin/activate)
 pip install -r requirements.txt
 python main.py
 ```
 
-### 3. Setup Frontend
+### Frontend
 ```bash
 cd frontend
 npm install
 npm run dev
 ```
 
-### 4. Menjalankan AI Watcher (Background Scanner)
-Untuk memicu AI memindai pasar secara manual:
+Buka `http://localhost:3000` lalu klik **Launch the App** (menuju `/overview`).
+Pastikan backend berjalan agar data pasar termuat.
+
+### Refresh / Scan data (opsional)
 ```bash
 cd backend
 .\venv\Scripts\python.exe services/watcher.py
@@ -77,27 +83,25 @@ cd backend
 
 ---
 
-## 🤖 Panduan AI Agent (Gemini/Claude)
+## 🗺️ Status & Roadmap
 
-Anda dapat memerintahkan AI melalui terminal atau chat (jika MCP sudah terhubung):
+**Sudah bertema EMETIQ terang:** Landing, Overview, Market, Screener, Portofolio.
+**Masih tema lama (akan dimigrasi):** Broker Flow, halaman detail saham.
 
-*   **Analyze:** *"Gemini, analisis BBCA. Apakah strategi Triple Confirmation memberikan sinyal hari ini?"*
-*   **Scan:** *"Gemini, jalankan `ai_smart_trade_scan_and_execute` untuk portofolio GEMINI."*
-*   **Trade:** *"Claude, beli 20 lot GOTO sekarang karena RSI di bawah 30."*
+- [x] Backend, database, data EOD
+- [x] Screener teknikal + fundamental + backtest (digabung jadi satu halaman)
+- [x] Rebrand & migrasi UI ke tema terang EMETIQ (bertahap, mobile-friendly)
+- [x] Portofolio personal (USER-only)
+- [ ] Migrasi halaman tersisa (Broker Flow, detail saham)
+- [ ] Fitur "Trade with AI" (eksekusi via MCP)
+- [ ] Notifikasi & prediksi harga berbasis ML
 
 ---
 
-## 🛡️ Security & Privacy
-Seluruh strategi kustom Anda disimpan di folder `frontend/strategies_local/` yang secara otomatis masuk ke `.gitignore`. Rahasia dagang dan algoritma Anda tetap aman di komputer lokal Anda.
+## 🛡️ Catatan
+Strategi kustom disimpan di `frontend/strategies_local/` dan masuk `.gitignore`,
+jadi algoritma kamu tetap aman di komputer lokal.
 
----
+EMETIQ menampilkan data EOD untuk pemantauan — **bukan rekomendasi beli/jual**. Risiko di tangan kamu.
 
-## 📈 Roadmap Pengembangan
-- [x] Phase 1: Foundation (Backend & DB)
-- [x] Phase 2: Professional UI/UX
-- [x] Phase 3: Quant Backtest Engine
-- [x] Phase 4: AI Battleground & Fundamental Integration
-- [ ] Phase 5: Live Notifications & Email Alerts
-- [ ] Phase 6: Machine Learning Price Prediction
-
-© 2026 IDXAnalyst Terminal. Built for the next generation of data-driven traders.
+© 2026 EMETIQ

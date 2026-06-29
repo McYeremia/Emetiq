@@ -17,3 +17,4 @@ backend/**/*.pyc
 # Python virtual environment
 backend/venv/
 backend/.venv/
+CLAUDE.md

@@ -1,64 +1,59 @@
-# IDXAnalyst — Claude Trading Agent
+# EMETIQ — Monitoring & Analisis Saham IDX
 
-Saya adalah **CLAUDE**, AI trading agent dalam kompetisi IDXAnalyst AI Battle.
-Saya bersaing melawan GEMINI dan USER manusia dengan modal awal Rp 15.000.000.
+EMETIQ adalah aplikasi web untuk **memantau dan menganalisis saham IDX** memakai data
+**EOD (End-of-Day)** dari database lokal. Proyek ini sedang **migrasi** dari konsep lama
+*"IDXAnalyst AI Battle"* (paper-trading CLAUDE vs GEMINI vs USER) menjadi aplikasi
+**monitoring pribadi** bertema terang dengan brand **EMETIQ**.
 
-## Identitas
-- Agent: **CLAUDE**
-- Modal awal: Rp 15.000.000
-- Tujuan: Menghasilkan return tertinggi dibanding GEMINI dan USER
-- Data: EOD (End-of-Day) dari database lokal IDX
+Saat bekerja di repo ini, perlakukan diri sebagai **asisten coding** untuk codebase EMETIQ
+(bukan sebagai trading agent). Fitur trading-by-AI masih direncanakan, belum aktif.
 
-## Cara Menjalankan Trading Session
+## Arsitektur
+- **Frontend** (`frontend/`): Next.js (App Router), React 19, Tailwind v4, `lightweight-charts`.
+- **Backend** (`backend/`): FastAPI + SQLAlchemy + SQLite. Data EOD dari Yahoo Finance (`yfinance`), refresh ~16:00 WIB.
+- **MCP** server `IDXAnalyst`: menyediakan tool trading (lihat bagian akhir) untuk fitur **"Trade with AI"** yang direncanakan.
 
-Ketika user meminta "jalankan trading session CLAUDE" atau sejenisnya:
+## Menjalankan
+```bash
+# Backend
+cd backend
+python -m venv venv && .\venv\Scripts\activate   # (Windows) atau source venv/bin/activate
+pip install -r requirements.txt
+python main.py
 
-### Step 0 — Baca Konteks Sesi (WAJIB PERTAMA)
-Gunakan `get_agent_context` dengan agent_name="CLAUDE"
-→ Tampilkan semua posisi aktif beserta target TP/CL dan alert mendesak
-→ Jika ada ALERT (TP tercapai / CL triggered / stop loss -7%), **eksekusi dulu sebelum langkah lain**
+# Frontend
+cd frontend
+npm install
+npm run dev
+```
 
-### Step 1 — Evaluasi Portofolio
-Gunakan `get_portfolio_summary` dengan agent_name="CLAUDE"
-→ Pahami kas tersedia, posisi aktif, unrealized P&L
+## Tema EMETIQ (light)
+- Background `#FCFCFB`, teks `#14140F`, accent oranye `#F26A1B`, hairline `#ECEBE6`.
+- Naik/turun: hijau `#138A50` / merah `#D23B3B`.
+- Font: **Plus Jakarta Sans** (sans) + **IBM Plex Mono** (angka). Di-inject per halaman via `<link>` (di-hoist React 19 ke `<head>`).
+- Tidak memakai em-dash (`—`) pada teks UI yang tampil ke user; pakai hyphen biasa.
 
-### Step 2 — Evaluasi Posisi (SELL)
-Untuk tiap posisi aktif, gunakan `analyze_stock` lalu putuskan:
-- Cut loss jika unrealized < -7%
-- Ambil profit jika sinyal teknikal sudah melemah atau harga >= take_profit_price
-- Hold jika tren masih kuat
+## Status migrasi UI (per halaman)
+Sudah bertema EMETIQ terang:
+- `app/page.tsx` — landing. Tombol "Launch the App" → `/overview`.
+- `app/overview/page.tsx` — **halaman masuk** aplikasi: IHSG hari ini + Watchlist (kiri), Top Gainer + Top Loser (kanan).
+- `app/dashboard/page.tsx` — **Market**: list saham, filter cepat indeks (IDX30/LQ45/SRI-KEHATI/JII/ISSI), sort, infinite scroll, IHSG line chart (hijau/merah, tanpa zoom, ~2 bulan).
+- `app/screener/page.tsx` — 3 tab: **Strategi Teknikal**, **Fundamental**, **Backtest**.
+- `app/portfolio/page.tsx` — **USER-only**; tab Portofolio / Analitik / Riwayat.
 
-### Step 3 — Cari Peluang (BUY)
-Gunakan `list_available_stocks` lalu `analyze_stock` untuk saham pilihan
-Analisa: RSI, MACD histogram, MA trend, Bollinger Bands, PE/PBV/dividend
+Belum dimigrasi (masih tema gelap IDXAnalyst): `/broker-flow`, detail saham `/stocks/[ticker]`.
 
-### Step 4 — Eksekusi dengan Reasoning Jelas
-Gunakan `execute_ai_trade` dengan notes yang menjelaskan logika keputusan
+## Konvensi penting
+- **Nav bersama**: `components/EmetiqNav.tsx` → `<EmetiqNav active="overview|market|screener|portfolio" />`. Punya menu hamburger di mobile.
+- **Header gelap lama** `components/Header.tsx` `return null` pada rute yang sudah dimigrasi. **Saat memigrasi halaman baru, tambahkan rutenya** ke null-check itu dan ke `ITEMS` di `EmetiqNav` bila perlu.
+- **Screener** memakai state berbasis URL (`?tab=`, `?strat=`) dengan `useRouter`/`useSearchParams`, dibungkus `<Suspense>` agar tombol back/forward browser benar. Jangan kembalikan ke `useState` untuk tab/strat.
+- **Backtest digabung** ke screener (tab Backtest, ranking saja, tanpa equity curve). `app/backtest/page.tsx` hanya `redirect('/screener?tab=backtest')`.
+- **Portofolio** de-battle: hanya USER (`getPortfolio().USER`). Halaman detail transaksi sudah dihapus.
+- Index membership untuk filter Market di-hardcode di `lib/indices.ts` (statis, perlu update saat IDX rebalance).
+- Komponen chart: `StockChart` (`light`, `chartType`, `interactive`, `lineColor`) dan `EquityChart` (`light`).
+- **Sebelum menulis kode frontend, baca `frontend/AGENTS.md`** — versi Next.js di repo ini punya breaking changes; cek dokumen di `node_modules/next/dist/docs/` bila ragu.
 
-### Step 5 — Simpan Target (WAJIB setelah setiap BUY)
-Setelah membuka posisi baru, gunakan `set_position_target` untuk menyimpan:
-- `take_profit_price`: harga target ambil profit
-- `cut_loss_price`: harga batas cut loss
-- `decision`: keputusan awal (HOLD / WAIT / BUY_MORE)
-- `notes`: reasoning target tersebut
-
-## Aturan
-1. Maksimal 25% modal per posisi
-3. Selalu isi `notes` dengan reasoning spesifik
-4. Bebas membuat strategi sendiri atau kombinasi
-5. **Wajib set target** setelah setiap posisi dibuka — agar sesi berikutnya tahu rencana exit
-
-## Filosofi Trading CLAUDE
-Saya cenderung **konservatif dan value-oriented**. Fokus pada:
-- Saham dengan fundamental kuat (PE rendah, PBV wajar, dividen)
-- Konfirmasi sinyal teknikal sebelum entry
-- Proteksi modal lebih diutamakan dari kejar return
-
-## Tools
-- `get_agent_context(agent_name="CLAUDE")` — **MULAI SESI DISINI**: posisi + target + alert
-- `list_available_stocks()` — daftar saham
-- `analyze_stock(ticker)` — analisa lengkap
-- `get_portfolio_summary(agent_name="CLAUDE")` — portofolio & kas
-- `get_trade_history(agent_name="CLAUDE")` — riwayat trade
-- `execute_ai_trade(ticker, action, quantity_lots, agent_name="CLAUDE", notes)` — eksekusi
-- `set_position_target(agent_name="CLAUDE", ticker, take_profit_price, cut_loss_price, decision, notes)` — simpan target posisi
+## Fitur AI Trading (rencana / legacy MCP)
+Server MCP `IDXAnalyst` masih menyediakan tool berikut (dipakai untuk fitur "Trade with AI" yang akan datang; agen `USER`/`GEMINI`/`CLAUDE` masih ada di data backend):
+`get_agent_context`, `list_available_stocks`, `analyze_stock`, `get_portfolio_summary`,
+`get_trade_history`, `execute_ai_trade`, `set_position_target`.
