@@ -1,19 +1,52 @@
 'use client';
 
 import { useEffect, useState, useCallback, useRef } from 'react';
-import { useRouter } from 'next/navigation';
-import { api, TradeHistory, PortfolioItem, MultiPortfolioResponse } from '@/lib/api';
+import { api, TradeHistory, PortfolioItem, AgentPortfolio } from '@/lib/api';
 import { INITIAL_MODAL } from '@/lib/constants';
-import { useToast } from '@/components/Toast';
-import Link from 'next/link';
+import EmetiqNav from '@/components/EmetiqNav';
 import dynamic from 'next/dynamic';
+import Link from 'next/link';
 
 const EquityChart = dynamic(() => import('@/components/EquityChart'), { ssr: false });
 
-type PortfolioTab = 'USER' | 'GEMINI' | 'CLAUDE';
-type ViewMode = 'portfolio' | 'analytics';
+type ViewMode = 'portfolio' | 'analytics' | 'riwayat';
 
-const DONUT_COLORS = ['#3b82f6','#14b8a6','#a855f7','#f59e0b','#ef4444','#10b981','#f97316','#06b6d4','#8b5cf6'];
+// ── EMETIQ theme tokens ────────────────────────────────────────
+const ACCENT = '#F26A1B';
+const BG = '#FCFCFB';
+const INK = '#14140F';
+const MUTED = '#56564F';
+const FAINT = '#9A9A92';
+const HAIR = '#ECEBE6';
+const UP = '#138A50';
+const DOWN = '#D23B3B';
+const UP_BG = '#E7F6EE';
+const DOWN_BG = '#FBE9E9';
+const SANS = "'Plus Jakarta Sans', system-ui, sans-serif";
+const MONO = "'IBM Plex Mono', monospace";
+
+const CARD: React.CSSProperties = {
+  background: '#fff',
+  border: `1px solid ${HAIR}`,
+  borderRadius: 18,
+  boxShadow: '0 18px 44px -28px rgba(20,20,15,.24)',
+};
+
+const TH: React.CSSProperties = { padding: '13px 18px', textAlign: 'left', fontFamily: MONO, fontSize: 10.5, letterSpacing: '.06em', textTransform: 'uppercase', color: FAINT, fontWeight: 600, whiteSpace: 'nowrap' };
+const THR: React.CSSProperties = { ...TH, textAlign: 'right' };
+const TD: React.CSSProperties = { padding: '14px 18px', fontSize: 13, verticalAlign: 'middle' };
+const TDR: React.CSSProperties = { ...TD, textAlign: 'right', fontFamily: MONO };
+
+const DONUT_COLORS = ['#F26A1B', '#2563EB', '#0E9F6E', '#7C3AED', '#D97706', '#DB2777', '#0891B2', '#65A30D', '#DC2626'];
+
+const ID_MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Agu', 'Sep', 'Okt', 'Nov', 'Des'];
+
+function formatTanggal(d: string | null): string {
+  if (!d) return '-';
+  const [y, m, day] = d.split('-').map(Number);
+  if (!y || !m || !day) return d;
+  return `${day} ${ID_MONTHS[m - 1]} ${y}`;
+}
 
 function buildDonutPath(s: number, e: number, cx: number, cy: number, ro: number, ri: number) {
   const x1 = cx + ro * Math.cos(s), y1 = cy + ro * Math.sin(s);
@@ -24,42 +57,14 @@ function buildDonutPath(s: number, e: number, cx: number, cy: number, ro: number
   return `M ${x1} ${y1} A ${ro} ${ro} 0 ${la} 1 ${x2} ${y2} L ${ix1} ${iy1} A ${ri} ${ri} 0 ${la} 0 ${ix2} ${iy2} Z`;
 }
 
-const TAB_COLORS: Record<PortfolioTab, string> = {
-  USER: '#3b82f6',
-  GEMINI: '#14b8a6',
-  CLAUDE: '#a855f7',
-};
-
-const TAB_ACTIVE_CLASS: Record<PortfolioTab, string> = {
-  USER: 'bg-blue-600 text-white',
-  GEMINI: 'bg-teal-600 text-white',
-  CLAUDE: 'bg-purple-600 text-white',
-};
-
-interface SellModal {
-  open: boolean;
-  ticker: string;
-  maxLots: number;
-  currentPrice: number;
-  avgPrice: number;
-}
-
 export default function PortfolioPage() {
-  useEffect(() => { document.title = 'Portfolio — IDXAnalyst'; }, []);
-  const router = useRouter();
-  const { toast } = useToast();
-  const [data, setData] = useState<MultiPortfolioResponse | null>(null);
-  const [growth, setGrowth] = useState<Record<PortfolioTab, { date: string; value: number }[]> | null>(null);
+  useEffect(() => { document.title = 'Portofolio - EMETIQ'; }, []);
+  const [port, setPort] = useState<AgentPortfolio | null>(null);
+  const [growth, setGrowth] = useState<{ date: string; value: number }[]>([]);
   const [history, setHistory] = useState<TradeHistory[]>([]);
   const [loading, setLoading] = useState(true);
-  const [tabLoading, setTabLoading] = useState(false);
-  const [activeTab, setActiveTab] = useState<PortfolioTab>('USER');
-  const [sellModal, setSellModal] = useState<SellModal>({ open: false, ticker: '', maxLots: 0, currentPrice: 0, avgPrice: 0 });
-  const [sellQty, setSellQty] = useState(1);
-  const [isSelling, setIsSelling] = useState(false);
   const [viewMode, setViewMode] = useState<ViewMode>('portfolio');
-  const [histSearch, setHistSearch] = useState('');
-  const [histActionFilter, setHistActionFilter] = useState<'ALL' | 'BUY' | 'SELL'>('ALL');
+  const [histDate, setHistDate] = useState('');
   const [donutHovered, setDonutHovered] = useState<{ ticker: string; pct: number; value: number } | null>(null);
 
   const isInitialLoad = useRef(true);
@@ -68,81 +73,42 @@ export default function PortfolioPage() {
     const [portfolio, growthData, hist] = await Promise.all([
       api.getPortfolio(),
       api.getPortfolioGrowth(),
-      api.getTradeHistory(activeTab),
+      api.getTradeHistory('USER'),
     ]);
-    setData(portfolio);
-    setGrowth(growthData);
+    setPort(portfolio.USER);
+    setGrowth(growthData.USER ?? []);
     setHistory(hist);
-  }, [activeTab]);
+  }, []);
 
   useEffect(() => {
     if (isInitialLoad.current) {
       isInitialLoad.current = false;
       setLoading(true);
       refresh().finally(() => setLoading(false));
-    } else {
-      setTabLoading(true);
-      refresh().finally(() => setTabLoading(false));
     }
   }, [refresh]);
 
-  const openSellModal = (ticker: string, shares: number, currentPrice: number, avgPrice: number) => {
-    const maxLots = Math.floor(shares / 100);
-    setSellQty(1);
-    setSellModal({ open: true, ticker, maxLots, currentPrice, avgPrice });
-  };
-
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && sellModal.open) {
-        setSellModal({ open: false, ticker: '', maxLots: 0, currentPrice: 0, avgPrice: 0 });
-      }
-    };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [sellModal.open]);
-
-  const handleSell = async () => {
-    if (sellQty < 1 || sellQty > sellModal.maxLots) return;
-    setIsSelling(true);
-    try {
-      const res = await api.executeTrade(sellModal.ticker, 'SELL', sellQty, undefined, 'MANUAL', 'Sold from portfolio');
-      if (res.status === 'ok') {
-        setSellModal({ open: false, ticker: '', maxLots: 0, currentPrice: 0, avgPrice: 0 });
-        await refresh();
-      } else {
-        toast(res.detail || 'Gagal menjual saham', 'error');
-      }
-    } catch {
-      toast('Gagal menghubungi server', 'error');
-    } finally {
-      setIsSelling(false);
-    }
-  };
-
-  if (loading || !data) return (
-    <div className="min-h-screen bg-[#050505] flex items-center justify-center text-blue-500 font-mono text-xs uppercase tracking-widest">
-      Loading Combat Data...
+  if (loading || !port) return (
+    <div style={{ minHeight: '100vh', background: BG, fontFamily: MONO, color: ACCENT }} className="flex items-center justify-center text-xs tracking-[0.3em] uppercase animate-pulse">
+      Memuat portofolio...
     </div>
   );
 
-  const current = data[activeTab];
-  const growthData = growth?.[activeTab] ?? [];
+  const current = port;
   const totalReturn = current.total_value - INITIAL_MODAL;
   const totalReturnPct = ((totalReturn / INITIAL_MODAL) * 100).toFixed(2);
+  const totalUp = totalReturn >= 0;
+  const growthUp = growth.length > 1 ? growth[growth.length - 1].value >= growth[0].value : true;
 
-  // Trade history filter
-  const filteredHistory = history.filter(t => {
-    const matchTicker = t.ticker.toLowerCase().includes(histSearch.toLowerCase());
-    const matchAction = histActionFilter === 'ALL' || t.action === histActionFilter;
-    return matchTicker && matchAction;
-  });
+  // Trade history: newest first; show last 10 by default, or a chosen date
+  const sortedHistory = [...history].sort((a, b) => b.date.localeCompare(a.date) || b.id - a.id);
+  const displayedHistory = histDate ? sortedHistory.filter(t => t.date === histDate) : sortedHistory.slice(0, 10);
 
   const exportToCSV = () => {
-    if (filteredHistory.length === 0) return;
-    const header = ['Tanggal', 'Ticker', 'Aksi', 'Harga', 'Lot', 'Total', 'P&L', 'P&L %', 'Strategi', 'Catatan'];
-    const rows = filteredHistory.map(t => [
-      t.date,
+    if (displayedHistory.length === 0) return;
+    const header = ['Tanggal', 'Ticker', 'Aksi', 'Harga', 'Lot', 'Total', 'P&L', 'P&L %'];
+    const rows = displayedHistory.map(t => [
+      formatTanggal(t.date),
       t.ticker,
       t.action,
       t.price.toString(),
@@ -150,15 +116,13 @@ export default function PortfolioPage() {
       t.total_value.toLocaleString('id-ID'),
       t.pnl != null ? t.pnl.toLocaleString('id-ID') : '',
       t.pnl_pct != null ? t.pnl_pct.toFixed(2) + '%' : '',
-      t.strategy,
-      `"${(t.notes || '').replace(/"/g, '""')}"`,
     ]);
     const csv = [header, ...rows].map(r => r.join(',')).join('\n');
     const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `trade-history-${activeTab}-${new Date().toISOString().slice(0,10)}.csv`;
+    a.download = `riwayat-transaksi-${new Date().toISOString().slice(0, 10)}.csv`;
     a.click();
     URL.revokeObjectURL(url);
   };
@@ -169,9 +133,9 @@ export default function PortfolioPage() {
   const winRate = sellTrades.length > 0 ? (winCount / sellTrades.length * 100) : null;
 
   let maxDrawdownPct = 0;
-  if (growthData.length > 1) {
-    let peak = growthData[0].value;
-    for (const pt of growthData) {
+  if (growth.length > 1) {
+    let peak = growth[0].value;
+    for (const pt of growth) {
       if (pt.value > peak) peak = pt.value;
       const dd = peak > 0 ? (peak - pt.value) / peak * 100 : 0;
       if (dd > maxDrawdownPct) maxDrawdownPct = dd;
@@ -184,6 +148,7 @@ export default function PortfolioPage() {
     monthlyPnl[month] = (monthlyPnl[month] || 0) + (t.pnl || 0);
   }
   const monthlyRows = Object.entries(monthlyPnl).sort(([a], [b]) => b.localeCompare(a));
+  const maxMonthlyAbs = monthlyRows.length > 0 ? Math.max(...monthlyRows.map(([, v]) => Math.abs(v))) : 1;
 
   const totalInvested = current.assets.reduce((sum: number, a: PortfolioItem) => sum + a.cost_basis, 0);
   const allocData = [...current.assets]
@@ -203,378 +168,266 @@ export default function PortfolioPage() {
     return { ...seg, pathD: buildDonutPath(start, end, 100, 100, 80, 55) };
   });
 
-  const maxMonthlyAbs = monthlyRows.length > 0
-    ? Math.max(...monthlyRows.map(([, v]) => Math.abs(v)))
-    : 1;
+  const sectionLabel = (title: string, extra?: string): React.ReactNode => (
+    <div className="flex items-center gap-3 mb-4">
+      <h2 style={{ fontFamily: MONO, fontSize: 12, fontWeight: 600, letterSpacing: '.16em', textTransform: 'uppercase', color: FAINT }}>{title}</h2>
+      <span style={{ flex: 1, height: 1, background: HAIR }} />
+      {extra && <span style={{ fontFamily: MONO, fontSize: 11.5, color: FAINT }}>{extra}</span>}
+    </div>
+  );
 
   return (
-    <main className="min-h-screen bg-[#050505] text-white p-6 md:p-10 pt-24 md:pt-28 text-left font-mono">
-      <div className="max-w-7xl mx-auto">
+    <main style={{ minHeight: '100vh', background: BG, color: INK, fontFamily: SANS, WebkitFontSmoothing: 'antialiased' }}>
+      {/* Fonts — React 19 hoists these into <head> */}
+      <link rel="preconnect" href="https://fonts.googleapis.com" />
+      <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="" />
+      <link
+        href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500;600&display=swap"
+        rel="stylesheet"
+      />
 
-        {/* HEADER */}
-        <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-6 mb-10">
-          <div>
-            <h1 className="text-4xl font-black tracking-tighter mb-2">Portfolio <span className="text-blue-500">Battleground</span></h1>
-            <p className="text-gray-500 text-[10px] uppercase tracking-widest leading-loose font-bold">15 Million Capital Battle: Human vs Gemini vs Claude</p>
-          </div>
-          <div className="flex flex-wrap gap-2 p-1 bg-white/5 rounded-2xl border border-white/10 overflow-x-auto shadow-inner">
-            {(['USER', 'GEMINI', 'CLAUDE'] as PortfolioTab[]).map(tab => (
-              <button
-                key={tab}
-                onClick={() => setActiveTab(tab)}
-                className={`px-6 py-2 rounded-xl text-[10px] font-black tracking-widest transition-all ${activeTab === tab ? TAB_ACTIVE_CLASS[tab] : 'text-gray-500 hover:text-white'}`}
-              >
-                {tab}
-              </button>
-            ))}
-          </div>
+      <EmetiqNav active="portfolio" />
+
+      <div style={{ maxWidth: 1200, margin: '0 auto', padding: '28px 24px 80px' }}>
+        <div className="mb-6">
+          <h1 style={{ fontSize: 30, fontWeight: 800, letterSpacing: '-.02em' }}>Portofolio</h1>
+          <p style={{ marginTop: 4, fontSize: 14.5, color: MUTED }}>Posisi aktif, performa, dan riwayat transaksi kamu.</p>
         </div>
 
-        {/* TOTAL VALUE — Hero Number */}
-        <div className="bg-gradient-to-r from-white/[0.03] to-transparent border border-white/5 rounded-3xl p-8 mb-6 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+        {/* TOTAL VALUE */}
+        <div style={{ ...CARD, padding: 28, marginBottom: 24 }} className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
           <div>
-            <p className="text-[9px] font-black uppercase tracking-[0.4em] text-gray-500 mb-1">Total Portfolio Value</p>
-            <p className="text-4xl font-black font-mono">Rp {current.total_value.toLocaleString('id-ID')}</p>
+            <p style={{ fontFamily: MONO, fontSize: 11, fontWeight: 600, letterSpacing: '.16em', textTransform: 'uppercase', color: FAINT, marginBottom: 6 }}>Total Nilai Portofolio</p>
+            <p style={{ fontFamily: MONO, fontSize: 38, fontWeight: 600, letterSpacing: '-.01em' }}>Rp {current.total_value.toLocaleString('id-ID')}</p>
           </div>
           <div className="text-right">
-            <p className="text-[9px] font-black uppercase tracking-widest text-gray-500 mb-1">vs Modal Awal (15 Juta)</p>
-            <p className={`text-2xl font-black ${totalReturn >= 0 ? 'text-green-400' : 'text-red-400'}`}>
-              {totalReturn >= 0 ? '▲' : '▼'} {Math.abs(parseFloat(totalReturnPct))}%
+            <p style={{ fontFamily: MONO, fontSize: 10.5, fontWeight: 600, letterSpacing: '.1em', textTransform: 'uppercase', color: FAINT, marginBottom: 4 }}>vs Modal Awal Rp {INITIAL_MODAL.toLocaleString('id-ID')}</p>
+            <p style={{ fontFamily: MONO, fontSize: 22, fontWeight: 700, color: totalUp ? UP : DOWN }}>
+              {totalUp ? '▲' : '▼'} {Math.abs(parseFloat(totalReturnPct))}%
             </p>
-            <p className={`text-xs font-mono ${totalReturn >= 0 ? 'text-green-400/60' : 'text-red-400/60'}`}>
-              {totalReturn >= 0 ? '+' : ''}Rp {totalReturn.toLocaleString('id-ID')}
+            <p style={{ fontFamily: MONO, fontSize: 12.5, color: totalUp ? UP : DOWN }}>
+              {totalUp ? '+' : ''}Rp {totalReturn.toLocaleString('id-ID')}
             </p>
           </div>
         </div>
 
         {/* CORE STATS */}
-        <div className={`grid grid-cols-2 md:grid-cols-4 gap-4 mb-8 relative transition-opacity duration-200 ${tabLoading ? 'opacity-50' : 'opacity-100'}`}>
-          {tabLoading && (
-            <div className="absolute inset-0 flex items-center justify-center z-10 pointer-events-none">
-              <span className="text-[9px] font-black uppercase tracking-[0.4em] text-blue-400 animate-pulse">LOADING...</span>
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-7">
+          {[
+            { label: 'Kas Tersedia', value: `Rp ${current.modal.toLocaleString('id-ID')}`, color: current.modal < 0 ? DOWN : INK },
+            { label: 'Invested', value: `Rp ${current.invested.toLocaleString('id-ID')}`, color: INK },
+            { label: 'Unrealized', value: `${current.unrealized >= 0 ? '+' : ''}Rp ${current.unrealized.toLocaleString('id-ID')}`, color: current.unrealized >= 0 ? UP : DOWN },
+            { label: 'Realized', value: `${current.realized >= 0 ? '+' : ''}Rp ${current.realized.toLocaleString('id-ID')}`, color: current.realized >= 0 ? INK : DOWN },
+          ].map(s => (
+            <div key={s.label} style={{ ...CARD, padding: 20 }}>
+              <p style={{ fontFamily: MONO, fontSize: 10, fontWeight: 600, letterSpacing: '.12em', textTransform: 'uppercase', color: FAINT, marginBottom: 8 }}>{s.label}</p>
+              <p style={{ fontFamily: MONO, fontSize: 17, fontWeight: 600, color: s.color }}>{s.value}</p>
             </div>
-          )}
-          <div className="bg-white/[0.02] border border-white/5 p-6 rounded-2xl shadow-xl">
-            <p className="text-[9px] text-gray-500 uppercase tracking-widest mb-1 font-black">Kas Tersedia</p>
-            <p className={`text-lg font-black ${current.modal < 0 ? 'text-red-400' : 'text-white'}`}>
-              Rp {current.modal.toLocaleString('id-ID')}
-            </p>
-          </div>
-          <div className="bg-white/[0.02] border border-blue-500/20 p-6 rounded-2xl shadow-xl">
-            <p className="text-[9px] text-blue-500 uppercase tracking-widest mb-1 font-black">Invested</p>
-            <p className="text-lg font-black">Rp {current.invested.toLocaleString('id-ID')}</p>
-          </div>
-          <div className="bg-white/[0.02] border border-white/5 p-6 rounded-2xl shadow-xl">
-            <p className="text-[9px] text-green-500 uppercase tracking-widest mb-1 font-black">Unrealized</p>
-            <p className={`text-lg font-black ${current.unrealized >= 0 ? 'text-green-400' : 'text-red-400'}`}>
-              {current.unrealized >= 0 ? '+' : ''}Rp {current.unrealized.toLocaleString('id-ID')}
-            </p>
-          </div>
-          <div className="bg-white/[0.02] border border-white/5 p-6 rounded-2xl shadow-xl">
-            <p className="text-[9px] text-white uppercase tracking-widest mb-1 font-black">Realized</p>
-            <p className={`text-lg font-black ${current.realized >= 0 ? 'text-white' : 'text-red-400'}`}>
-              {current.realized >= 0 ? '+' : ''}Rp {current.realized.toLocaleString('id-ID')}
-            </p>
-          </div>
+          ))}
         </div>
 
         {/* VIEW TOGGLE */}
-        <div className="flex gap-1 p-1 bg-white/5 rounded-2xl border border-white/10 w-fit mb-8 shadow-inner">
-          <button
-            onClick={() => setViewMode('portfolio')}
-            className={`px-5 py-2 rounded-xl text-[10px] font-black tracking-widest transition-all ${viewMode === 'portfolio' ? 'bg-white/10 text-white' : 'text-gray-500 hover:text-white'}`}
-          >
-            PORTFOLIO
-          </button>
-          <button
-            onClick={() => setViewMode('analytics')}
-            className={`px-5 py-2 rounded-xl text-[10px] font-black tracking-widest transition-all ${viewMode === 'analytics' ? 'bg-white/10 text-white' : 'text-gray-500 hover:text-white'}`}
-          >
-            ANALYTICS
-          </button>
+        <div style={{ display: 'inline-flex', gap: 4, padding: 4, background: '#F2F1EC', borderRadius: 12, marginBottom: 28 }}>
+          {(['portfolio', 'analytics', 'riwayat'] as const).map(m => {
+            const active = viewMode === m;
+            const label = m === 'portfolio' ? 'Portofolio' : m === 'analytics' ? 'Analitik' : 'Riwayat';
+            return (
+              <button
+                key={m}
+                onClick={() => setViewMode(m)}
+                style={{ padding: '8px 18px', borderRadius: 9, fontSize: 12.5, fontWeight: 700, border: 'none', cursor: 'pointer', transition: 'all .15s ease', background: active ? '#fff' : 'transparent', color: active ? ACCENT : MUTED, boxShadow: active ? '0 1px 4px rgba(20,20,15,.08)' : 'none' }}
+              >
+                {label}
+              </button>
+            );
+          })}
         </div>
 
         {viewMode === 'portfolio' && (<>
-
-        {/* GROWTH CHART */}
-        <div className="bg-white/[0.01] border border-white/5 rounded-3xl p-8 mb-8 shadow-2xl">
-          <p className="text-[9px] font-black uppercase tracking-[0.4em] text-gray-500 mb-6">Portfolio Growth</p>
-          {growthData.length > 1 ? (
-            <EquityChart data={growthData} color={TAB_COLORS[activeTab]} height={220} />
-          ) : (
-            <div className="h-[220px] flex items-center justify-center text-gray-700 text-xs uppercase font-black tracking-widest opacity-40 italic">
-              No trade history to display
-            </div>
-          )}
-        </div>
-
-        {/* ACTIVE POSITIONS */}
-        <div className="mb-10">
-          <h2 className="text-xs font-black font-mono uppercase tracking-[0.4em] text-gray-500 mb-4 flex items-center gap-4">
-            <span className="w-8 h-px bg-white/10" />
-            Posisi Aktif
-            <span className="flex-1 h-px bg-white/10" />
-            <span className="text-gray-700 normal-case tracking-normal">{current.assets.length} posisi</span>
-          </h2>
-
-          <div className="bg-white/[0.01] border border-white/5 rounded-3xl overflow-hidden shadow-2xl">
-            <div className="overflow-x-auto -mx-2 sm:mx-0">
-            <table className="min-w-full text-left font-mono">
-              <thead>
-                <tr className="border-b border-white/5 text-[9px] font-black text-gray-600 uppercase tracking-[0.4em] bg-white/[0.02]">
-                  <th className="px-6 py-5">Instrument</th>
-                  <th className="px-6 py-5 text-right">Avg Buy</th>
-                  <th className="px-6 py-5 text-right">Harga Kini</th>
-                  <th className="px-6 py-5 text-right">Invested</th>
-                  <th className="px-6 py-5 text-right">Unrealized</th>
-                  <th className="px-6 py-5">Strategi</th>
-                  <th className="px-6 py-5 text-center">Aksi</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-white/[0.03]">
-                {current.assets.length === 0 ? (
-                  <tr>
-                    <td colSpan={7} className="px-8 py-24 text-center text-gray-700 italic text-[10px] uppercase font-black opacity-30">
-                      Belum ada posisi aktif untuk {activeTab}
-                    </td>
-                  </tr>
-                ) : (
-                  current.assets.map((item: PortfolioItem) => (
-                    <tr key={item.ticker} className="group hover:bg-white/[0.02] transition-all">
-                      <td className="px-6 py-5">
-                        <Link href={`/stocks/${item.ticker}`} className="block">
-                          <span className="text-lg font-black text-white group-hover:text-blue-400 transition-colors block leading-none">{item.ticker}</span>
-                          <span className="text-[9px] text-gray-600 uppercase font-black mt-1 block">{item.shares / 100} LOT</span>
-                          {item.last_date && (
-                            <span className="text-[8px] text-gray-700 font-mono block mt-0.5">data: {item.last_date}</span>
-                          )}
-                        </Link>
-                      </td>
-                      <td className="px-6 py-5 text-right text-xs font-mono text-gray-400">
-                        Rp {item.avg_price?.toLocaleString('id-ID')}
-                      </td>
-                      <td className="px-6 py-5 text-right">
-                        <span className="text-sm font-black font-mono text-white">
-                          Rp {item.current_price?.toLocaleString('id-ID')}
-                        </span>
-                      </td>
-                      <td className="px-6 py-5 text-right text-sm font-black text-blue-500/60">
-                        Rp {item.cost_basis.toLocaleString('id-ID')}
-                      </td>
-                      <td className="px-6 py-5 text-right">
-                        <div>
-                          <span className={`text-sm font-black ${item.unrealized_pnl >= 0 ? 'text-green-400' : 'text-red-400'}`}>
-                            {item.unrealized_pnl >= 0 ? '▲' : '▼'} Rp {Math.abs(item.unrealized_pnl).toLocaleString('id-ID')}
-                          </span>
-                          <span className={`block text-[9px] font-mono ${item.unrealized_pnl >= 0 ? 'text-green-400/60' : 'text-red-400/60'}`}>
-                            {item.cost_basis > 0 ? ((item.unrealized_pnl / item.cost_basis) * 100).toFixed(2) : '0.00'}%
-                          </span>
-                        </div>
-                      </td>
-                      <td className="px-6 py-5">
-                        <span className="text-[9px] font-black bg-white/5 px-2 py-1 rounded-full text-blue-400 uppercase">{item.strategy || 'MANUAL'}</span>
-                      </td>
-                      <td className="px-6 py-5 text-center">
-                        {activeTab === 'USER' && (
-                          <button
-                            onClick={() => openSellModal(item.ticker, item.shares, item.current_price ?? 0, item.avg_price ?? 0)}
-                            className="text-[9px] font-black px-4 py-1.5 rounded-lg bg-red-500/10 text-red-400 border border-red-500/20 hover:bg-red-500/20 transition-all uppercase tracking-widest"
-                          >
-                            SELL
-                          </button>
-                        )}
-                      </td>
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
-            </div>
-          </div>
-        </div>
-
-        {/* TRADE HISTORY */}
-        <div className="mb-10">
-          <h2 className="text-xs font-black font-mono uppercase tracking-[0.4em] text-gray-500 mb-4 flex items-center gap-4">
-            <span className="w-8 h-px bg-white/10" />
-            Trade History — {activeTab}
-            <span className="flex-1 h-px bg-white/10" />
-            <span className="text-gray-700 normal-case tracking-normal">{filteredHistory.length} transaksi</span>
-          </h2>
-
-          {/* FILTER BAR */}
-          <div className="bg-white/[0.02] border border-white/5 rounded-2xl p-4 mb-4 flex items-center gap-4 flex-wrap">
-            <input
-              type="text"
-              placeholder="Cari ticker..."
-              value={histSearch}
-              onChange={e => setHistSearch(e.target.value)}
-              className="bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-sm font-mono text-white focus:outline-none focus:border-blue-500/50 w-48 placeholder:text-gray-600"
-            />
-            <div className="flex p-1 bg-white/5 rounded-xl border border-white/10 gap-0.5">
-              {(['ALL', 'BUY', 'SELL'] as const).map(f => (
-                <button
-                  key={f}
-                  onClick={() => setHistActionFilter(f)}
-                  className={`px-4 py-1.5 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all ${
-                    histActionFilter === f
-                      ? f === 'ALL' ? 'bg-blue-600 text-white' : f === 'BUY' ? 'bg-green-600 text-white' : 'bg-red-600 text-white'
-                      : 'text-gray-500 hover:text-white'
-                  }`}
-                >
-                  {f}
-                </button>
-              ))}
-            </div>
-            {(histSearch || histActionFilter !== 'ALL') && (
-              <button
-                onClick={() => { setHistSearch(''); setHistActionFilter('ALL'); }}
-                className="text-[9px] font-black uppercase tracking-widest text-gray-600 hover:text-white transition-colors"
-              >
-                Reset
-              </button>
+          {/* GROWTH CHART */}
+          <div style={{ ...CARD, padding: 24, marginBottom: 28 }}>
+            <p style={{ fontFamily: MONO, fontSize: 11, fontWeight: 600, letterSpacing: '.16em', textTransform: 'uppercase', color: ACCENT, marginBottom: 16 }}>Pertumbuhan Portofolio</p>
+            {growth.length > 1 ? (
+              <EquityChart data={growth} color={growthUp ? UP : DOWN} height={220} light />
+            ) : (
+              <div style={{ height: 220, color: FAINT, fontSize: 13 }} className="flex items-center justify-center">
+                Belum ada riwayat untuk ditampilkan.
+              </div>
             )}
-            <span className="text-[9px] font-mono text-gray-700 ml-auto">{filteredHistory.length} / {history.length} transaksi</span>
-            <button
-              onClick={exportToCSV}
-              disabled={filteredHistory.length === 0}
-              title="Export ke CSV"
-              className="text-[8px] font-black uppercase tracking-widest px-3 py-1.5 rounded-xl border border-white/10 text-gray-500 hover:text-white hover:border-white/30 transition-all disabled:opacity-30"
-            >
-              ↓ CSV
-            </button>
           </div>
 
-          <div className="bg-white/[0.01] border border-white/5 rounded-3xl overflow-hidden shadow-2xl">
-            <div className="overflow-x-auto -mx-2 sm:mx-0">
-            <table className="min-w-full text-left font-mono">
-              <thead>
-                <tr className="border-b border-white/5 text-[9px] font-black text-gray-600 uppercase tracking-[0.4em] bg-white/[0.02]">
-                  <th className="px-6 py-5">Tanggal</th>
-                  <th className="px-6 py-5">Ticker</th>
-                  <th className="px-6 py-5 text-center">Aksi</th>
-                  <th className="px-6 py-5 text-center">Lot</th>
-                  <th className="px-6 py-5 text-right">Harga</th>
-                  <th className="px-6 py-5 text-right">Total Nilai</th>
-                  <th className="px-6 py-5 text-right">P&L</th>
-                  <th className="px-6 py-5">Strategi</th>
-                  <th className="px-6 py-5 text-xs text-gray-500 italic max-w-[160px]">Alasan</th>
-                  <th className="px-6 py-5" />
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-white/[0.03]">
-                {filteredHistory.length === 0 ? (
-                  <tr>
-                    <td colSpan={10} className="px-8 py-24 text-center text-gray-700 italic text-[10px] uppercase font-black opacity-30">
-                      {history.length === 0 ? `Belum ada riwayat transaksi untuk ${activeTab}` : 'Tidak ada transaksi yang cocok dengan filter'}
-                    </td>
-                  </tr>
-                ) : (
-                  filteredHistory.map((t) => (
-                    <tr
-                      key={t.id}
-                      onClick={() => router.push(`/portfolio/trade/${t.id}`)}
-                      className="group hover:bg-white/[0.03] transition-all cursor-pointer"
-                    >
-                      <td className="px-6 py-4 text-xs text-gray-500">{t.date}</td>
-                      <td className="px-6 py-4">
-                        <span className="text-sm font-black group-hover:text-blue-400 transition-colors">
-                          {t.ticker}
-                        </span>
-                      </td>
-                      <td className="px-6 py-4 text-center">
-                        <span className={`text-[9px] font-black px-3 py-1 rounded-full uppercase tracking-widest ${
-                          t.action === 'BUY'
-                            ? 'bg-green-500/10 text-green-400 border border-green-500/20'
-                            : 'bg-red-500/10 text-red-400 border border-red-500/20'
-                        }`}>
-                          {t.action}
-                        </span>
-                      </td>
-                      <td className="px-6 py-4 text-center text-sm font-bold">{t.quantity}</td>
-                      <td className="px-6 py-4 text-right text-sm font-mono">
-                        Rp {t.price.toLocaleString('id-ID')}
-                      </td>
-                      <td className="px-6 py-4 text-right">
-                        <span className={`text-sm font-black font-mono ${t.action === 'BUY' ? 'text-red-400/70' : 'text-green-400/70'}`}>
-                          {t.action === 'BUY' ? '-' : '+'}Rp {t.total_value.toLocaleString('id-ID')}
-                        </span>
-                      </td>
-                      <td className="px-6 py-4 text-right">
-                        {t.pnl !== null ? (
-                          <div>
-                            <span className={`text-sm font-black font-mono ${t.pnl >= 0 ? 'text-green-400' : 'text-red-400'}`}>
-                              {t.pnl >= 0 ? '+' : ''}Rp {Math.abs(t.pnl).toLocaleString('id-ID', { maximumFractionDigits: 0 })}
-                            </span>
-                            <span className={`block text-[9px] font-mono ${t.pnl_pct! >= 0 ? 'text-green-400/60' : 'text-red-400/60'}`}>
-                              {t.pnl_pct! >= 0 ? '+' : ''}{t.pnl_pct?.toFixed(2)}%
-                            </span>
-                          </div>
-                        ) : (
-                          <span className="text-gray-700 text-xs">—</span>
-                        )}
-                      </td>
-                      <td className="px-6 py-4">
-                        <span className="text-[9px] font-black bg-white/5 px-2 py-1 rounded-full text-blue-400 uppercase">{t.strategy}</span>
-                      </td>
-                      <td className="px-6 py-4 text-xs text-gray-500 italic max-w-[160px] truncate" title={t.notes || ''}>
-                        {t.notes || '—'}
-                      </td>
-                      <td className="px-6 py-4 text-right">
-                        <span className="text-gray-700 group-hover:text-white transition-colors text-sm font-black">→</span>
-                      </td>
+          {/* ACTIVE POSITIONS */}
+          <div className="mb-9">
+            {sectionLabel('Kepemilikan Saham')}
+            <div style={{ ...CARD, padding: 0, overflow: 'hidden' }}>
+              <div className="overflow-x-auto">
+                <table className="min-w-full" style={{ borderCollapse: 'collapse' }}>
+                  <thead>
+                    <tr style={{ borderBottom: `1px solid ${HAIR}`, background: '#FBFBF9' }}>
+                      <th style={TH}>Instrumen</th>
+                      <th style={THR}>Invested</th>
+                      <th style={THR}>Market Price</th>
+                      <th style={THR}>P&amp;L</th>
                     </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
+                  </thead>
+                  <tbody>
+                    {current.assets.length === 0 ? (
+                      <tr><td colSpan={4} style={{ padding: '64px 18px', textAlign: 'center', color: FAINT, fontSize: 13 }}>Belum ada posisi aktif.</td></tr>
+                    ) : (
+                      current.assets.map((item: PortfolioItem, i) => {
+                        const lots = item.shares / 100;
+                        const marketTotal = (item.current_price ?? 0) * item.shares;
+                        const up = item.unrealized_pnl >= 0;
+                        const pct = item.cost_basis > 0 ? (item.unrealized_pnl / item.cost_basis) * 100 : 0;
+                        return (
+                          <tr key={item.ticker} className="emx-listrow" style={{ borderBottom: i < current.assets.length - 1 ? '1px solid #F2F1EC' : 'none' }}>
+                            <td style={TD}>
+                              <Link href={`/stocks/${item.ticker}`} style={{ textDecoration: 'none', color: INK }} className="emx-link">
+                                <span style={{ fontWeight: 700, fontSize: 15 }}>{item.ticker}</span>
+                              </Link>
+                            </td>
+                            <td style={TDR}>
+                              <span style={{ fontWeight: 600, display: 'block' }}>Rp {item.cost_basis.toLocaleString('id-ID')}</span>
+                              <span style={{ fontSize: 10.5, color: FAINT, display: 'block', marginTop: 2 }}>Rp {item.avg_price?.toLocaleString('id-ID')}</span>
+                            </td>
+                            <td style={TDR}>
+                              <span style={{ fontWeight: 600, display: 'block' }}>Rp {marketTotal.toLocaleString('id-ID')}</span>
+                              <span style={{ fontSize: 10.5, color: FAINT, display: 'block', marginTop: 2 }}>{lots} lot</span>
+                            </td>
+                            <td style={TDR}>
+                              <span style={{ fontWeight: 700, color: up ? UP : DOWN, display: 'block' }}>
+                                {up ? '▲' : '▼'} Rp {Math.abs(item.unrealized_pnl).toLocaleString('id-ID')}
+                              </span>
+                              <span style={{ fontSize: 10.5, color: up ? UP : DOWN, opacity: .8, display: 'block', marginTop: 2 }}>
+                                {up ? '+' : ''}{pct.toFixed(2)}%
+                              </span>
+                            </td>
+                          </tr>
+                        );
+                      })
+                    )}
+                  </tbody>
+                </table>
+              </div>
             </div>
           </div>
-        </div>
 
         </>)}
 
+        {viewMode === 'riwayat' && (
+          <div className="mb-4">
+            {sectionLabel('Riwayat Transaksi', histDate ? formatTanggal(histDate) : '10 terakhir')}
+
+            {/* FILTER BAR: date only */}
+            <div style={{ ...CARD, padding: 14, marginBottom: 14 }} className="flex items-center gap-3 flex-wrap">
+              <label style={{ fontFamily: MONO, fontSize: 11.5, color: MUTED }}>Pilih tanggal</label>
+              <input
+                type="date"
+                value={histDate}
+                onChange={e => setHistDate(e.target.value)}
+                className="emx-input"
+                style={{ background: '#fff', border: `1px solid ${HAIR}`, borderRadius: 10, padding: '8px 12px', fontSize: 13, fontFamily: MONO, color: INK }}
+              />
+              {histDate && (
+                <button onClick={() => setHistDate('')} style={{ fontFamily: MONO, fontSize: 11.5, color: FAINT, background: 'none', border: 'none', cursor: 'pointer' }}>Tampilkan 10 terakhir</button>
+              )}
+              <span style={{ marginLeft: 'auto', fontFamily: MONO, fontSize: 11, color: FAINT }}>{displayedHistory.length} transaksi</span>
+              <button
+                onClick={exportToCSV}
+                disabled={displayedHistory.length === 0}
+                title="Export ke CSV"
+                className="emx-pill"
+                style={{ fontFamily: MONO, fontSize: 10.5, fontWeight: 700, color: MUTED, border: `1px solid ${HAIR}`, background: '#fff', padding: '7px 12px', borderRadius: 8, cursor: 'pointer', opacity: displayedHistory.length === 0 ? 0.4 : 1 }}
+              >
+                ↓ CSV
+              </button>
+            </div>
+
+            <div style={{ ...CARD, padding: 0, overflow: 'hidden' }}>
+              <div className="overflow-x-auto">
+                <table className="min-w-full" style={{ borderCollapse: 'collapse' }}>
+                  <thead>
+                    <tr style={{ borderBottom: `1px solid ${HAIR}`, background: '#FBFBF9' }}>
+                      <th style={TH}>Tanggal</th>
+                      <th style={TH}>Ticker</th>
+                      <th style={{ ...TH, textAlign: 'center' }}>Aksi</th>
+                      <th style={THR}>Lot</th>
+                      <th style={THR}>Harga</th>
+                      <th style={THR}>Total Nilai</th>
+                      <th style={THR}>P&amp;L</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {displayedHistory.length === 0 ? (
+                      <tr><td colSpan={7} style={{ padding: '64px 18px', textAlign: 'center', color: FAINT, fontSize: 13 }}>{history.length === 0 ? 'Belum ada riwayat transaksi.' : 'Tidak ada transaksi pada tanggal ini.'}</td></tr>
+                    ) : (
+                      displayedHistory.map((t, i) => (
+                        <tr key={t.id} className="emx-listrow" style={{ borderBottom: i < displayedHistory.length - 1 ? '1px solid #F2F1EC' : 'none' }}>
+                          <td style={{ ...TD, color: MUTED, whiteSpace: 'nowrap' }}>{formatTanggal(t.date)}</td>
+                          <td style={{ ...TD, fontWeight: 700 }}>{t.ticker}</td>
+                          <td style={{ ...TD, textAlign: 'center' }}>
+                            <span style={{ fontFamily: MONO, fontSize: 10.5, fontWeight: 700, color: t.action === 'BUY' ? UP : DOWN, background: t.action === 'BUY' ? UP_BG : DOWN_BG, padding: '3px 9px', borderRadius: 7 }}>{t.action}</span>
+                          </td>
+                          <td style={{ ...TDR, fontWeight: 600 }}>{t.quantity}</td>
+                          <td style={TDR}>Rp {t.price.toLocaleString('id-ID')}</td>
+                          <td style={{ ...TDR, color: t.action === 'BUY' ? DOWN : UP }}>
+                            {t.action === 'BUY' ? '-' : '+'}Rp {t.total_value.toLocaleString('id-ID')}
+                          </td>
+                          <td style={TDR}>
+                            {t.pnl !== null ? (
+                              <>
+                                <span style={{ fontWeight: 700, color: t.pnl >= 0 ? UP : DOWN, display: 'block' }}>
+                                  {t.pnl >= 0 ? '+' : ''}Rp {Math.abs(t.pnl).toLocaleString('id-ID', { maximumFractionDigits: 0 })}
+                                </span>
+                                <span style={{ fontSize: 10.5, color: (t.pnl_pct ?? 0) >= 0 ? UP : DOWN, opacity: .8, display: 'block', marginTop: 2 }}>
+                                  {(t.pnl_pct ?? 0) >= 0 ? '+' : ''}{t.pnl_pct?.toFixed(2)}%
+                                </span>
+                              </>
+                            ) : (
+                              <span style={{ color: '#B6B6AE' }}>-</span>
+                            )}
+                          </td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        )}
+
         {viewMode === 'analytics' && (
-          <div className="pb-20">
-            {/* RISK METRICS */}
-            <h2 className="text-xs font-black font-mono uppercase tracking-[0.4em] text-gray-500 mb-4 flex items-center gap-4">
-              <span className="w-8 h-px bg-white/10" />Risk Metrics<span className="flex-1 h-px bg-white/10" />
-            </h2>
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-10">
-              <div className="bg-white/[0.02] border border-white/5 p-6 rounded-2xl">
-                <p className="text-[9px] text-gray-500 uppercase tracking-widest mb-1 font-black">Win Rate</p>
-                <p className={`text-2xl font-black ${winRate !== null && winRate >= 50 ? 'text-green-400' : 'text-red-400'}`}>
-                  {winRate !== null ? `${winRate.toFixed(1)}%` : '—'}
-                </p>
-                <p className="text-[9px] text-gray-600 mt-1">{winCount} menang / {sellTrades.length} SELL</p>
+          <div className="pb-4">
+            {sectionLabel('Metrik Risiko')}
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-9">
+              <div style={{ ...CARD, padding: 20 }}>
+                <p style={{ fontFamily: MONO, fontSize: 10, fontWeight: 600, letterSpacing: '.12em', textTransform: 'uppercase', color: FAINT, marginBottom: 8 }}>Win Rate</p>
+                <p style={{ fontSize: 24, fontWeight: 800, color: winRate !== null && winRate >= 50 ? UP : DOWN }}>{winRate !== null ? `${winRate.toFixed(1)}%` : '-'}</p>
+                <p style={{ fontSize: 11, color: FAINT, marginTop: 4 }}>{winCount} menang / {sellTrades.length} jual</p>
               </div>
-              <div className="bg-white/[0.02] border border-white/5 p-6 rounded-2xl">
-                <p className="text-[9px] text-gray-500 uppercase tracking-widest mb-1 font-black">Max Drawdown</p>
-                <p className="text-2xl font-black text-red-400">
-                  {maxDrawdownPct > 0 ? `-${maxDrawdownPct.toFixed(2)}%` : '—'}
-                </p>
-                <p className="text-[9px] text-gray-600 mt-1">dari puncak tertinggi</p>
+              <div style={{ ...CARD, padding: 20 }}>
+                <p style={{ fontFamily: MONO, fontSize: 10, fontWeight: 600, letterSpacing: '.12em', textTransform: 'uppercase', color: FAINT, marginBottom: 8 }}>Max Drawdown</p>
+                <p style={{ fontSize: 24, fontWeight: 800, color: DOWN }}>{maxDrawdownPct > 0 ? `-${maxDrawdownPct.toFixed(2)}%` : '-'}</p>
+                <p style={{ fontSize: 11, color: FAINT, marginTop: 4 }}>dari puncak tertinggi</p>
               </div>
-              <div className="bg-white/[0.02] border border-white/5 p-6 rounded-2xl">
-                <p className="text-[9px] text-gray-500 uppercase tracking-widest mb-1 font-black">Total Trades</p>
-                <p className="text-2xl font-black text-white">{history.length}</p>
-                <p className="text-[9px] text-gray-600 mt-1">{history.filter(t => t.action === 'BUY').length} BUY · {sellTrades.length} SELL</p>
+              <div style={{ ...CARD, padding: 20 }}>
+                <p style={{ fontFamily: MONO, fontSize: 10, fontWeight: 600, letterSpacing: '.12em', textTransform: 'uppercase', color: FAINT, marginBottom: 8 }}>Total Transaksi</p>
+                <p style={{ fontSize: 24, fontWeight: 800 }}>{history.length}</p>
+                <p style={{ fontSize: 11, color: FAINT, marginTop: 4 }}>{history.filter(t => t.action === 'BUY').length} beli · {sellTrades.length} jual</p>
               </div>
-              <div className="bg-white/[0.02] border border-white/5 p-6 rounded-2xl">
-                <p className="text-[9px] text-gray-500 uppercase tracking-widest mb-1 font-black">Realized P&L</p>
-                <p className={`text-2xl font-black ${current.realized >= 0 ? 'text-green-400' : 'text-red-400'}`}>
-                  {current.realized >= 0 ? '+' : ''}Rp {Math.round(current.realized).toLocaleString('id-ID')}
-                </p>
-                <p className="text-[9px] text-gray-600 mt-1">dari transaksi SELL</p>
+              <div style={{ ...CARD, padding: 20 }}>
+                <p style={{ fontFamily: MONO, fontSize: 10, fontWeight: 600, letterSpacing: '.12em', textTransform: 'uppercase', color: FAINT, marginBottom: 8 }}>Realized P&amp;L</p>
+                <p style={{ fontSize: 24, fontWeight: 800, color: current.realized >= 0 ? UP : DOWN }}>{current.realized >= 0 ? '+' : ''}Rp {Math.round(current.realized).toLocaleString('id-ID')}</p>
+                <p style={{ fontSize: 11, color: FAINT, marginTop: 4 }}>dari transaksi jual</p>
               </div>
             </div>
 
-            {/* ALLOCATION + MONTHLY P&L */}
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-              <div className="bg-white/[0.01] border border-white/5 rounded-3xl p-8">
-                <p className="text-[9px] font-black uppercase tracking-[0.4em] text-gray-500 mb-6">Alokasi Portofolio</p>
+              <div style={{ ...CARD, padding: 24 }}>
+                <p style={{ fontFamily: MONO, fontSize: 11, fontWeight: 600, letterSpacing: '.16em', textTransform: 'uppercase', color: ACCENT, marginBottom: 18 }}>Alokasi Portofolio</p>
                 {allocData.length === 0 ? (
-                  <div className="h-40 flex items-center justify-center text-gray-700 text-xs uppercase font-black opacity-30 italic">Tidak ada posisi aktif</div>
+                  <div style={{ height: 160, color: FAINT, fontSize: 13 }} className="flex items-center justify-center">Tidak ada posisi aktif.</div>
                 ) : (
                   <div className="flex flex-col md:flex-row items-center gap-8">
                     <svg viewBox="0 0 200 200" className="w-40 h-40 shrink-0">
@@ -583,40 +436,34 @@ export default function PortfolioPage() {
                           key={seg.ticker}
                           d={seg.pathD}
                           fill={seg.color}
-                          opacity={donutHovered ? (donutHovered.ticker === seg.ticker ? 1 : 0.75) : 0.9}
+                          opacity={donutHovered ? (donutHovered.ticker === seg.ticker ? 1 : 0.5) : 0.92}
                           cursor="pointer"
                           onMouseEnter={() => setDonutHovered({ ticker: seg.ticker, pct: seg.pct, value: seg.value })}
                           onMouseLeave={() => setDonutHovered(null)}
                         />
                       ))}
-                      <circle cx="100" cy="100" r="40" fill="#050505" />
+                      <circle cx="100" cy="100" r="46" fill="#fff" />
                       {donutHovered ? (
                         <>
-                          <text x="100" y="93" textAnchor="middle" fill="white" fontSize="10" fontWeight="bold" fontFamily="monospace">
-                            {donutHovered.ticker}
-                          </text>
-                          <text x="100" y="106" textAnchor="middle" fill="#22C55E" fontSize="9" fontFamily="monospace">
-                            {donutHovered.pct.toFixed(1)}%
-                          </text>
+                          <text x="100" y="95" textAnchor="middle" fill={INK} fontSize="13" fontWeight="bold" fontFamily="monospace">{donutHovered.ticker}</text>
+                          <text x="100" y="110" textAnchor="middle" fill={ACCENT} fontSize="11" fontFamily="monospace">{donutHovered.pct.toFixed(1)}%</text>
                         </>
                       ) : (
                         <>
-                          <text x="100" y="97" textAnchor="middle" fill="white" fontSize="14" fontWeight="bold" fontFamily="monospace">
-                            {current.assets.length}
-                          </text>
-                          <text x="100" y="111" textAnchor="middle" fill="#555" fontSize="8" fontFamily="monospace">STOCKS</text>
+                          <text x="100" y="98" textAnchor="middle" fill={INK} fontSize="18" fontWeight="bold" fontFamily="monospace">{current.assets.length}</text>
+                          <text x="100" y="112" textAnchor="middle" fill={FAINT} fontSize="8" fontFamily="monospace">SAHAM</text>
                         </>
                       )}
                     </svg>
-                    <div className="flex-1 space-y-2.5 min-w-0">
+                    <div className="flex-1 space-y-2.5 min-w-0" style={{ width: '100%' }}>
                       {allocData.map(seg => (
                         <div key={seg.ticker} className="flex items-center gap-2">
-                          <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: seg.color }} />
-                          <span className="text-xs font-black text-white shrink-0 w-16">{seg.ticker}</span>
-                          <div className="flex-1 bg-white/5 rounded-full h-1.5 min-w-0">
-                            <div className="h-1.5 rounded-full transition-all" style={{ width: `${seg.pct}%`, background: seg.color }} />
+                          <span className="shrink-0" style={{ width: 10, height: 10, borderRadius: '50%', background: seg.color }} />
+                          <span className="shrink-0" style={{ fontWeight: 700, fontSize: 12.5, width: 64 }}>{seg.ticker}</span>
+                          <div className="flex-1 min-w-0" style={{ background: '#F2F1EC', borderRadius: 999, height: 6 }}>
+                            <div style={{ height: 6, borderRadius: 999, width: `${seg.pct}%`, background: seg.color }} />
                           </div>
-                          <span className="text-[9px] font-mono text-gray-500 shrink-0 w-10 text-right">{seg.pct.toFixed(1)}%</span>
+                          <span className="shrink-0" style={{ fontFamily: MONO, fontSize: 11, color: FAINT, width: 44, textAlign: 'right' }}>{seg.pct.toFixed(1)}%</span>
                         </div>
                       ))}
                     </div>
@@ -624,22 +471,19 @@ export default function PortfolioPage() {
                 )}
               </div>
 
-              <div className="bg-white/[0.01] border border-white/5 rounded-3xl p-8">
-                <p className="text-[9px] font-black uppercase tracking-[0.4em] text-gray-500 mb-6">P&L Bulanan</p>
+              <div style={{ ...CARD, padding: 24 }}>
+                <p style={{ fontFamily: MONO, fontSize: 11, fontWeight: 600, letterSpacing: '.16em', textTransform: 'uppercase', color: ACCENT, marginBottom: 18 }}>P&amp;L Bulanan</p>
                 {monthlyRows.length === 0 ? (
-                  <div className="h-40 flex items-center justify-center text-gray-700 text-xs uppercase font-black opacity-30 italic">Belum ada transaksi SELL</div>
+                  <div style={{ height: 160, color: FAINT, fontSize: 13 }} className="flex items-center justify-center">Belum ada transaksi jual.</div>
                 ) : (
-                  <div className="space-y-2 max-h-72 overflow-y-auto custom-scrollbar pr-1">
+                  <div className="space-y-2 emx-scroll" style={{ maxHeight: 288, overflowY: 'auto', paddingRight: 4 }}>
                     {monthlyRows.map(([month, pnl]) => (
-                      <div key={month} className="flex items-center gap-4 py-2 border-b border-white/[0.04] last:border-0">
-                        <span className="text-xs font-black text-gray-400 shrink-0 w-16">{month}</span>
-                        <div className="flex-1 bg-white/5 rounded-full h-1.5">
-                          <div
-                            className={`h-1.5 rounded-full ${pnl >= 0 ? 'bg-green-500' : 'bg-red-500'}`}
-                            style={{ width: `${Math.min(100, Math.abs(pnl) / maxMonthlyAbs * 100)}%` }}
-                          />
+                      <div key={month} className="flex items-center gap-4 py-2" style={{ borderBottom: '1px solid #F2F1EC' }}>
+                        <span className="shrink-0" style={{ fontFamily: MONO, fontSize: 12, fontWeight: 600, color: MUTED, width: 64 }}>{month}</span>
+                        <div className="flex-1" style={{ background: '#F2F1EC', borderRadius: 999, height: 6 }}>
+                          <div style={{ height: 6, borderRadius: 999, background: pnl >= 0 ? UP : DOWN, width: `${Math.min(100, Math.abs(pnl) / maxMonthlyAbs * 100)}%` }} />
                         </div>
-                        <span className={`text-xs font-black font-mono shrink-0 w-36 text-right ${pnl >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                        <span className="shrink-0" style={{ fontFamily: MONO, fontSize: 12, fontWeight: 700, color: pnl >= 0 ? UP : DOWN, width: 128, textAlign: 'right' }}>
                           {pnl >= 0 ? '+' : ''}Rp {Math.round(pnl).toLocaleString('id-ID')}
                         </span>
                       </div>
@@ -650,91 +494,20 @@ export default function PortfolioPage() {
             </div>
           </div>
         )}
-
       </div>
 
-      {/* SELL MODAL */}
-      {sellModal.open && (
-        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-[#0f0f0f] border border-white/10 rounded-3xl p-8 w-full max-w-sm shadow-2xl">
-            <h3 className="text-xl font-black mb-1">Jual <span className="text-red-400">{sellModal.ticker}</span></h3>
-            <p className="text-gray-500 text-xs mb-6">Posisi: {sellModal.maxLots} lot tersedia</p>
-
-            <div className="mb-6">
-              <label className="text-[9px] font-black uppercase tracking-widest text-gray-500 block mb-2">Jumlah Lot</label>
-              <div className="flex items-center gap-3">
-                <button
-                  onClick={() => setSellQty(q => Math.max(1, q - 1))}
-                  className="w-10 h-10 rounded-xl bg-white/5 border border-white/10 font-black text-lg hover:bg-white/10 transition-all"
-                >
-                  −
-                </button>
-                <input
-                  type="number"
-                  value={sellQty}
-                  min={1}
-                  max={sellModal.maxLots}
-                  onChange={(e) => setSellQty(Math.min(sellModal.maxLots, Math.max(1, parseInt(e.target.value) || 1)))}
-                  className="flex-1 bg-black/40 border border-white/10 rounded-xl px-4 py-3 text-center font-black text-xl text-red-400 focus:outline-none focus:border-red-500/50"
-                />
-                <button
-                  onClick={() => setSellQty(q => Math.min(sellModal.maxLots, q + 1))}
-                  className="w-10 h-10 rounded-xl bg-white/5 border border-white/10 font-black text-lg hover:bg-white/10 transition-all"
-                >
-                  +
-                </button>
-              </div>
-              <button
-                onClick={() => setSellQty(sellModal.maxLots)}
-                className="mt-2 text-[9px] text-red-400/60 hover:text-red-400 font-black uppercase tracking-widest transition-colors"
-              >
-                Jual semua ({sellModal.maxLots} lot)
-              </button>
-            </div>
-
-            {/* P&L Preview */}
-            <div className="mb-6 bg-white/[0.02] border border-white/5 rounded-2xl p-4 space-y-2">
-              <div className="flex justify-between items-center">
-                <span className="text-[9px] font-black uppercase tracking-widest text-gray-500">Estimasi Dana Masuk</span>
-                <span className="text-sm font-black font-mono text-white">
-                  Rp {(sellModal.currentPrice * sellQty * 100).toLocaleString('id-ID')}
-                </span>
-              </div>
-              <div className="flex justify-between items-center">
-                <span className="text-[9px] font-black uppercase tracking-widest text-gray-500">Est. P&amp;L</span>
-                {(() => {
-                  const pnl = (sellModal.currentPrice - sellModal.avgPrice) * sellQty * 100;
-                  const isProfit = pnl >= 0;
-                  return (
-                    <span className={`text-sm font-black font-mono ${isProfit ? 'text-green-400' : 'text-red-400'}`}>
-                      {isProfit ? '+' : ''}Rp {Math.abs(pnl).toLocaleString('id-ID', { maximumFractionDigits: 0 })}
-                    </span>
-                  );
-                })()}
-              </div>
-            </div>
-
-            <div className="flex gap-3">
-              <button
-                onClick={() => setSellModal({ open: false, ticker: '', maxLots: 0, currentPrice: 0, avgPrice: 0 })}
-                className="flex-1 py-3 rounded-xl border border-white/10 text-[10px] font-black uppercase tracking-widest text-gray-500 hover:text-white hover:border-white/20 transition-all"
-              >
-                Batal
-              </button>
-              <button
-                onClick={handleSell}
-                disabled={isSelling}
-                className="flex-1 py-3 rounded-xl bg-red-600 hover:bg-red-500 text-white text-[10px] font-black uppercase tracking-widest transition-all disabled:opacity-50"
-              >
-                {isSelling ? 'Menjual...' : `Jual ${sellQty} Lot`}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-      <style jsx>{`
-        .custom-scrollbar::-webkit-scrollbar { width: 4px; }
-        .custom-scrollbar::-webkit-scrollbar-thumb { background: #333; border-radius: 10px; }
+      <style jsx global>{`
+        .emx-listrow { transition: background .14s ease; }
+        .emx-listrow:hover { background: #FBFBF9; }
+        .emx-link:hover span:first-child { color: ${ACCENT}; }
+        .emx-input { transition: border-color .15s ease, box-shadow .15s ease; }
+        .emx-input:focus { outline: none; border-color: color-mix(in oklab, ${ACCENT}, white 50%); box-shadow: 0 0 0 3px color-mix(in oklab, ${ACCENT}, transparent 86%); }
+        .emx-input::placeholder { color: #A9A9A1; }
+        .emx-pill { transition: background .14s ease, color .14s ease, border-color .14s ease; }
+        .emx-pill:hover { background: ${ACCENT}; color: #fff !important; border-color: ${ACCENT}; }
+        .emx-scroll::-webkit-scrollbar { width: 6px; }
+        .emx-scroll::-webkit-scrollbar-thumb { background: #E2E1DB; border-radius: 10px; }
+        ::selection { background: color-mix(in oklab, ${ACCENT}, white 70%); }
       `}</style>
     </main>
   );

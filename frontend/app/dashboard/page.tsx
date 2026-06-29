@@ -2,11 +2,41 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { api, Stock, MultiPortfolioResponse, OHLCV } from '@/lib/api';
+import { INDEX_MEMBERS, INDEX_TABS, IndexKey } from '@/lib/indices';
 import Link from 'next/link';
+import EmetiqNav from '@/components/EmetiqNav';
 import { useToast } from '@/components/Toast';
 import dynamic from 'next/dynamic';
 
 const StockChart = dynamic(() => import("@/components/StockChart"), { ssr: false });
+
+// ── EMETIQ theme tokens (mirrors app/page.tsx landing) ─────────
+const ACCENT = '#F26A1B';
+const BG = '#FCFCFB';
+const INK = '#14140F';
+const MUTED = '#56564F';
+const FAINT = '#9A9A92';
+const HAIR = '#ECEBE6';
+const UP = '#138A50';
+const DOWN = '#D23B3B';
+const UP_BG = '#E7F6EE';
+const DOWN_BG = '#FBE9E9';
+const SANS = "'Plus Jakarta Sans', system-ui, sans-serif";
+const MONO = "'IBM Plex Mono', monospace";
+
+const CARD: React.CSSProperties = {
+  background: '#fff',
+  border: `1px solid ${HAIR}`,
+  borderRadius: 18,
+  boxShadow: '0 18px 44px -28px rgba(20,20,15,.24)',
+};
+
+// Categorical colors for the three trading agents (semantic legend, not decoration)
+const AGENT = {
+  USER: { fg: '#1F6FEB', bg: '#EAF1FE', label: 'User' },
+  GEMINI: { fg: '#0E8F7E', bg: '#E4F5F1', label: 'Gemini' },
+  CLAUDE: { fg: '#7A5AF8', bg: '#EFEBFE', label: 'Claude' },
+};
 
 interface Signal {
   ticker: string;
@@ -30,7 +60,7 @@ interface SyncStatus {
 }
 
 export default function Dashboard() {
-  useEffect(() => { document.title = 'Dashboard — IDXAnalyst'; }, []);
+  useEffect(() => { document.title = 'Dashboard - EMETIQ'; }, []);
   const [stocks, setStocks] = useState<Stock[]>([]);
   const [portfolio, setPortfolio] = useState<MultiPortfolioResponse | null>(null);
   const [signals, setSignals] = useState<Signal[]>([]);
@@ -42,7 +72,11 @@ export default function Dashboard() {
   const syncPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [watchlist, setWatchlist] = useState<Set<string>>(new Set());
-  const [showWatchlistOnly, setShowWatchlistOnly] = useState(false);
+  const [activeIndex, setActiveIndex] = useState<'ALL' | IndexKey>('ALL');
+  const [sortKey, setSortKey] = useState<'name' | 'price' | 'change'>('name');
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc');
+  const [visibleCount, setVisibleCount] = useState(30); // progressive (infinite-scroll) render window
+  const loadMoreRef = useRef<HTMLDivElement | null>(null);
 
   const [newTicker, setNewTicker] = useState('');
   const [isAdding, setIsAdding] = useState(false);
@@ -77,10 +111,14 @@ export default function Dashboard() {
 
   const loadData = async () => {
     try {
+      // IHSG: only ~2 months of recent data (lighter payload, easier to read)
+      const fromDate = new Date();
+      fromDate.setMonth(fromDate.getMonth() - 2);
+      const ihsgFrom = fromDate.toISOString().slice(0, 10);
       const [stocksData, portfolioData, ihsg, signalsData] = await Promise.all([
         api.getStocks(),
         api.getPortfolio(),
-        api.getOHLCV('^JKSE'),
+        api.getOHLCV('^JKSE', ihsgFrom),
         api.getSignals()
       ]);
       setStocks(stocksData);
@@ -163,20 +201,60 @@ export default function Dashboard() {
 
   // Gabungkan semua portofolio untuk total P&L jika portfolio sudah terisi
   const totalUnrealized = portfolio ? (portfolio.USER.unrealized + portfolio.GEMINI.unrealized + portfolio.CLAUDE.unrealized) : 0;
-  
+
   const filteredSignals = signals.filter(sig =>
     minMarketCap === 0 || (sig.market_cap != null && sig.market_cap >= minMarketCap)
   );
 
   const filteredStocks = stocks.filter(s =>
     s.ticker !== '^JKSE' &&
-    (!showWatchlistOnly || watchlist.has(s.ticker)) &&
+    (activeIndex === 'ALL' || INDEX_MEMBERS[activeIndex].includes(s.ticker)) &&
     (s.ticker.toLowerCase().includes(searchTerm.toLowerCase()) || s.name.toLowerCase().includes(searchTerm.toLowerCase()))
   );
+
+  const visibleStocks = [...filteredStocks].sort((a, b) => {
+    let cmp = 0;
+    if (sortKey === 'name') cmp = a.ticker.localeCompare(b.ticker);
+    else if (sortKey === 'price') cmp = (a.last_price ?? 0) - (b.last_price ?? 0);
+    else cmp = (a.change_pct ?? 0) - (b.change_pct ?? 0);
+    return sortDir === 'asc' ? cmp : -cmp;
+  });
+
+  const toggleSort = (key: 'name' | 'price' | 'change') => {
+    if (sortKey === key) {
+      setSortDir(d => (d === 'asc' ? 'desc' : 'asc'));
+    } else {
+      setSortKey(key);
+      setSortDir(key === 'name' ? 'asc' : 'desc');
+    }
+  };
+
+  const shownStocks = visibleStocks.slice(0, visibleCount);
+  const hasMore = visibleCount < visibleStocks.length;
+
+  // Reset the render window whenever the filters/sort change
+  useEffect(() => {
+    setVisibleCount(30);
+  }, [activeIndex, sortKey, sortDir, searchTerm]);
+
+  // Infinite scroll: reveal more rows as the sentinel enters the viewport
+  useEffect(() => {
+    const el = loadMoreRef.current;
+    if (!el) return;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0].isIntersecting) setVisibleCount(c => c + 30);
+      },
+      { rootMargin: '300px' }
+    );
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [hasMore, visibleStocks.length]);
 
   const currentIhsg = ihsgData[ihsgData.length - 1]?.close || 0;
   const prevIhsg = ihsgData[ihsgData.length - 2]?.close || 0;
   const ihsgChange = currentIhsg - prevIhsg;
+  const ihsgUp = ihsgChange >= 0;
 
   const dataLastDate = stocks.length > 0
     ? stocks.filter(s => s.last_date).map(s => s.last_date!).sort().at(-1) ?? null
@@ -190,215 +268,207 @@ export default function Dashboard() {
     return diffDays >= 2; // stale if 2+ days old (accounts for weekends)
   })();
 
-  if (loading && stocks.length === 0) return <div className="min-h-screen bg-[#050505] flex items-center justify-center animate-pulse text-blue-500 font-mono tracking-widest uppercase text-xs">Initializing Terminal...</div>;
+  if (loading && stocks.length === 0) return (
+    <div
+      style={{ minHeight: '100vh', background: BG, fontFamily: MONO, color: ACCENT }}
+      className="flex items-center justify-center text-xs tracking-[0.3em] uppercase animate-pulse"
+    >
+      Memuat terminal...
+    </div>
+  );
 
   return (
-    <main className="min-h-screen bg-[#050505] text-white p-4 md:p-8 pt-24 md:pt-28">
-      <div className="max-w-7xl mx-auto">
+    <main style={{ minHeight: '100vh', background: BG, color: INK, fontFamily: SANS, WebkitFontSmoothing: 'antialiased' }}>
+      {/* Fonts — React 19 hoists these into <head> */}
+      <link rel="preconnect" href="https://fonts.googleapis.com" />
+      <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="" />
+      <link
+        href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500;600&display=swap"
+        rel="stylesheet"
+      />
+
+      <EmetiqNav active="market" />
+
+      <div style={{ maxWidth: 1200, margin: '0 auto', padding: '28px 24px 80px' }}>
 
         {isDataStale && (
-          <div className="bg-amber-500/10 border border-amber-500/20 rounded-2xl px-5 py-3 mb-6 flex items-center gap-3">
-            <span className="text-amber-400 text-sm">⚠</span>
-            <span className="text-[10px] font-black text-amber-400 uppercase tracking-widest">
-              Data terakhir: {dataLastDate} — Sync diperlukan
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 24, padding: '12px 18px', borderRadius: 12, background: `color-mix(in oklab, ${ACCENT}, white 90%)`, border: `1px solid color-mix(in oklab, ${ACCENT}, white 78%)` }}>
+            <span style={{ color: ACCENT }}>⚠</span>
+            <span style={{ fontSize: 12.5, fontWeight: 700, color: `color-mix(in oklab, ${ACCENT}, black 20%)` }}>
+              Data terakhir {dataLastDate}, sync diperlukan
             </span>
-            <span className="text-[9px] font-mono text-amber-400/60 ml-auto">
-              Klik SYNC DATA untuk memperbarui
+            <span style={{ marginLeft: 'auto', fontFamily: MONO, fontSize: 11, color: FAINT }}>
+              Klik Sync untuk memperbarui
             </span>
           </div>
         )}
 
-        {/* TOP SECTION: IHSG & AI SIGNALS */}
-        <div className="grid grid-cols-1 xl:grid-cols-12 gap-6 mb-10 text-left">
-          <div className="xl:col-span-7 bg-white/[0.02] border border-white/10 rounded-[2.5rem] p-8 shadow-2xl relative overflow-hidden group">
-            <div className="flex justify-between items-start mb-6">
-               <div>
-                  <p className="text-[9px] font-black text-blue-500 uppercase tracking-[0.4em] mb-1">Jakarta Composite</p>
-                  <h1 className="text-3xl font-black">IHSG INDEX</h1>
-               </div>
-               <div className="text-right">
-                  <p className="text-2xl font-mono font-bold">Rp {currentIhsg.toLocaleString('id-ID')}</p>
-                  <p className={`text-xs font-mono font-bold ${ihsgChange >= 0 ? 'text-green-400' : 'text-red-400'}`}>
-                    {ihsgChange >= 0 ? '▲' : '▼'} {Math.abs((ihsgChange/prevIhsg)*100).toFixed(2)}%
-                  </p>
-               </div>
+        {/* IHSG INDEX */}
+        <div style={{ ...CARD, padding: 28, marginBottom: 32 }}>
+          <div className="flex justify-between items-start mb-5 gap-4">
+            <div>
+              <p style={{ fontFamily: MONO, fontSize: 11, fontWeight: 600, letterSpacing: '.16em', textTransform: 'uppercase', color: ACCENT, marginBottom: 6 }}>Jakarta Composite</p>
+              <h1 style={{ fontSize: 28, fontWeight: 800, letterSpacing: '-.02em' }}>IHSG</h1>
             </div>
-            <div className="h-56">
-               <StockChart data={ihsgData} height={220} transparent={true} />
+            <div className="flex items-center gap-4">
+              <button onClick={handleSync} disabled={isSyncing} className="emx-btn" style={{ background: '#F2F1EC', color: MUTED, padding: '7px 13px', borderRadius: 999, fontSize: 11.5, fontWeight: 700, border: 'none', cursor: 'pointer', opacity: isSyncing ? 0.5 : 1 }}>
+                {isSyncing ? 'Syncing...' : '⟳ Sync'}
+              </button>
+              <div className="text-right">
+                <p style={{ fontFamily: MONO, fontSize: 24, fontWeight: 600 }}>{currentIhsg.toLocaleString('id-ID')}</p>
+                <span style={{ fontFamily: MONO, fontSize: 12, fontWeight: 600, color: ihsgUp ? UP : DOWN, background: ihsgUp ? UP_BG : DOWN_BG, padding: '3px 9px', borderRadius: 7, display: 'inline-block', marginTop: 4 }}>
+                  {ihsgUp ? '▲' : '▼'} {prevIhsg ? Math.abs((ihsgChange / prevIhsg) * 100).toFixed(2) : '0.00'}%
+                </span>
+              </div>
             </div>
           </div>
-
-          <div className="xl:col-span-5 flex flex-col gap-6">
-             <div className="bg-gradient-to-br from-teal-600/10 to-transparent border border-teal-500/20 rounded-[2.5rem] p-8 flex-1 flex flex-col">
-                <div className="flex justify-between items-center mb-3">
-                   <h2 className="text-[10px] font-black text-teal-400 uppercase tracking-[0.4em]">AI Intelligence Signals</h2>
-                   <div className="flex gap-2">
-                     <button onClick={handleSync} disabled={isSyncing} className="bg-white/10 hover:bg-white/20 text-white px-3 py-1.5 rounded-full text-[8px] font-black tracking-widest uppercase disabled:opacity-50 transition-all">
-                       {isSyncing ? 'SYNCING...' : '⟳ SYNC'}
-                     </button>
-                     <button onClick={handleScan} disabled={isScanning} className="bg-teal-500 hover:bg-teal-400 text-black px-4 py-1.5 rounded-full text-[8px] font-black tracking-widest uppercase disabled:opacity-50 transition-all">
-                       {isScanning ? 'SCANNING...' : 'AUTO SCAN'}
-                     </button>
-                   </div>
-                </div>
-                <div className="flex gap-1.5 mb-4">
-                  {MARKET_CAP_FILTERS.map(f => (
-                    <button
-                      key={f.value}
-                      onClick={() => setMinMarketCap(f.value)}
-                      className={`text-[7px] font-black uppercase tracking-widest px-2.5 py-1 rounded-full transition-all ${
-                        minMarketCap === f.value
-                          ? 'bg-teal-500 text-black'
-                          : 'bg-white/10 text-gray-400 hover:bg-white/20'
-                      }`}
-                    >
-                      {f.label}
-                    </button>
-                  ))}
-                </div>
-                <div className="flex-1 overflow-y-auto max-h-[180px] custom-scrollbar pr-2">
-                   {filteredSignals.length === 0 ? (
-                     <div className="h-full flex flex-col items-center justify-center opacity-30 italic text-xs">
-                        <p>{signals.length === 0 ? 'No active signals found.' : 'No signals match this filter.'}</p>
-                     </div>
-                   ) : (
-                     <div className="space-y-3">
-                        {filteredSignals.map((sig, i) => (
-                          <Link href={`/stocks/${sig.ticker}`} key={i} className="block group bg-white/5 border border-white/5 hover:border-teal-500/30 p-4 rounded-2xl transition-all">
-                             <div className="flex justify-between items-center mb-1">
-                                <div>
-                                  <span className="text-sm font-black group-hover:text-teal-400 transition-colors">{sig.ticker}</span>
-                                  {sig.name && <p className="text-[7px] text-gray-600 font-mono truncate w-28">{sig.name}</p>}
-                                </div>
-                                <span className="text-[8px] font-black bg-teal-500 text-black px-2 py-0.5 rounded uppercase tracking-tighter">{sig.max_strength}%</span>
-                             </div>
-                             <div className="flex flex-wrap gap-1 mt-1.5">
-                                {sig.strategies.map((strategy, j) => (
-                                  <span key={j} className="text-[7px] font-bold bg-white/10 text-gray-300 px-1.5 py-0.5 rounded uppercase tracking-tight">{strategy}</span>
-                                ))}
-                             </div>
-                          </Link>
-                        ))}
-                     </div>
-                   )}
-                </div>
-             </div>
+          <div style={{ height: 224 }}>
+            <StockChart data={ihsgData.slice(-44)} height={220} transparent light chartType="line" interactive={false} lineColor={ihsgUp ? UP : DOWN} />
           </div>
         </div>
 
-        {/* STATS */}
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-10 text-left text-left">
-          <div className="col-span-1 md:col-span-2 p-8 rounded-3xl bg-white/[0.03] border border-white/5 flex flex-col justify-center">
-             <p className="text-gray-500 text-[10px] font-mono uppercase tracking-[0.3em] mb-2">Assets Tracked</p>
-             <p className="text-5xl font-black font-mono">{stocks.length}</p>
+        {/* MARKET LIST */}
+        <div className="mb-5">
+          <div className="flex items-center justify-between mb-4 gap-3">
+            <h2 style={{ fontFamily: MONO, fontSize: 12, fontWeight: 600, letterSpacing: '.18em', textTransform: 'uppercase', color: FAINT }}>Market Terminal</h2>
+            <span style={{ fontFamily: MONO, fontSize: 11.5, color: FAINT }}>{visibleStocks.length} saham</span>
           </div>
-          <div className="p-8 rounded-3xl bg-white/[0.02] border border-white/5 flex flex-col justify-center">
-             <p className="text-gray-600 text-[9px] font-mono uppercase mb-4 tracking-widest font-bold text-gray-500">Total Unrealized</p>
-             <p className={`text-2xl font-black font-mono ${totalUnrealized >= 0 ? 'text-green-400' : 'text-red-400'}`}>
-                Rp {totalUnrealized.toLocaleString('id-ID')}
-             </p>
-          </div>
-          <div className="p-8 rounded-3xl bg-white/[0.02] border border-white/5 flex flex-col justify-center text-right">
-             <p className="text-gray-600 text-[9px] font-mono uppercase mb-2 tracking-widest font-bold">Positions</p>
-             <div className="flex flex-col gap-1">
-                <span className="text-xs font-bold text-blue-400 font-mono">User: {portfolio?.USER.assets.length || 0}</span>
-                <span className="text-xs font-bold text-teal-400 font-mono">Gemini: {portfolio?.GEMINI.assets.length || 0}</span>
-                <span className="text-xs font-bold text-purple-400 font-mono">Claude: {portfolio?.CLAUDE.assets.length || 0}</span>
-             </div>
+
+          {/* Index quick actions */}
+          <div className="flex gap-2 overflow-x-auto emx-scroll" style={{ paddingBottom: 4 }}>
+            {INDEX_TABS.map(tab => {
+              const active = activeIndex === tab.key;
+              return (
+                <button
+                  key={tab.key}
+                  onClick={() => setActiveIndex(tab.key)}
+                  style={{ flex: 'none', fontSize: 13, fontWeight: 700, padding: '8px 16px', borderRadius: 999, cursor: 'pointer', transition: 'all .15s ease', border: `1px solid ${active ? ACCENT : HAIR}`, background: active ? ACCENT : '#fff', color: active ? '#fff' : MUTED, boxShadow: active ? `0 2px 10px color-mix(in oklab, ${ACCENT}, transparent 70%)` : 'none' }}
+                >
+                  {tab.label}
+                </button>
+              );
+            })}
           </div>
         </div>
 
-        {/* MARKET GRID */}
-        <div className="flex flex-col md:flex-row justify-between items-center mb-8 gap-4 px-2">
-           <div className="flex items-center gap-4">
-             <h2 className="text-xs font-black font-mono uppercase tracking-[0.4em] text-gray-500">Market Terminal</h2>
-             <button
-               onClick={() => setShowWatchlistOnly(v => !v)}
-               className={`text-[9px] font-black uppercase tracking-widest px-3 py-1.5 rounded-full transition-all ${showWatchlistOnly ? 'bg-yellow-400 text-black' : 'bg-white/5 text-gray-500 hover:bg-white/10'}`}
-             >
-               ★ Watchlist {showWatchlistOnly && `(${watchlist.size})`}
-             </button>
-           </div>
-           <input
-              type="text"
-              placeholder="Search assets..."
-              className="bg-white/5 border border-white/10 rounded-xl px-6 py-3 text-xs focus:outline-none focus:border-blue-500/50 w-full md:w-80 shadow-inner"
-              onChange={(e) => setSearchTerm(e.target.value)}
-            />
+        {/* Controls: sort + search */}
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 mb-4">
+          <div className="flex items-center gap-2 flex-wrap">
+            <span style={{ fontSize: 12, fontWeight: 600, color: FAINT }}>Urut</span>
+            {([['name', 'Nama'], ['price', 'Harga'], ['change', '%']] as const).map(([key, label]) => {
+              const active = sortKey === key;
+              return (
+                <button
+                  key={key}
+                  onClick={() => toggleSort(key)}
+                  style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 12, fontWeight: 700, padding: '6px 11px', borderRadius: 999, cursor: 'pointer', transition: 'all .15s ease', border: `1px solid ${active ? ACCENT : HAIR}`, background: active ? `color-mix(in oklab, ${ACCENT}, white 88%)` : '#fff', color: active ? ACCENT : MUTED }}
+                >
+                  {label}{active && <span style={{ fontSize: 9 }}>{sortDir === 'asc' ? '▲' : '▼'}</span>}
+                </button>
+              );
+            })}
+          </div>
+          <input
+            type="text"
+            placeholder="Cari saham..."
+            className="emx-input w-full md:w-72"
+            style={{ background: '#fff', border: `1px solid ${HAIR}`, borderRadius: 11, padding: '10px 16px', fontSize: 13, color: INK, fontFamily: SANS }}
+            onChange={(e) => setSearchTerm(e.target.value)}
+          />
         </div>
-        
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 pb-20 px-2 text-left text-left text-left">
-          {filteredStocks.map((stock) => {
-            const hasUser = portfolio?.USER.assets.some(p => p.ticker === stock.ticker);
-            const hasGemini = portfolio?.GEMINI.assets.some(p => p.ticker === stock.ticker);
-            const hasClaude = portfolio?.CLAUDE.assets.some(p => p.ticker === stock.ticker);
-            
-            return (
-              <Link key={stock.ticker} href={`/stocks/${stock.ticker}`} className="group p-6 rounded-3xl bg-white/[0.02] border border-white/5 hover:border-blue-500/30 hover:bg-white/[0.04] transition-all relative overflow-hidden shadow-sm">
-                <div className="flex justify-between items-start mb-6">
-                  <div>
-                    <h3 className="text-2xl font-black group-hover:text-blue-400 transition-colors leading-none mb-1">{stock.ticker}</h3>
-                    <p className="text-[9px] text-gray-600 font-mono uppercase truncate w-32">{stock.name}</p>
+
+        {/* List */}
+        <div style={{ ...CARD, padding: 0, overflow: 'hidden' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: '24px minmax(0,1fr) 100px 82px', gap: 10, alignItems: 'center', padding: '11px 18px', background: '#FBFBF9', borderBottom: `1px solid ${HAIR}`, fontFamily: MONO, fontSize: 10.5, letterSpacing: '.06em', textTransform: 'uppercase', color: FAINT }}>
+            <span />
+            <span>Saham</span>
+            <span style={{ textAlign: 'right' }}>Harga</span>
+            <span style={{ textAlign: 'right' }}>Chg</span>
+          </div>
+
+          {visibleStocks.length === 0 ? (
+            <div style={{ padding: '44px 18px', textAlign: 'center', color: FAINT, fontSize: 13 }}>
+              Tidak ada saham yang cocok dengan filter ini.
+            </div>
+          ) : (
+            shownStocks.map((stock, i) => {
+              const owners = (['USER', 'GEMINI', 'CLAUDE'] as const).filter(
+                key => portfolio?.[key].assets.some(p => p.ticker === stock.ticker)
+              );
+              const starred = watchlist.has(stock.ticker);
+              const up = stock.change_pct != null && stock.change_pct >= 0;
+
+              return (
+                <Link
+                  key={stock.ticker}
+                  href={`/stocks/${stock.ticker}`}
+                  className="emx-listrow"
+                  style={{ display: 'grid', gridTemplateColumns: '24px minmax(0,1fr) 100px 82px', gap: 10, alignItems: 'center', padding: '12px 18px', borderBottom: i < shownStocks.length - 1 ? '1px solid #F2F1EC' : 'none', textDecoration: 'none', color: INK }}
+                >
+                  <button
+                    onClick={(e) => toggleWatchlist(e, stock.ticker)}
+                    style={{ fontSize: 15, lineHeight: 1, background: 'none', border: 'none', cursor: 'pointer', color: starred ? ACCENT : '#D6D5CE', transition: 'color .15s ease' }}
+                    title={starred ? 'Hapus dari watchlist' : 'Tambah ke watchlist'}
+                  >★</button>
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2">
+                      <span style={{ fontWeight: 700, fontSize: 14 }}>{stock.ticker}</span>
+                      {owners.map(key => (
+                        <span key={key} style={{ fontSize: 9, fontWeight: 700, background: AGENT[key].bg, color: AGENT[key].fg, padding: '1px 6px', borderRadius: 5 }}>{AGENT[key].label}</span>
+                      ))}
+                    </div>
+                    <p style={{ fontFamily: MONO, fontSize: 11, color: FAINT, marginTop: 2 }} className="truncate">{stock.name}</p>
                   </div>
-                  <div className="flex flex-col gap-1 items-end">
-                    <button
-                      onClick={(e) => toggleWatchlist(e, stock.ticker)}
-                      className={`text-base leading-none transition-colors ${watchlist.has(stock.ticker) ? 'text-yellow-400' : 'text-gray-700 hover:text-yellow-400'}`}
-                      title={watchlist.has(stock.ticker) ? 'Remove from watchlist' : 'Add to watchlist'}
-                    >★</button>
-                    {hasUser && <span className="px-2 py-0.5 rounded bg-blue-500 text-black text-[7px] font-black uppercase">User</span>}
-                    {hasGemini && <span className="px-2 py-0.5 rounded bg-teal-500 text-black text-[7px] font-black uppercase">Gemini</span>}
-                    {hasClaude && <span className="px-2 py-0.5 rounded bg-purple-500 text-white text-[7px] font-black uppercase tracking-tighter">Claude</span>}
-                  </div>
-                </div>
-                <div className="flex justify-between items-end border-t border-white/[0.03] pt-4">
-                   <div>
-                      <p className="text-[8px] font-mono text-gray-700 uppercase mb-1 font-black">Quote Value</p>
-                      <p className="text-sm font-bold font-mono">Rp {stock.last_price?.toLocaleString('id-ID')}</p>
-                   </div>
-                   <div className="flex flex-col items-end gap-1">
-                      {stock.change_pct != null && (
-                        <span className={`text-[10px] font-black font-mono ${stock.change_pct >= 0 ? 'text-green-400' : 'text-red-400'}`}>
-                          {stock.change_pct >= 0 ? '▲' : '▼'} {Math.abs(stock.change_pct).toFixed(2)}%
-                        </span>
-                      )}
-                      {stock.last_date && (
-                        <p className="text-[8px] font-mono text-gray-700">{stock.last_date}</p>
-                      )}
-                   </div>
-                </div>
-              </Link>
-            );
-          })}
+                  <span style={{ fontFamily: MONO, fontSize: 14, fontWeight: 600, textAlign: 'right' }}>
+                    {stock.last_price != null ? stock.last_price.toLocaleString('id-ID') : '-'}
+                  </span>
+                  <span style={{ display: 'flex', justifyContent: 'flex-end' }}>
+                    {stock.change_pct != null ? (
+                      <span style={{ fontFamily: MONO, fontSize: 11, fontWeight: 600, color: up ? UP : DOWN, background: up ? UP_BG : DOWN_BG, padding: '2px 7px', borderRadius: 6 }}>
+                        {up ? '▲' : '▼'} {Math.abs(stock.change_pct).toFixed(2)}%
+                      </span>
+                    ) : (
+                      <span style={{ fontFamily: MONO, fontSize: 11, color: '#B6B6AE' }}>-</span>
+                    )}
+                  </span>
+                </Link>
+              );
+            })
+          )}
+
+          {hasMore && (
+            <div ref={loadMoreRef} style={{ padding: '14px 18px', textAlign: 'center', fontFamily: MONO, fontSize: 11, color: FAINT, borderTop: '1px solid #F2F1EC' }}>
+              Memuat saham lainnya...
+            </div>
+          )}
         </div>
       </div>
-      <style jsx>{`
-        .custom-scrollbar::-webkit-scrollbar { width: 4px; }
-        .custom-scrollbar::-webkit-scrollbar-thumb { background: #333; border-radius: 10px; }
-      `}</style>
 
       {/* Sync Progress Toast */}
       {isSyncing && (
-        <div className="fixed bottom-6 right-6 z-50 w-80 bg-[#0d0d0d] border border-white/10 rounded-2xl p-5 shadow-2xl">
+        <div style={{ position: 'fixed', bottom: 24, right: 24, zIndex: 50, width: 320, maxWidth: 'calc(100vw - 32px)', ...CARD, padding: 20 }}>
           <div className="flex items-center justify-between mb-3">
             <div className="flex items-center gap-2">
-              <span className="inline-block w-2 h-2 rounded-full bg-teal-400 animate-pulse" />
-              <span className="text-[9px] font-black text-teal-400 uppercase tracking-widest">
+              <span style={{ width: 8, height: 8, borderRadius: '50%', background: ACCENT, display: 'inline-block' }} className="animate-pulse" />
+              <span style={{ fontSize: 12, fontWeight: 700, color: `color-mix(in oklab, ${ACCENT}, black 12%)` }}>
                 {syncStatus?.phase_label || 'Memulai sync...'}
               </span>
             </div>
             {syncStatus && syncStatus.total > 0 && (
-              <span className="text-[9px] font-mono text-gray-500">
+              <span style={{ fontFamily: MONO, fontSize: 11, color: FAINT }}>
                 {syncStatus.done} / {syncStatus.total}
               </span>
             )}
           </div>
 
           {/* Progress bar */}
-          <div className="w-full bg-white/5 rounded-full h-1.5 mb-3">
+          <div style={{ width: '100%', background: '#F2F1EC', borderRadius: 999, height: 6, marginBottom: 12 }}>
             <div
-              className="bg-teal-500 h-1.5 rounded-full transition-all duration-500"
               style={{
+                background: ACCENT,
+                height: 6,
+                borderRadius: 999,
+                transition: 'width .5s ease',
                 width: syncStatus && syncStatus.total > 0
                   ? `${Math.round((syncStatus.done / syncStatus.total) * 100)}%`
                   : '5%'
@@ -408,14 +478,14 @@ export default function Dashboard() {
 
           <div className="flex items-center justify-between">
             {syncStatus?.current ? (
-              <p className="text-[8px] font-mono text-gray-600 truncate flex-1">
-                <span className="text-gray-500">→</span> {syncStatus.current}
+              <p style={{ fontFamily: MONO, fontSize: 10.5, color: FAINT }} className="truncate flex-1">
+                <span style={{ color: '#B6B6AE' }}>→</span> {syncStatus.current}
               </p>
             ) : (
-              <p className="text-[8px] font-mono text-gray-700 italic">Menghubungi server...</p>
+              <p style={{ fontFamily: MONO, fontSize: 10.5, color: '#B6B6AE', fontStyle: 'italic' }}>Menghubungi server...</p>
             )}
             {syncStatus && syncStatus.errors > 0 && (
-              <span className="text-[8px] font-mono text-red-500 ml-2 shrink-0">
+              <span style={{ fontFamily: MONO, fontSize: 10.5, color: DOWN, marginLeft: 8, flex: 'none' }}>
                 {syncStatus.errors} error
               </span>
             )}
@@ -425,14 +495,69 @@ export default function Dashboard() {
 
       {/* Sync Done Toast — tampil sebentar setelah selesai */}
       {!isSyncing && syncStatus?.phase === 'done' && (
-        <div className="fixed bottom-6 right-6 z-50 w-80 bg-[#0d0d0d] border border-teal-500/30 rounded-2xl p-5 shadow-2xl">
+        <div style={{ position: 'fixed', bottom: 24, right: 24, zIndex: 50, width: 320, maxWidth: 'calc(100vw - 32px)', ...CARD, border: `1px solid color-mix(in oklab, ${ACCENT}, white 60%)`, padding: 20 }}>
           <div className="flex items-center gap-2">
-            <span className="text-teal-400 text-sm">✓</span>
-            <span className="text-[9px] font-black text-teal-400 uppercase tracking-widest">Sync Selesai</span>
+            <span style={{ color: UP, fontSize: 14 }}>✓</span>
+            <span style={{ fontSize: 12, fontWeight: 700, color: INK }}>Sync Selesai</span>
           </div>
-          <p className="text-[8px] font-mono text-gray-500 mt-1">{syncStatus.message}</p>
+          <p style={{ fontFamily: MONO, fontSize: 10.5, color: FAINT, marginTop: 4 }}>{syncStatus.message}</p>
         </div>
       )}
+
+      <style jsx global>{`
+        .emx-card {
+          transition: transform .18s ease, box-shadow .18s ease, border-color .18s ease;
+        }
+        .emx-card:hover {
+          transform: translateY(-3px);
+          border-color: color-mix(in oklab, ${ACCENT}, white 55%);
+          box-shadow: 0 22px 48px -26px rgba(20, 20, 15, .3);
+        }
+        .emx-card:hover h3 {
+          color: ${ACCENT};
+        }
+        .emx-row {
+          transition: border-color .15s ease, background .15s ease;
+        }
+        .emx-row:hover {
+          border-color: color-mix(in oklab, ${ACCENT}, white 58%);
+          background: #fff;
+        }
+        .emx-listrow {
+          transition: background .14s ease;
+        }
+        .emx-listrow:hover {
+          background: #FBFBF9;
+        }
+        .emx-input::placeholder {
+          color: #A9A9A1;
+        }
+        .emx-input:focus {
+          outline: none;
+          border-color: color-mix(in oklab, ${ACCENT}, white 50%);
+          box-shadow: 0 0 0 3px color-mix(in oklab, ${ACCENT}, transparent 86%);
+        }
+        .emx-btn {
+          transition: transform .15s ease, filter .15s ease;
+        }
+        .emx-btn:hover {
+          transform: translateY(-1px);
+          filter: brightness(1.03);
+        }
+        .emx-btn:active {
+          transform: translateY(0);
+        }
+        .emx-scroll::-webkit-scrollbar {
+          width: 6px;
+        }
+        .emx-scroll::-webkit-scrollbar-thumb {
+          background: #E2E1DB;
+          border-radius: 10px;
+        }
+        ::selection {
+          background: color-mix(in oklab, ${ACCENT}, white 70%);
+        }
+      `}</style>
     </main>
   );
 }

@@ -50,6 +50,17 @@ export default function LandingPage() {
     document.title = 'EMETIQ — Monitoring Saham';
   }, []);
 
+  // Smooth-scroll nav clicks, offsetting the 68px sticky header
+  const handleNavClick = (e: React.MouseEvent, targetId: string, key: string) => {
+    e.preventDefault();
+    setActiveMenu(key);
+    setFeatureOpen(false);
+    const el = document.getElementById(targetId);
+    if (!el) return;
+    const top = el.getBoundingClientRect().top + window.scrollY - 68;
+    window.scrollTo({ top: Math.max(0, top), behavior: 'smooth' });
+  };
+
   const menuItemStyle = (key: string): React.CSSProperties => ({
     textDecoration: 'none',
     color: activeMenu === key ? ACCENT : 'inherit',
@@ -135,6 +146,7 @@ export default function LandingPage() {
           </Link>
 
           <div
+            className="lp-navmenu"
             style={{
               display: 'flex',
               alignItems: 'center',
@@ -144,7 +156,7 @@ export default function LandingPage() {
               color: '#55554E',
             }}
           >
-            <a href="#top" style={menuItemStyle('home')} onClick={() => setActiveMenu('home')}>
+            <a href="#top" style={menuItemStyle('home')} onClick={(e) => handleNavClick(e, 'top', 'home')}>
               Home
             </a>
 
@@ -155,7 +167,7 @@ export default function LandingPage() {
             >
               <a
                 href="#fitur"
-                onClick={() => setActiveMenu('feature')}
+                onClick={(e) => handleNavClick(e, 'fitur', 'feature')}
                 style={{ ...menuItemStyle('feature'), display: 'inline-flex', alignItems: 'center', gap: 6, textDecoration: 'none' }}
               >
                 Feature
@@ -281,14 +293,14 @@ export default function LandingPage() {
               </div>
             </div>
 
-            <a href="#cara" style={menuItemStyle('works')} onClick={() => setActiveMenu('works')}>
+            <a href="#cara" style={menuItemStyle('works')} onClick={(e) => handleNavClick(e, 'cara', 'works')}>
               How It Works
             </a>
           </div>
 
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
             <Link
-              href="/portfolio"
+              href="/overview"
               className="lp-navbtn"
               style={{
                 textDecoration: 'none',
@@ -302,7 +314,7 @@ export default function LandingPage() {
                 transition: 'transform .18s ease',
               }}
             >
-              Open Portofolio
+              Launch the App
             </Link>
           </div>
         </nav>
@@ -1006,6 +1018,9 @@ export default function LandingPage() {
           .lp-grid-4 { grid-template-columns: repeat(2, 1fr) !important; }
           .lp-grid-3 { grid-template-columns: 1fr !important; }
           .lp-footer-grid { grid-template-columns: 1fr 1fr !important; }
+        }
+        @media (max-width: 640px) {
+          .lp-navmenu { display: none !important; }
         }
         @media (max-width: 560px) {
           .lp-grid-4 { grid-template-columns: 1fr !important; }

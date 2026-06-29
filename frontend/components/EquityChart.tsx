@@ -12,30 +12,31 @@ interface Props {
   data: EquityPoint[];
   color?: string;
   height?: number;
+  light?: boolean;
 }
 
-export default function EquityChart({ data, color = "#3b82f6", height = 300 }: Props) {
+export default function EquityChart({ data, color = "#3b82f6", height = 300, light = false }: Props) {
   const chartRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (!chartRef.current || data.length === 0) return;
 
     const chart = createChart(chartRef.current, {
-      layout: { 
-        background: { type: ColorType.Solid, color: "transparent" }, 
-        textColor: "#64748b" 
+      layout: {
+        background: { type: ColorType.Solid, color: "transparent" },
+        textColor: light ? "#83837B" : "#64748b"
       },
-      grid: { 
-        vertLines: { color: "rgba(255, 255, 255, 0.03)" }, 
-        horzLines: { color: "rgba(255, 255, 255, 0.03)" } 
+      grid: {
+        vertLines: { color: light ? "rgba(20, 20, 15, 0.05)" : "rgba(255, 255, 255, 0.03)" },
+        horzLines: { color: light ? "rgba(20, 20, 15, 0.05)" : "rgba(255, 255, 255, 0.03)" }
       },
       width: chartRef.current.clientWidth,
       height: height,
-      timeScale: { 
-        borderColor: "rgba(255, 255, 255, 0.1)",
+      timeScale: {
+        borderColor: light ? "#ECEBE6" : "rgba(255, 255, 255, 0.1)",
       },
-      rightPriceScale: { 
-        borderColor: "rgba(255, 255, 255, 0.1)",
+      rightPriceScale: {
+        borderColor: light ? "#ECEBE6" : "rgba(255, 255, 255, 0.1)",
       },
     });
 
@@ -63,7 +64,7 @@ export default function EquityChart({ data, color = "#3b82f6", height = 300 }: P
       window.removeEventListener("resize", handleResize);
       chart.remove();
     };
-  }, [data, color, height]);
+  }, [data, color, height, light]);
 
   return <div ref={chartRef} className="w-full" />;
 }

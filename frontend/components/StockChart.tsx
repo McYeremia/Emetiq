@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef } from "react";
-import { createChart, createSeriesMarkers, CandlestickSeries, LineSeries, ColorType } from "lightweight-charts";
+import { createChart, createSeriesMarkers, CandlestickSeries, LineSeries, AreaSeries, ColorType } from "lightweight-charts";
 import type { ChartSyncCoordinator } from "@/lib/chartSync";
 
 interface OHLCVRow {
@@ -11,6 +11,14 @@ interface OHLCVRow {
   low: number;
   close: number;
   volume: number;
+}
+
+function hexToRgba(hex: string, alpha: number): string {
+  const h = hex.replace('#', '');
+  const r = parseInt(h.slice(0, 2), 16);
+  const g = parseInt(h.slice(2, 4), 16);
+  const b = parseInt(h.slice(4, 6), 16);
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
 }
 
 interface Props {
@@ -24,6 +32,10 @@ interface Props {
   showBB?: boolean;
   height?: number;
   transparent?: boolean;
+  light?: boolean;
+  chartType?: 'candle' | 'line';
+  interactive?: boolean;
+  lineColor?: string;
   markerDate?: string;
   markerColor?: string;
   sync?: ChartSyncCoordinator;
@@ -40,6 +52,10 @@ export default function StockChart({
   showBB = false,
   height = 420,
   transparent = false,
+  light = false,
+  chartType = 'candle',
+  interactive = true,
+  lineColor,
   markerDate,
   markerColor = '#f59e0b',
   sync,
@@ -50,60 +66,78 @@ export default function StockChart({
     if (!chartRef.current || data.length === 0) return;
 
     const chart = createChart(chartRef.current, {
-      layout: { 
-        background: { 
-          type: ColorType.Solid, 
-          color: transparent ? "transparent" : "#0a0a0a" 
-        }, 
-        textColor: "#64748b" 
+      layout: {
+        background: {
+          type: ColorType.Solid,
+          color: transparent ? "transparent" : (light ? "#ffffff" : "#0a0a0a")
+        },
+        textColor: light ? "#83837B" : "#64748b"
       },
-      grid: { 
-        vertLines: { color: "rgba(255, 255, 255, 0.03)" }, 
-        horzLines: { color: "rgba(255, 255, 255, 0.03)" } 
+      grid: {
+        vertLines: { color: light ? "rgba(20, 20, 15, 0.05)" : "rgba(255, 255, 255, 0.03)" },
+        horzLines: { color: light ? "rgba(20, 20, 15, 0.05)" : "rgba(255, 255, 255, 0.03)" }
       },
       width: chartRef.current.clientWidth,
       height: height,
-      timeScale: { 
-        borderColor: "rgba(255, 255, 255, 0.1)",
+      timeScale: {
+        borderColor: light ? "#ECEBE6" : "rgba(255, 255, 255, 0.1)",
         barSpacing: 10,
       },
-      rightPriceScale: { 
-        borderColor: "rgba(255, 255, 255, 0.1)",
+      rightPriceScale: {
+        borderColor: light ? "#ECEBE6" : "rgba(255, 255, 255, 0.1)",
       },
-      handleScale: {
+      handleScale: interactive ? {
         mouseWheel: true,
         pinch: true,
-      },
-      handleScroll: {
+      } : false,
+      handleScroll: interactive ? {
         mouseWheel: true,
         pressedMouseMove: true,
-      },
+      } : false,
     });
 
-    const candles = chart.addSeries(CandlestickSeries, {
-      upColor: "#22c55e", 
-      downColor: "#ef4444",
-      borderUpColor: "#22c55e", 
-      borderDownColor: "#ef4444",
-      wickUpColor: "#22c55e", 
-      wickDownColor: "#ef4444",
-    });
+    const up = light ? "#138A50" : "#22c55e";
+    const down = light ? "#D23B3B" : "#ef4444";
 
     const candleData = data.map((r) => ({
       time: r.date as string,
-      open: r.open, 
-      high: r.high, 
-      low: r.low, 
+      open: r.open,
+      high: r.high,
+      low: r.low,
       close: r.close,
     }));
-    candles.setData(candleData);
+
+    // Main series: simple line/area (easier to read for indices) or candlesticks.
+    let mainSeries;
+    if (chartType === 'line') {
+      const baseLine = lineColor ?? (light ? "#F26A1B" : "#3b82f6");
+      const area = chart.addSeries(AreaSeries, {
+        lineColor: baseLine,
+        topColor: hexToRgba(baseLine, 0.18),
+        bottomColor: hexToRgba(baseLine, 0.0),
+        lineWidth: 2,
+      });
+      area.setData(data.map((r) => ({ time: r.date as string, value: r.close })));
+      mainSeries = area;
+    } else {
+      const candles = chart.addSeries(CandlestickSeries, {
+        upColor: up,
+        downColor: down,
+        borderUpColor: up,
+        borderDownColor: down,
+        wickUpColor: up,
+        wickDownColor: down,
+      });
+      candles.setData(candleData);
+      mainSeries = candles;
+    }
 
     // Trade marker (lightweight-charts v5 API)
     if (markerDate) {
       const markerExists = candleData.some(c => c.time === markerDate);
       if (markerExists) {
         const isBuy = markerColor === '#22c55e';
-        createSeriesMarkers(candles, [{
+        createSeriesMarkers(mainSeries, [{
           time: markerDate as any,
           position: isBuy ? 'belowBar' : 'aboveBar',
           color: markerColor,
@@ -217,7 +251,7 @@ export default function StockChart({
       window.removeEventListener("resize", handleResize);
       chart.remove();
     };
-  }, [data, showMA20, showMA50, showMA200, showEMA12, showEMA26, showBB, height, transparent, markerDate, markerColor, sync]);
+  }, [data, showMA20, showMA50, showMA200, showEMA12, showEMA26, showBB, height, transparent, light, chartType, interactive, lineColor, markerDate, markerColor, sync]);
 
   return <div ref={chartRef} className="w-full" />;
 }

@@ -4,18 +4,19 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 
 const NAV_LINKS = [
-  { label: 'MARKET',      href: '/dashboard' },
-  { label: 'SCREENER',    href: '/screener' },
-  { label: 'PORTOFOLIO',  href: '/portfolio' },
-  { label: 'BACKTEST',    href: '/backtest' },
-  { label: 'BROKER FLOW', href: '/broker-flow' },
+  { label: 'OVERVIEW',   href: '/overview' },
+  { label: 'MARKET',     href: '/dashboard' },
+  { label: 'SCREENER',   href: '/screener' },
+  { label: 'PORTOFOLIO', href: '/portfolio' },
 ];
 
 export default function Header() {
   const pathname = usePathname();
 
-  // Landing page ('/') ships its own navigation — hide the app chrome there.
-  if (pathname === '/') return null;
+  // Pages migrated to the EMETIQ theme ship their own navigation, so the
+  // legacy dark app chrome is hidden there. Phased migration starts with '/'
+  // and '/dashboard'; add routes here as each page is reskinned.
+  if (pathname === '/' || pathname === '/dashboard' || pathname === '/overview' || pathname === '/screener' || pathname === '/portfolio') return null;
 
   return (
     <header className="fixed top-0 w-full z-50 bg-[#0A0A0A] border-b-2 border-white/10">
