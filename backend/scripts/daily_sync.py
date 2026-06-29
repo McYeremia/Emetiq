@@ -1,0 +1,52 @@
+import sys
+import os
+import logging
+from datetime import datetime
+
+# Fix Pathing
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+from database import SessionLocal
+import models
+import services.data_fetcher as fetcher
+import services.watcher as watcher
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger("daily-sync")
+
+def run_daily_sync():
+    db = SessionLocal()
+    stocks = db.query(models.Stock).all()
+    
+    logger.info(f"--- DAILY SYNC STARTED AT {datetime.now()} ---")
+    logger.info(f"Synchronizing {len(stocks)} assets...")
+
+    success_count = 0
+    for stock in stocks:
+        try:
+            # 1. Fetch & Save Latest Price
+            df = fetcher.fetch_ohlcv(stock.ticker, period="5d") # Ambil 5 hari terakhir saja agar cepat
+            if not df.empty:
+                new_rows = fetcher.save_ohlcv(db, stock, df)
+                
+                # 2. Update Fundamentals once a week (or every sync if light)
+                fetcher.update_stock_fundamentals(db, stock)
+                
+                success_count += 1
+                if success_count % 20 == 0:
+                    logger.info(f"Progress: {success_count} stocks updated...")
+        except Exception as e:
+            logger.error(f"Failed to sync {stock.ticker}: {e}")
+            continue
+
+    db.commit()
+    
+    # 3. Trigger AI Watcher to find new signals with fresh data
+    logger.info("Triggering AI Market Scanner...")
+    watcher.scan_market_signals()
+    
+    db.close()
+    logger.info(f"--- DAILY SYNC COMPLETED: {success_count} ASSETS UPDATED ---")
+
+if __name__ == "__main__":
+    run_daily_sync()

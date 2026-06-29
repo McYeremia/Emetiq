@@ -1,0 +1,1 @@
+# SDD Progress Ledger — IDXAnalyst UX Fixes\n\nBASE: 1d705d81a009cf16eed7276cc9b27589c11e1180\n\n## Tasks\n- [ ] Task 1: Toast system\n- [ ] Task 2: Sell modal + Escape + tab loading\n- [ ] Task 3: Trade history filter + tooltips\n- [ ] Task 4: Landing ticker links\n- [ ] Task 5: Screener timestamp + sort\n- [ ] Task 6: Backtest parallel

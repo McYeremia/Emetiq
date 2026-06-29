@@ -1,0 +1,127 @@
+[
+  {
+    "id": "triple-confirmation",
+    "name": "Triple Confirmation",
+    "description": "RSI + MACD + MA20. High accuracy for swing trading.",
+    "author": "AI Quant",
+    "indicator": "RSI, MACD, MA20",
+    "display_columns": ["Price", "RSI", "MACD_Hist", "MA20_Dist"],
+    "rules": [
+      "ENTRY: RSI < 45",
+      "ENTRY: MACD Histogram > 0",
+      "ENTRY: Price > MA20",
+      "EXIT: RSI > 70 OR Price < MA20"
+    ]
+  },
+  {
+    "id": "volatility-sniper",
+    "name": "Volatility Sniper",
+    "description": "BB Lower + Stochastic Oversold. Catches quick reversals.",
+    "author": "AI Quant",
+    "indicator": "BB, Stochastic",
+    "display_columns": ["Price", "BB_Dist", "Stoch_K", "ATR"],
+    "rules": [
+      "ENTRY: Price < BB Lower",
+      "ENTRY: Stochastic %K < 20",
+      "EXIT: Price > BB Upper"
+    ]
+  },
+  {
+    "id": "institutional-trend",
+    "name": "Institutional Trend",
+    "description": "Above MA200 + EMA Cross. Follows institutional money.",
+    "author": "AI Quant",
+    "indicator": "MA200, EMA Cross",
+    "display_columns": ["Price", "MA200_Dist", "EMA_Trend", "PBV"],
+    "rules": [
+      "ENTRY: Price > MA200",
+      "ENTRY: EMA 12 > EMA 26",
+      "EXIT: EMA 12 < EMA 26"
+    ]
+  },
+  {
+    "id": "exhaustion-play",
+    "name": "Exhaustion Play",
+    "description": "Deep RSI < 25 + BB Lower. Captures extreme panic bottoms.",
+    "author": "AI Quant",
+    "indicator": "RSI, BB, Stoch",
+    "display_columns": ["Price", "RSI", "BB_Dist", "PBV"],
+    "rules": [
+      "ENTRY: RSI < 25",
+      "ENTRY: Price < BB Lower",
+      "EXIT: RSI > 60"
+    ]
+  },
+  {
+    "id": "trend-accelerator",
+    "name": "Trend Accelerator",
+    "description": "MACD + MA50 + High Volume. Rides the trend wave.",
+    "author": "AI Quant",
+    "indicator": "MACD, MA50, Volume",
+    "display_columns": ["Price", "MACD_Hist", "Vol_Surge", "MA50_Dist"],
+    "rules": [
+      "ENTRY: MACD Hist > 0",
+      "ENTRY: Price > MA50",
+      "ENTRY: Volume > Volume MA20"
+    ]
+  },
+  {
+    "id": "pure-momentum",
+    "name": "Pure Momentum",
+    "description": "EMA Fast Cross + MACD. Aggressive growth strategy.",
+    "author": "AI Quant",
+    "indicator": "EMA, MACD",
+    "display_columns": ["Price", "EMA_Cross", "MACD_Line", "RSI"],
+    "rules": [
+      "ENTRY: EMA 12 > EMA 26",
+      "ENTRY: MACD Line > MACD Signal"
+    ]
+  },
+  {
+    "id": "defensive-bull",
+    "name": "Defensive Bull",
+    "description": "Golden Cross MA50/200 + Strong RSI. Low risk trend following.",
+    "author": "AI Quant",
+    "indicator": "MA50, MA200, RSI",
+    "display_columns": ["Price", "MA_Trend", "RSI", "Div_Yield"],
+    "rules": [
+      "ENTRY: MA50 > MA200",
+      "ENTRY: RSI > 50"
+    ]
+  },
+  {
+    "id": "stoch-rsi-hybrid",
+    "name": "Stoch-RSI Hybrid",
+    "description": "Sync oscillator exit from oversold. Reliable momentum start.",
+    "author": "AI Quant",
+    "indicator": "Stoch, RSI",
+    "display_columns": ["Price", "Stoch_K", "RSI", "EMA_Dist"],
+    "rules": [
+      "ENTRY: Stoch K crosses 20",
+      "ENTRY: RSI > 30"
+    ]
+  },
+  {
+    "id": "rsi-reversion",
+    "name": "Simple RSI Reversion",
+    "description": "Buy RSI < 30, Sell RSI > 70. Classic oversold play.",
+    "author": "AI Quant",
+    "indicator": "RSI",
+    "display_columns": ["Price", "RSI", "PBV", "PE"],
+    "rules": [
+      "ENTRY: RSI < 30",
+      "EXIT: RSI > 70"
+    ]
+  },
+  {
+    "id": "ma-cross",
+    "name": "Standard MA Cross",
+    "description": "Golden Cross MA20/50. Basic trend strategy.",
+    "author": "AI Quant",
+    "indicator": "MA20, MA50",
+    "display_columns": ["Price", "MA_Cross", "MA20_Dist", "MA50_Dist"],
+    "rules": [
+      "ENTRY: MA 20 > MA 50"
+    ]
+  }
+]

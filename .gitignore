@@ -1,0 +1,19 @@
+/docs
+/.claude
+.claude/settings.local.json
+
+# Database — jangan commit file DB yang besar ke git
+backend/idxanalyst.db
+
+# ML model artifacts — di-generate ulang via /ml/train, tidak perlu di-track
+backend/ml_models/*.pkl
+backend/ml_models/*.json
+
+# Python cache
+backend/__pycache__/
+backend/**/__pycache__/
+backend/**/*.pyc
+
+# Python virtual environment
+backend/venv/
+backend/.venv/

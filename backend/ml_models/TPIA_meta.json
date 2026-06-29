@@ -1,0 +1,33 @@
+{
+  "ticker": "TPIA",
+  "trained_at": "2026-05-14T03:01:26.877937",
+  "samples_train": 925,
+  "samples_test": 232,
+  "accuracy": 0.4526,
+  "auc": 0.4695,
+  "feature_importance": {
+    "RSI (14)": 0.03817,
+    "MACD Histogram": 0.06512,
+    "MACD Line": 0.11302,
+    "Stochastic %K": 0.04897,
+    "Stochastic %D": 0.05531,
+    "Bollinger Position": 0.03979,
+    "Jarak MA20": 0.0475,
+    "Jarak MA50": 0.06005,
+    "Volume Ratio": 0.04406,
+    "Return 1 Hari": 0.04089,
+    "Return 3 Hari": 0.0291,
+    "Return 5 Hari": 0.05619,
+    "Return 10 Hari": 0.05007,
+    "Return 20 Hari": 0.08665,
+    "Volatilitas 10H": 0.08943,
+    "ATR Ratio": 0.13569,
+    "P/E Ratio": 0.0,
+    "P/B Ratio": 0.0,
+    "Dividend Yield": 0.0
+  },
+  "class_balance": {
+    "pct_up": 0.382,
+    "pct_down": 0.618
+  }
+}

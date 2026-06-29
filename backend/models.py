@@ -1,0 +1,157 @@
+import datetime
+from sqlalchemy import Column, Integer, BigInteger, String, Float, Date, DateTime, ForeignKey, UniqueConstraint, func, JSON
+from sqlalchemy.orm import relationship
+from database import Base
+
+class Stock(Base):
+    __tablename__ = "stocks"
+
+    id = Column(Integer, primary_key=True, index=True)
+    ticker = Column(String(10), unique=True, index=True, nullable=False)
+    name = Column(String(100), nullable=False)
+    sector = Column(String(50), nullable=False)
+    market_cap_cat = Column(String(10))
+    last_updated = Column(DateTime)
+
+    # Fundamentals
+    market_cap = Column(BigInteger)
+    pe_ratio = Column(Float)
+    pbv_ratio = Column(Float)
+    dividend_yield = Column(Float)
+    forward_pe = Column(Float)
+
+    ohlcv = relationship("OHLCVDaily", back_populates="stock", cascade="all, delete-orphan")
+    indicators = relationship("IndicatorCache", back_populates="stock", cascade="all, delete-orphan")
+    trades = relationship("TradeLog", back_populates="stock", cascade="all, delete-orphan")
+
+class Signal(Base):
+    __tablename__ = "signals"
+
+    id = Column(Integer, primary_key=True, index=True)
+    stock_id = Column(Integer, ForeignKey("stocks.id"), nullable=False)
+    strategy_id = Column(String(50), nullable=False)
+    type = Column(String(10), nullable=False) # BUY / SELL
+    price = Column(Float)
+    strength = Column(Float) # Score 0-100
+    description = Column(String(255))
+    created_at = Column(DateTime, server_default=func.now())
+    is_read = Column(Integer, default=0)
+
+    stock = relationship("Stock")
+
+class OHLCVDaily(Base):
+    __tablename__ = "ohlcv_daily"
+    __table_args__ = (UniqueConstraint("stock_id", "date", name="uq_ohlcv_stock_date"),)
+
+    id = Column(Integer, primary_key=True, index=True)
+    stock_id = Column(Integer, ForeignKey("stocks.id"), nullable=False, index=True)
+    date = Column(Date, nullable=False, index=True)
+    open = Column(Float)
+    high = Column(Float)
+    low = Column(Float)
+    close = Column(Float, nullable=False)
+    volume = Column(BigInteger)
+    adj_close = Column(Float)
+
+    stock = relationship("Stock", back_populates="ohlcv")
+
+class IndicatorCache(Base):
+    __tablename__ = "indicators_cache"
+    __table_args__ = (UniqueConstraint("stock_id", "date", "indicator_type", name="uq_indicator"),)
+
+    id = Column(Integer, primary_key=True, index=True)
+    stock_id = Column(Integer, ForeignKey("stocks.id"), nullable=False, index=True)
+    date = Column(Date, nullable=False, index=True)
+    indicator_type = Column(String(30), nullable=False)
+    value = Column(Float)
+    calculated_at = Column(DateTime, server_default=func.now())
+
+    stock = relationship("Stock", back_populates="indicators")
+
+class Strategy(Base):
+    __tablename__ = "strategies"
+
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String(100), nullable=False)
+    conditions = Column(JSON, nullable=False)  # Entry/Exit conditions
+    parameters = Column(JSON)                 # SL, TP, Capital, etc.
+    created_at = Column(DateTime, server_default=func.now())
+
+    backtests = relationship("BacktestRun", back_populates="strategy")
+
+class BacktestRun(Base):
+    __tablename__ = "backtest_runs"
+
+    id = Column(Integer, primary_key=True, index=True)
+    strategy_id = Column(Integer, ForeignKey("strategies.id"), nullable=False)
+    stock_id = Column(Integer, ForeignKey("stocks.id"), nullable=False)
+    date_from = Column(Date, nullable=False)
+    date_to = Column(Date, nullable=False)
+    
+    # Metrics
+    total_trades = Column(Integer)
+    win_rate = Column(Float)
+    profit_factor = Column(Float)
+    max_drawdown = Column(Float)
+    sharpe_ratio = Column(Float)
+    total_return = Column(Float)
+    
+    # Detailed Data (JSON)
+    equity_curve = Column(JSON)    # Array of daily portfolio values
+    trades_detail = Column(JSON)   # List of all trades in this run
+    created_at = Column(DateTime, server_default=func.now())
+
+    strategy = relationship("Strategy", back_populates="backtests")
+    trades = relationship("TradeLog", back_populates="backtest_run")
+
+class TradeLog(Base):
+    __tablename__ = "trade_logs"
+
+    id = Column(Integer, primary_key=True, index=True)
+    stock_id = Column(Integer, ForeignKey("stocks.id"), nullable=False)
+    action = Column(String(10), nullable=False)      # BUY / SELL
+    date = Column(Date, nullable=False, index=True)
+    price = Column(Float, nullable=False)
+    quantity = Column(Integer, nullable=False)       # In Lots (100 shares)
+    trade_type = Column(String(20), nullable=False)  # MANUAL / AUTO_GEMINI / AUTO_CLAUDE
+    strategy_id = Column(String(50), nullable=True)  # New: ID strategi yang digunakan
+    notes = Column(String(255))                      # New: Alasan beli/jual (reasoning)
+    backtest_run_id = Column(Integer, ForeignKey("backtest_runs.id"), nullable=True)
+    created_at = Column(DateTime, server_default=func.now())
+
+    stock = relationship("Stock", back_populates="trades")
+    backtest_run = relationship("BacktestRun", back_populates="trades")
+
+
+class AgentPositionTarget(Base):
+    __tablename__ = "agent_position_targets"
+
+    id = Column(Integer, primary_key=True, index=True)
+    agent_name = Column(String(20), nullable=False, index=True)   # CLAUDE / GEMINI / USER
+    ticker = Column(String(10), nullable=False, index=True)
+    take_profit_price = Column(Float, nullable=True)
+    cut_loss_price = Column(Float, nullable=True)
+    decision = Column(String(20), nullable=True)    # HOLD / BUY_MORE / WAIT / TAKE_PROFIT / CUT_LOSS
+    strategy = Column(String(50), nullable=True)
+    notes = Column(String(500), nullable=True)
+    is_active = Column(Integer, default=1)          # 1 = posisi masih terbuka, 0 = sudah ditutup
+    created_at = Column(DateTime, server_default=func.now())
+    updated_at = Column(DateTime, server_default=func.now())
+
+
+class BrokerFlow(Base):
+    """
+    Ringkasan aktivitas broker harian dari IDX (aggregate seluruh pasar, bukan per-saham).
+    Source: idx.co.id/primary/TradingSummary/GetBrokerSummary
+    """
+    __tablename__ = "broker_flows"
+    __table_args__ = (UniqueConstraint("date", "broker_code", name="uq_broker_flow"),)
+
+    id          = Column(Integer, primary_key=True, index=True)
+    date        = Column(Date, nullable=False, index=True)
+    broker_code = Column(String(10), nullable=False)
+    broker_name = Column(String(200))
+    total_value = Column(BigInteger, default=0)   # total nilai transaksi (beli+jual) dalam Rupiah
+    volume      = Column(BigInteger, default=0)    # total volume dalam lot
+    frequency   = Column(Integer, default=0)       # jumlah transaksi
+    scraped_at  = Column(DateTime, server_default=func.now())
