@@ -195,7 +195,7 @@ export default function AdvisorPage() {
             value={input}
             onChange={e => setInput(e.target.value)}
             onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(input); } }}
-            placeholder="Tanya apa saja — mis. cari saham PE<15 dividen>3%, atau analisa BBRI…"
+            placeholder="Tanya apa saja mengenai saham di EMETIQ"
             rows={1}
             className="emx-textarea"
             style={{ flex: 1, resize: 'none', border: 'none', outline: 'none', background: 'transparent', fontFamily: SANS, fontSize: 14, color: INK, padding: '9px 10px', maxHeight: 120 }}
