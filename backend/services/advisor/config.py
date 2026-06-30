@@ -36,6 +36,9 @@ RETRY_BACKOFF   = float(os.getenv("ADVISOR_RETRY_BACKOFF", "0.8"))  # detik, dik
 # Screening: hanya N kandidat teratas (lolos filter keras) yang dihitung indikator
 # penuh & diberi ke LLM untuk ranking — hemat CPU & token.
 SCREEN_MAX_CANDIDATES = int(os.getenv("ADVISOR_SCREEN_MAX", "40"))
+# Batas berapa saham (urut market cap desc) yang dihitung indikatornya saat screening,
+# agar latency terjaga walau filter fundamental longgar.
+SCREEN_WORKING_SET = int(os.getenv("ADVISOR_SCREEN_WORKING_SET", "250"))
 # Portofolio: batasi jumlah posisi yang dianalisa per-posisi (stage termahal).
 PORTFOLIO_MAX_POSITIONS = int(os.getenv("ADVISOR_PORTFOLIO_MAX", "20"))
 

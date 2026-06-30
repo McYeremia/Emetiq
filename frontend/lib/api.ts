@@ -304,4 +304,49 @@ export const api = {
     const res = await fetch(`${API_BASE_URL}/trades/${id}`);
     return res.json();
   },
+
+  async advisorChat(payload: {
+    message: string;
+    history?: AdvisorTurn[];
+    form?: Record<string, unknown>;
+  }): Promise<AdvisorResponse> {
+    const res = await fetch(`${API_BASE_URL}/advisor/chat`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    if (res.status === 429) {
+      const err = await res.json().catch(() => ({}));
+      return {
+        reply: err?.detail?.message || 'Kuota harian advisor habis.',
+        intent: 'error',
+        data: null,
+        quota: err?.detail?.quota ?? null,
+        confidence: null,
+      };
+    }
+    if (!res.ok) {
+      return { reply: 'Gagal menghubungi advisor. Periksa koneksi backend.', intent: 'error', data: null, quota: null, confidence: null };
+    }
+    return res.json();
+  },
 };
+
+export interface AdvisorTurn {
+  role: 'user' | 'assistant';
+  content: string;
+}
+
+export interface AdvisorQuota {
+  used: number;
+  limit: number | null;
+  remaining: number | null;
+}
+
+export interface AdvisorResponse {
+  reply: string;
+  intent: string;
+  data: any;
+  quota: AdvisorQuota | null;
+  confidence: number | null;
+}

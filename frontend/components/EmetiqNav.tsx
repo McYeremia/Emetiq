@@ -17,7 +17,7 @@ const ITEMS = [
 
 export type NavKey = typeof ITEMS[number]['key'];
 
-export default function EmetiqNav({ active }: { active: NavKey }) {
+export default function EmetiqNav({ active }: { active?: NavKey | 'advisor' }) {
   const [open, setOpen] = useState(false);
 
   const navItem = (isActive: boolean): React.CSSProperties => ({
@@ -55,14 +55,13 @@ export default function EmetiqNav({ active }: { active: NavKey }) {
         </div>
 
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-          {/* Routing to the AI trading page is wired up later */}
-          <button
-            type="button"
+          <Link
+            href="/advisor"
             className="emx-btn hidden md:inline-flex"
-            style={{ color: '#fff', background: ACCENT, fontWeight: 700, fontSize: 14, padding: '9px 16px', borderRadius: 11, border: 'none', cursor: 'pointer', boxShadow: `0 2px 10px color-mix(in oklab, ${ACCENT}, transparent 64%)` }}
+            style={{ alignItems: 'center', textDecoration: 'none', color: '#fff', background: ACCENT, fontWeight: 700, fontSize: 14, padding: '9px 16px', borderRadius: 11, border: 'none', cursor: 'pointer', boxShadow: `0 2px 10px color-mix(in oklab, ${ACCENT}, transparent 64%)` }}
           >
             Trade with AI
-          </button>
+          </Link>
 
           {/* Mobile hamburger */}
           <button
@@ -96,13 +95,13 @@ export default function EmetiqNav({ active }: { active: NavKey }) {
               </Link>
             );
           })}
-          <button
-            type="button"
+          <Link
+            href="/advisor"
             onClick={() => setOpen(false)}
-            style={{ marginTop: 6, color: '#fff', background: ACCENT, fontWeight: 700, fontSize: 14.5, padding: '12px 16px', borderRadius: 12, border: 'none', cursor: 'pointer' }}
+            style={{ marginTop: 6, textAlign: 'center', textDecoration: 'none', color: '#fff', background: ACCENT, fontWeight: 700, fontSize: 14.5, padding: '12px 16px', borderRadius: 12, border: 'none', cursor: 'pointer' }}
           >
             Trade with AI
-          </button>
+          </Link>
         </div>
       )}
     </header>

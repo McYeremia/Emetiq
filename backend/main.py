@@ -19,7 +19,9 @@ from routers.stocks import router as stocks_router    # noqa: E402
 from routers.trades import router as trades_router    # noqa: E402
 from routers.backtest import router as backtest_router  # noqa: E402
 from routers.broker import router as broker_router    # noqa: E402
+from routers.advisor import router as advisor_router  # noqa: E402
 app.include_router(stocks_router)
 app.include_router(trades_router)
 app.include_router(backtest_router)
 app.include_router(broker_router)
+app.include_router(advisor_router)

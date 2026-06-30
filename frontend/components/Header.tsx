@@ -16,7 +16,7 @@ export default function Header() {
   // Pages migrated to the EMETIQ theme ship their own navigation, so the
   // legacy dark app chrome is hidden there. Phased migration starts with '/'
   // and '/dashboard'; add routes here as each page is reskinned.
-  if (pathname === '/' || pathname === '/dashboard' || pathname === '/overview' || pathname === '/screener' || pathname === '/portfolio' || pathname.startsWith('/stocks/')) return null;
+  if (pathname === '/' || pathname === '/dashboard' || pathname === '/overview' || pathname === '/screener' || pathname === '/portfolio' || pathname === '/advisor' || pathname.startsWith('/stocks/')) return null;
 
   return (
     <header className="fixed top-0 w-full z-50 bg-[#0A0A0A] border-b-2 border-white/10">

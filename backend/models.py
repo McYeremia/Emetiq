@@ -162,6 +162,20 @@ class MlPrediction(Base):
     updated_at       = Column(DateTime, server_default=func.now(), onupdate=func.now())
 
 
+class AdvisorUsage(Base):
+    """
+    Pemakaian kuota AI Advisor per user per hari. Unik per (user_id, tanggal) — baris
+    baru tiap hari (reset harian). Increment hanya saat pipeline benar-benar jalan.
+    """
+    __tablename__ = "advisor_usage"
+    __table_args__ = (UniqueConstraint("user_id", "date", name="uq_advisor_usage_user_date"),)
+
+    id      = Column(Integer, primary_key=True, index=True)
+    user_id = Column(String(64), nullable=False, index=True)
+    date    = Column(Date, nullable=False, index=True)
+    count   = Column(Integer, default=0, nullable=False)
+
+
 class BrokerFlow(Base):
     """
     Ringkasan aktivitas broker harian dari IDX (aggregate seluruh pasar, bukan per-saham).

@@ -20,3 +20,10 @@ backend/**/*.pyc
 backend/venv/
 backend/.venv/
 CLAUDE.md
+
+# Secrets — JANGAN commit. Hanya .env.example yang boleh di-track.
+.env
+backend/.env
+frontend/.env
+frontend/.env.local
+!.env.example
