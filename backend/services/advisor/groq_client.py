@@ -80,11 +80,79 @@ def chat_text(system: str, user: str, *, model: str, effort=None, temperature: f
     return (resp.choices[0].message.content or "").strip()
 
 
-def chat_json(system: str, user: str, *, model: str, effort=None, temperature: float = 0.2) -> Dict[str, Any]:
-    messages = [{"role": "system", "content": system}, {"role": "user", "content": user}]
-    resp = _with_retry(lambda: _create(messages, model, json_mode=True, effort=effort, temperature=temperature))
-    content = (resp.choices[0].message.content or "{}").strip()
+def _content(resp) -> str:
+    return (resp.choices[0].message.content or "").strip()
+
+
+def _extract_json(text: str) -> Dict[str, Any]:
+    """Parse JSON; bila ada teks pembungkus, ambil objek JSON seimbang pertama."""
+    text = (text or "").strip()
+    if not text:
+        raise GroqCallError("Output Groq kosong.")
     try:
-        return json.loads(content)
-    except json.JSONDecodeError as e:
-        raise GroqCallError(f"Output Groq bukan JSON valid: {e}") from e
+        return json.loads(text)
+    except json.JSONDecodeError:
+        pass
+    start = text.find("{")
+    if start == -1:
+        raise GroqCallError("Tidak menemukan JSON pada output Groq.")
+    depth = 0
+    in_str = False
+    esc = False
+    for i in range(start, len(text)):
+        c = text[i]
+        if in_str:
+            if esc:
+                esc = False
+            elif c == "\\":
+                esc = True
+            elif c == '"':
+                in_str = False
+        else:
+            if c == '"':
+                in_str = True
+            elif c == "{":
+                depth += 1
+            elif c == "}":
+                depth -= 1
+                if depth == 0:
+                    try:
+                        return json.loads(text[start:i + 1])
+                    except json.JSONDecodeError as e:
+                        raise GroqCallError(f"JSON tak valid: {e}") from e
+    raise GroqCallError("JSON tidak lengkap pada output Groq.")
+
+
+def chat_json(system: str, user: str, *, model: str, effort=None, temperature: float = 0.2) -> Dict[str, Any]:
+    """Minta JSON. Coba JSON-mode ketat dulu; bila gagal (mis. model reasoning kena
+    `json_validate_failed`), langsung fallback ke mode teks + ekstraksi JSON manual.
+    Tidak meretry JSON-mode berkali-kali agar tak boros panggilan."""
+    messages = [{"role": "system", "content": system}, {"role": "user", "content": user}]
+
+    # 1) JSON mode ketat (cepat & rapi, biasanya sukses untuk model kecil/router)
+    try:
+        resp = _create(messages, model, json_mode=True, effort=effort, temperature=temperature)
+        return _extract_json(_content(resp) or "{}")
+    except GroqConfigError:
+        raise
+    except Exception as e:
+        log.warning("JSON mode gagal (%s) — fallback ke mode teks.", e)
+
+    # 2) Fallback: mode teks biasa + ekstraksi JSON, dengan retry transient
+    text_messages = messages + [{
+        "role": "system",
+        "content": "Keluarkan HANYA satu objek JSON valid sesuai skema, tanpa teks/penjelasan lain.",
+    }]
+    last = None
+    for attempt in range(config.MAX_RETRIES + 1):
+        try:
+            resp = _create(text_messages, model, json_mode=False, effort=effort, temperature=temperature)
+            return _extract_json(_content(resp))
+        except GroqConfigError:
+            raise
+        except Exception as e:
+            last = e
+            log.warning("Fallback teks gagal (attempt %d): %s", attempt + 1, e)
+            if attempt < config.MAX_RETRIES:
+                time.sleep(config.RETRY_BACKOFF * (2 ** attempt))
+    raise GroqCallError(str(last))

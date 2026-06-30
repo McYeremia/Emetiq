@@ -27,6 +27,9 @@ const CARD: React.CSSProperties = {
 
 type Msg = { role: 'user' | 'assistant'; content: string; resp?: AdvisorResponse };
 
+const STORE_KEY = 'emetiq-advisor-chat';
+const QUOTA_KEY = 'emetiq-advisor-quota';
+
 const WELCOME: Msg = {
   role: 'assistant',
   content: 'Halo! Saya asisten saham IDX. Saya bisa bantu **cari saham** sesuai kriteria, **analisa satu saham**, atau memberi **saran portofolio**. Mau mulai dari mana?',
@@ -57,15 +60,39 @@ export default function AdvisorPage() {
   const [quota, setQuota] = useState<AdvisorQuota | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
 
+  // Persist chat across navigation within the tab session (survives leaving to a
+  // stock page and coming back; cleared only when the tab is closed or reset).
+  useEffect(() => {
+    try {
+      const saved = sessionStorage.getItem(STORE_KEY);
+      if (saved) {
+        const p = JSON.parse(saved);
+        if (Array.isArray(p) && p.length) setMessages(p);
+      }
+      const q = sessionStorage.getItem(QUOTA_KEY);
+      if (q) setQuota(JSON.parse(q));
+    } catch {}
+  }, []);
+
+  const persist = (msgs: Msg[]) => {
+    try { sessionStorage.setItem(STORE_KEY, JSON.stringify(msgs)); } catch {}
+  };
+
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' });
   }, [messages, loading]);
 
+  const resetChat = () => {
+    setMessages([WELCOME]);
+    persist([WELCOME]);
+  };
+
   const send = async (text: string) => {
     const message = text.trim();
     if (!message || loading) return;
-    const next = [...messages, { role: 'user' as const, content: message }];
+    const next: Msg[] = [...messages, { role: 'user', content: message }];
     setMessages(next);
+    persist(next);
     setInput('');
     setLoading(true);
 
@@ -76,10 +103,17 @@ export default function AdvisorPage() {
 
     try {
       const resp = await api.advisorChat({ message, history });
-      setMessages(m => [...m, { role: 'assistant', content: resp.reply, resp }]);
-      if (resp.quota) setQuota(resp.quota);
+      const withReply: Msg[] = [...next, { role: 'assistant', content: resp.reply, resp }];
+      setMessages(withReply);
+      persist(withReply);
+      if (resp.quota) {
+        setQuota(resp.quota);
+        try { sessionStorage.setItem(QUOTA_KEY, JSON.stringify(resp.quota)); } catch {}
+      }
     } catch {
-      setMessages(m => [...m, { role: 'assistant', content: 'Gagal menghubungi advisor. Periksa koneksi backend.' }]);
+      const withErr: Msg[] = [...next, { role: 'assistant', content: 'Gagal menghubungi advisor. Periksa koneksi backend.' }];
+      setMessages(withErr);
+      persist(withErr);
     } finally {
       setLoading(false);
     }
@@ -109,11 +143,23 @@ export default function AdvisorPage() {
             <h1 style={{ fontSize: 26, fontWeight: 800, letterSpacing: '-.02em' }}>AI Advisor</h1>
             <p style={{ marginTop: 3, fontSize: 13.5, color: MUTED }}>Screening, analisa saham, & saran portofolio dalam bahasa natural.</p>
           </div>
-          {quotaLabel && (
-            <span style={{ flex: 'none', fontFamily: MONO, fontSize: 11, fontWeight: 600, color: ACCENT, background: `color-mix(in oklab, ${ACCENT}, white 88%)`, border: `1px solid color-mix(in oklab, ${ACCENT}, white 76%)`, padding: '5px 10px', borderRadius: 999 }}>
-              {quotaLabel}
-            </span>
-          )}
+          <div className="flex items-center gap-2" style={{ flex: 'none' }}>
+            {quotaLabel && (
+              <span style={{ fontFamily: MONO, fontSize: 11, fontWeight: 600, color: ACCENT, background: `color-mix(in oklab, ${ACCENT}, white 88%)`, border: `1px solid color-mix(in oklab, ${ACCENT}, white 76%)`, padding: '5px 10px', borderRadius: 999 }}>
+                {quotaLabel}
+              </span>
+            )}
+            {messages.length > 1 && (
+              <button
+                onClick={resetChat}
+                title="Mulai percakapan baru"
+                className="emx-chip"
+                style={{ fontSize: 11.5, fontWeight: 600, color: MUTED, background: '#fff', border: `1px solid ${HAIR}`, padding: '5px 11px', borderRadius: 999, cursor: 'pointer' }}
+              >
+                Mulai baru
+              </button>
+            )}
+          </div>
         </div>
 
         {/* Messages */}
