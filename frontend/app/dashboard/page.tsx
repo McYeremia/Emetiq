@@ -7,6 +7,7 @@ import Link from 'next/link';
 import EmetiqNav from '@/components/EmetiqNav';
 import { useToast } from '@/components/Toast';
 import { useWatchlist } from '@/components/WatchlistProvider';
+import { useAuth } from '@/components/AuthProvider';
 import dynamic from 'next/dynamic';
 
 const StockChart = dynamic(() => import("@/components/StockChart"), { ssr: false });
@@ -73,6 +74,7 @@ export default function Dashboard() {
   const syncPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const { watchlist, toggle: toggleWatchlist } = useWatchlist();
+  const { user } = useAuth();
   const [activeIndex, setActiveIndex] = useState<'ALL' | IndexKey>('ALL');
   const [sortKey, setSortKey] = useState<'name' | 'price' | 'change'>('name');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc');
@@ -99,20 +101,31 @@ export default function Dashboard() {
       const fromDate = new Date();
       fromDate.setMonth(fromDate.getMonth() - 2);
       const ihsgFrom = fromDate.toISOString().slice(0, 10);
-      const [stocksData, portfolioData, ihsg, signalsData] = await Promise.all([
+      const [stocksData, ihsg, signalsData] = await Promise.all([
         api.getStocks(),
-        api.getPortfolio(),
         api.getOHLCV('^JKSE', ihsgFrom),
         api.getSignals()
       ]);
       setStocks(stocksData);
-      setPortfolio(portfolioData);
       setIhsgData(ihsg.data || []);
       setSignals(signalsData || []);
     } catch (err) {
       toast('Gagal memuat data pasar. Periksa koneksi backend.', 'error');
     } finally {
       setLoading(false);
+    }
+
+    // Portofolio bersifat personal (butuh login). Jangan sampai menggagalkan
+    // halaman pasar bila belum login (endpoint balas 401).
+    try {
+      if (user) {
+        const p = await api.getPortfolio();
+        setPortfolio(p && 'USER' in p ? p : null);
+      } else {
+        setPortfolio(null);
+      }
+    } catch {
+      setPortfolio(null);
     }
   };
 
