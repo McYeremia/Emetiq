@@ -1,0 +1,30 @@
+name: Daily Sync (harga terbaru + ML)
+
+# Update harga 5 hari terakhir + fundamental + latih ulang model ML,
+# untuk SAHAM YANG SUDAH ADA di DB. Jalankan seed-data.yml dulu untuk DB kosong.
+on:
+  schedule:
+    # 10:00 UTC = 17:00 WIB, hari kerja (Senin-Jumat), setelah pasar IDX tutup.
+    - cron: "0 10 * * 1-5"
+  workflow_dispatch:
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 350
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        working-directory: backend
+        run: pip install -r requirements.txt
+
+      - name: Daily sync ke Supabase
+        working-directory: backend
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: python scripts/daily_sync.py

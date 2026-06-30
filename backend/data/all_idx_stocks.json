@@ -1,4 +1,5 @@
 [
+  {"ticker": "^JKSE", "name": "IHSG (Jakarta Composite Index)", "sector": "Index"},
   {"ticker": "AALI", "name": "Astra Agro Lestari Tbk.", "sector": "Agriculture"},
   {"ticker": "ABDA", "name": "Asuransi Bina Dana Arta Tbk.", "sector": "Finance"},
   {"ticker": "ABMM", "name": "ABM Investama Tbk.", "sector": "Energy"},

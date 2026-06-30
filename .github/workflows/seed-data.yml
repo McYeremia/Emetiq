@@ -1,0 +1,28 @@
+name: Seed Data Awal (Stocks + OHLCV)
+
+# Jalankan SEKALI secara manual untuk mengisi DB Postgres kosong:
+# Actions > "Seed Data Awal" > Run workflow.
+# Mengimpor ~591 emiten + ^JKSE beserta histori harga 5 tahun via yfinance.
+on:
+  workflow_dispatch:
+
+jobs:
+  seed:
+    runs-on: ubuntu-latest
+    timeout-minutes: 350
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        working-directory: backend
+        run: pip install -r requirements.txt
+
+      - name: Import all stocks + OHLCV ke Supabase
+        working-directory: backend
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: python scripts/import_all_stocks.py
