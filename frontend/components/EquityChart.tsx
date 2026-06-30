@@ -55,16 +55,21 @@ export default function EquityChart({ data, color = "#3b82f6", height = 300, lig
     series.setData(chartData);
     chart.timeScale().fitContent();
 
-    const handleResize = () => {
-      if (chartRef.current) chart.applyOptions({ width: chartRef.current.clientWidth });
-    };
-    window.addEventListener("resize", handleResize);
+    const ro = new ResizeObserver((entries) => {
+      const w = entries[0]?.contentRect.width;
+      if (w && w > 0) chart.applyOptions({ width: Math.floor(w) });
+    });
+    ro.observe(chartRef.current);
 
     return () => {
-      window.removeEventListener("resize", handleResize);
+      ro.disconnect();
       chart.remove();
     };
   }, [data, color, height, light]);
 
-  return <div ref={chartRef} className="w-full" />;
+  return (
+    <div style={{ position: "relative", width: "100%", height, overflow: "hidden" }}>
+      <div ref={chartRef} style={{ position: "absolute", inset: 0 }} />
+    </div>
+  );
 }

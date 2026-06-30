@@ -195,17 +195,16 @@ export default function PortfolioPage() {
         </div>
 
         {/* TOTAL VALUE */}
-        <div style={{ ...CARD, padding: 28, marginBottom: 24 }} className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-          <div>
+        <div style={{ ...CARD, padding: 28, marginBottom: 24 }} className="flex flex-row justify-between items-center gap-2">
+          <div style={{ minWidth: 0 }}>
             <p style={{ fontFamily: MONO, fontSize: 11, fontWeight: 600, letterSpacing: '.16em', textTransform: 'uppercase', color: FAINT, marginBottom: 6 }}>Total Nilai Portofolio</p>
-            <p style={{ fontFamily: MONO, fontSize: 38, fontWeight: 600, letterSpacing: '-.01em' }}>Rp {current.total_value.toLocaleString('id-ID')}</p>
+            <p className="porto-total-val" style={{ fontFamily: MONO, fontWeight: 600, letterSpacing: '-.01em' }}>Rp {current.total_value.toLocaleString('id-ID')}</p>
           </div>
-          <div className="text-right">
-            <p style={{ fontFamily: MONO, fontSize: 10.5, fontWeight: 600, letterSpacing: '.1em', textTransform: 'uppercase', color: FAINT, marginBottom: 4 }}>vs Modal Awal Rp {INITIAL_MODAL.toLocaleString('id-ID')}</p>
-            <p style={{ fontFamily: MONO, fontSize: 22, fontWeight: 700, color: totalUp ? UP : DOWN }}>
+          <div className="text-right" style={{ flex: 'none' }}>
+            <p className="porto-pct" style={{ fontFamily: MONO, fontWeight: 700, color: totalUp ? UP : DOWN }}>
               {totalUp ? '▲' : '▼'} {Math.abs(parseFloat(totalReturnPct))}%
             </p>
-            <p style={{ fontFamily: MONO, fontSize: 12.5, color: totalUp ? UP : DOWN }}>
+            <p className="porto-pnl" style={{ fontFamily: MONO, color: totalUp ? UP : DOWN }}>
               {totalUp ? '+' : ''}Rp {totalReturn.toLocaleString('id-ID')}
             </p>
           </div>
@@ -351,9 +350,9 @@ export default function PortfolioPage() {
                       <th style={TH}>Tanggal</th>
                       <th style={TH}>Ticker</th>
                       <th style={{ ...TH, textAlign: 'center' }}>Aksi</th>
-                      <th style={THR}>Lot</th>
-                      <th style={THR}>Harga</th>
-                      <th style={THR}>Total Nilai</th>
+                      <th style={THR} className="hist-col-hide">Lot</th>
+                      <th style={THR} className="hist-col-hide">Harga</th>
+                      <th style={THR} className="hist-col-hide">Total Nilai</th>
                       <th style={THR}>P&amp;L</th>
                     </tr>
                   </thead>
@@ -368,9 +367,9 @@ export default function PortfolioPage() {
                           <td style={{ ...TD, textAlign: 'center' }}>
                             <span style={{ fontFamily: MONO, fontSize: 10.5, fontWeight: 700, color: t.action === 'BUY' ? UP : DOWN, background: t.action === 'BUY' ? UP_BG : DOWN_BG, padding: '3px 9px', borderRadius: 7 }}>{t.action}</span>
                           </td>
-                          <td style={{ ...TDR, fontWeight: 600 }}>{t.quantity}</td>
-                          <td style={TDR}>Rp {t.price.toLocaleString('id-ID')}</td>
-                          <td style={{ ...TDR, color: t.action === 'BUY' ? DOWN : UP }}>
+                          <td className="hist-col-hide" style={{ ...TDR, fontWeight: 600 }}>{t.quantity}</td>
+                          <td className="hist-col-hide" style={TDR}>Rp {t.price.toLocaleString('id-ID')}</td>
+                          <td className="hist-col-hide" style={{ ...TDR, color: t.action === 'BUY' ? DOWN : UP }}>
                             {t.action === 'BUY' ? '-' : '+'}Rp {t.total_value.toLocaleString('id-ID')}
                           </td>
                           <td style={TDR}>
@@ -508,6 +507,17 @@ export default function PortfolioPage() {
         .emx-scroll::-webkit-scrollbar { width: 6px; }
         .emx-scroll::-webkit-scrollbar-thumb { background: #E2E1DB; border-radius: 10px; }
         ::selection { background: color-mix(in oklab, ${ACCENT}, white 70%); }
+        @media (max-width: 640px) {
+          .hist-col-hide { display: none; }
+          .porto-total-val { font-size: 22px; }
+          .porto-pct { font-size: 17px; }
+          .porto-pnl { font-size: 11px; }
+        }
+        @media (min-width: 641px) {
+          .porto-total-val { font-size: 38px; }
+          .porto-pct { font-size: 22px; }
+          .porto-pnl { font-size: 12.5px; }
+        }
       `}</style>
     </main>
   );

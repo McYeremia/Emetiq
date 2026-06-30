@@ -70,8 +70,8 @@ export default function EmetiqNav({ active }: { active: NavKey }) {
             aria-label="Menu"
             aria-expanded={open}
             onClick={() => setOpen(o => !o)}
-            className="md:hidden"
-            style={{ width: 40, height: 40, borderRadius: 10, border: `1px solid ${HAIR}`, background: '#fff', cursor: 'pointer', display: 'inline-flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 4 }}
+            className="md:hidden flex flex-col items-center justify-center"
+            style={{ width: 40, height: 40, borderRadius: 10, border: `1px solid ${HAIR}`, background: '#fff', cursor: 'pointer', gap: 4 }}
           >
             <span style={{ width: 17, height: 2, borderRadius: 2, background: INK, transition: 'transform .2s ease', transform: open ? 'translateY(6px) rotate(45deg)' : 'none' }} />
             <span style={{ width: 17, height: 2, borderRadius: 2, background: INK, opacity: open ? 0 : 1, transition: 'opacity .15s ease' }} />
@@ -82,7 +82,7 @@ export default function EmetiqNav({ active }: { active: NavKey }) {
 
       {/* Mobile menu panel */}
       {open && (
-        <div className="md:hidden" style={{ borderTop: `1px solid ${HAIR}`, background: '#fff', padding: '10px 16px 16px', display: 'flex', flexDirection: 'column', gap: 4 }}>
+        <div className="md:hidden flex flex-col" style={{ borderTop: `1px solid ${HAIR}`, background: '#fff', padding: '10px 16px 16px', gap: 4 }}>
           {ITEMS.map(it => {
             const isActive = active === it.key;
             return (

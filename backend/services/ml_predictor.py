@@ -284,7 +284,7 @@ def predict(ticker: str, db: Session) -> dict:
 
 
 def get_model_status(ticker: str) -> dict:
-    """Cek apakah model sudah ada dan kapan di-train."""
+    """Cek apakah model sudah ada dan kapan di-train (berbasis file .pkl)."""
     if not os.path.exists(_model_path(ticker)):
         return {"trained": False}
     meta = {}
@@ -296,4 +296,84 @@ def get_model_status(ticker: str) -> dict:
         "trained_at": meta.get("trained_at"),
         "accuracy":   meta.get("accuracy"),
         "auc":        meta.get("auc"),
+    }
+
+
+# ---------------------------------------------------------------------------
+# Stored predictions (upsert) — sumber kebenaran untuk API saat runtime.
+# Training berat dijalankan offline (cron); endpoint hanya membaca tabel ini.
+# ---------------------------------------------------------------------------
+
+def save_prediction(ticker: str, pred: dict, db: Session) -> None:
+    """Upsert hasil prediksi ke tabel ml_predictions (1 baris per saham, ditimpa)."""
+    if pred.get("status") != "ok":
+        return
+
+    ticker = ticker.upper()
+    row = db.query(models.MlPrediction).filter(models.MlPrediction.ticker == ticker).first()
+    if row is None:
+        row = models.MlPrediction(ticker=ticker)
+        db.add(row)
+
+    row.direction        = pred.get("direction")
+    row.recommendation   = pred.get("recommendation")
+    row.probability_up   = pred.get("probability_up")
+    row.probability_down = pred.get("probability_down")
+    row.confidence       = pred.get("confidence")
+    row.horizon_days     = pred.get("horizon_days", 5)
+    row.top_features     = pred.get("top_features")
+    row.model_accuracy   = pred.get("model_accuracy")
+    row.model_auc        = pred.get("model_auc")
+    row.samples_train    = pred.get("samples_train")
+    row.trained_at       = pred.get("trained_at")
+    db.commit()
+
+
+def train_and_store(ticker: str, db: Session) -> dict:
+    """Latih model lalu hitung & simpan prediksinya. Dipakai oleh cron & endpoint train."""
+    res = train_model(ticker, db)
+    if res.get("status") != "trained":
+        return res
+    pred = predict(ticker, db)
+    save_prediction(ticker, pred, db)
+    return pred
+
+
+def read_prediction(ticker: str, db: Session) -> dict:
+    """Baca prediksi tersimpan (tanpa hitung ulang). Sumber data untuk endpoint /predict."""
+    ticker = ticker.upper()
+    row = db.query(models.MlPrediction).filter(models.MlPrediction.ticker == ticker).first()
+    if row is None:
+        return {
+            "status": "not_trained",
+            "message": "Prediksi belum tersedia. Model dilatih otomatis setiap hari.",
+        }
+    return {
+        "status":           "ok",
+        "ticker":           row.ticker,
+        "direction":        row.direction,
+        "recommendation":   row.recommendation,
+        "probability_up":   row.probability_up,
+        "probability_down": row.probability_down,
+        "confidence":       row.confidence,
+        "horizon_days":     row.horizon_days,
+        "top_features":     row.top_features,
+        "model_accuracy":   row.model_accuracy,
+        "model_auc":        row.model_auc,
+        "trained_at":       row.trained_at,
+        "samples_train":    row.samples_train,
+    }
+
+
+def read_status(ticker: str, db: Session) -> dict:
+    """Status berbasis prediksi tersimpan (bukan file .pkl)."""
+    ticker = ticker.upper()
+    row = db.query(models.MlPrediction).filter(models.MlPrediction.ticker == ticker).first()
+    if row is None:
+        return {"trained": False}
+    return {
+        "trained":    True,
+        "trained_at": row.trained_at,
+        "accuracy":   row.model_accuracy,
+        "auc":        row.model_auc,
     }

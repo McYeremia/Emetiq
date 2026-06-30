@@ -283,26 +283,25 @@ def trigger_scan(db: Session = Depends(get_db)):
 
 @router.post("/{ticker}/ml/train")
 def ml_train(ticker: str, background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
-    """Latih model ML untuk saham tertentu (background task)."""
+    """Latih model lalu simpan prediksinya (upsert) ke tabel ml_predictions."""
     import services.ml_predictor as ml
 
-    # Jalankan langsung (training cepat, <5 detik per saham)
-    result = ml.train_model(ticker.upper(), db)
-    return result
+    # Latih + hitung + simpan prediksi (overwrite baris saham ini)
+    return ml.train_and_store(ticker.upper(), db)
 
 
 @router.get("/{ticker}/ml/predict")
 def ml_predict(ticker: str, db: Session = Depends(get_db)):
-    """Kembalikan prediksi ML 5-hari ke depan."""
+    """Kembalikan prediksi ML tersimpan (dihitung offline oleh cron harian)."""
     import services.ml_predictor as ml
-    return ml.predict(ticker.upper(), db)
+    return ml.read_prediction(ticker.upper(), db)
 
 
 @router.get("/{ticker}/ml/status")
-def ml_status(ticker: str):
-    """Cek apakah model sudah di-train dan metadata-nya."""
+def ml_status(ticker: str, db: Session = Depends(get_db)):
+    """Cek apakah prediksi tersimpan tersedia, beserta metadata model."""
     import services.ml_predictor as ml
-    return ml.get_model_status(ticker.upper())
+    return ml.read_status(ticker.upper(), db)
 
 
 # Parameterized routes after static ones

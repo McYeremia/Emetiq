@@ -14,6 +14,7 @@ interface Props {
   data: OHLCVRow[];
   type: SubPanelType;
   sync?: ChartSyncCoordinator;
+  light?: boolean;
 }
 
 function calcRSI(data: OHLCVRow[], period = 14) {
@@ -108,25 +109,30 @@ const LEGENDS: Record<SubPanelType, { label: string; color: string }[]> = {
   volume: [{ label: 'Vol Bar', color: 'rgba(34,197,94,0.55)' }, { label: 'MA 20', color: '#f59e0b' }],
 };
 
-export default function IndicatorSubChart({ data, type, sync }: Props) {
+export default function IndicatorSubChart({ data, type, sync, light = false }: Props) {
   const chartRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (!chartRef.current || data.length === 0) return;
 
+    const gridColor = light ? 'rgba(20,20,15,0.05)' : 'rgba(255,255,255,0.02)';
+    const borderColor = light ? '#ECEBE6' : 'rgba(255,255,255,0.05)';
+    const zeroLine = light ? 'rgba(20,20,15,0.12)' : 'rgba(255,255,255,0.12)';
+    const midLine = light ? 'rgba(20,20,15,0.08)' : 'rgba(255,255,255,0.08)';
+
     const chart = createChart(chartRef.current, {
       layout: {
         background: { type: ColorType.Solid, color: 'transparent' },
-        textColor: '#64748b',
+        textColor: light ? '#83837B' : '#64748b',
       },
       grid: {
-        vertLines: { color: 'rgba(255,255,255,0.02)' },
-        horzLines: { color: 'rgba(255,255,255,0.02)' },
+        vertLines: { color: gridColor },
+        horzLines: { color: gridColor },
       },
       width: chartRef.current.clientWidth,
       height: 130,
-      timeScale: { borderColor: 'rgba(255,255,255,0.05)', visible: false },
-      rightPriceScale: { borderColor: 'rgba(255,255,255,0.05)' },
+      timeScale: { borderColor, visible: false },
+      rightPriceScale: { borderColor },
       handleScale: { mouseWheel: true, pinch: true },
       handleScroll: { mouseWheel: true, pressedMouseMove: true },
     });
@@ -138,7 +144,7 @@ export default function IndicatorSubChart({ data, type, sync }: Props) {
         series.setData(values);
         series.createPriceLine({ price: 70, color: 'rgba(239,68,68,0.45)', lineWidth: 1, lineStyle: 2, axisLabelVisible: false, title: '' });
         series.createPriceLine({ price: 30, color: 'rgba(34,197,94,0.45)', lineWidth: 1, lineStyle: 2, axisLabelVisible: false, title: '' });
-        series.createPriceLine({ price: 50, color: 'rgba(255,255,255,0.08)', lineWidth: 1, lineStyle: 2, axisLabelVisible: false, title: '' });
+        series.createPriceLine({ price: 50, color: midLine, lineWidth: 1, lineStyle: 2, axisLabelVisible: false, title: '' });
       }
     } else if (type === 'macd') {
       const { macdLine, signalLine } = calcMACD(data);
@@ -147,7 +153,7 @@ export default function IndicatorSubChart({ data, type, sync }: Props) {
         const signal = chart.addSeries(LineSeries, { color: '#f87171', lineWidth: 1 });
         macd.setData(macdLine);
         signal.setData(signalLine);
-        macd.createPriceLine({ price: 0, color: 'rgba(255,255,255,0.12)', lineWidth: 1, lineStyle: 0, axisLabelVisible: false, title: '' });
+        macd.createPriceLine({ price: 0, color: zeroLine, lineWidth: 1, lineStyle: 0, axisLabelVisible: false, title: '' });
       }
     } else if (type === 'stoch') {
       const { kSeries, dSeries } = calcStoch(data);
@@ -192,31 +198,35 @@ export default function IndicatorSubChart({ data, type, sync }: Props) {
       });
     }
 
-    const handleResize = () => {
-      if (chartRef.current) chart.applyOptions({ width: chartRef.current.clientWidth });
-    };
-    window.addEventListener('resize', handleResize);
+    const ro = new ResizeObserver((entries) => {
+      const w = entries[0]?.contentRect.width;
+      if (w && w > 0) chart.applyOptions({ width: Math.floor(w) });
+    });
+    ro.observe(chartRef.current);
+
     return () => {
       unregisterSync?.();
-      window.removeEventListener('resize', handleResize);
+      ro.disconnect();
       chart.remove();
     };
-  }, [data, type, sync]);
+  }, [data, type, sync, light]);
 
   return (
-    <div className="border-t border-white/5 px-6 pt-3 pb-2">
+    <div className="px-6 pt-3 pb-2" style={{ borderTop: `1px solid ${light ? '#ECEBE6' : 'rgba(255,255,255,0.05)'}` }}>
       <div className="flex items-center gap-4 mb-2">
-        <p className="text-[8px] font-black text-gray-500 uppercase tracking-widest">{LABELS[type]}</p>
+        <p className="text-[8px] font-black uppercase tracking-widest" style={{ color: light ? '#9A9A92' : '#6b7280' }}>{LABELS[type]}</p>
         <div className="flex items-center gap-3">
           {LEGENDS[type].map(l => (
             <span key={l.label} className="flex items-center gap-1.5">
               <span className="w-3 h-0.5 inline-block rounded" style={{ backgroundColor: l.color }} />
-              <span className="text-[7px] font-mono text-gray-600">{l.label}</span>
+              <span className="text-[7px] font-mono" style={{ color: light ? '#9A9A92' : '#9ca3af' }}>{l.label}</span>
             </span>
           ))}
         </div>
       </div>
-      <div ref={chartRef} className="w-full" />
+      <div style={{ position: "relative", width: "100%", height: 130, overflow: "hidden" }}>
+        <div ref={chartRef} style={{ position: "absolute", inset: 0 }} />
+      </div>
     </div>
   );
 }

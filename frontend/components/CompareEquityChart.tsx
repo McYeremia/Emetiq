@@ -56,15 +56,21 @@ export default function CompareEquityChart({ series, height = 280 }: Props) {
 
     chart.timeScale().fitContent();
 
-    const handleResize = () => {
-      if (chartRef.current) chart.applyOptions({ width: chartRef.current.clientWidth });
-    };
-    window.addEventListener("resize", handleResize);
+    const ro = new ResizeObserver((entries) => {
+      const w = entries[0]?.contentRect.width;
+      if (w && w > 0) chart.applyOptions({ width: Math.floor(w) });
+    });
+    ro.observe(chartRef.current);
+
     return () => {
-      window.removeEventListener("resize", handleResize);
+      ro.disconnect();
       chart.remove();
     };
   }, [series, height]);
 
-  return <div ref={chartRef} className="w-full" />;
+  return (
+    <div style={{ position: "relative", width: "100%", height, overflow: "hidden" }}>
+      <div ref={chartRef} style={{ position: "absolute", inset: 0 }} />
+    </div>
+  );
 }

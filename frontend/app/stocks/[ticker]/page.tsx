@@ -2,37 +2,38 @@
 
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { useParams, useRouter } from 'next/navigation';
-import { api, Stock, PortfolioItem, OHLCV } from '@/lib/api';
+import { api, Stock, OHLCV } from '@/lib/api';
 import { createChartSync } from '@/lib/chartSync';
 import dynamic from 'next/dynamic';
-import Link from 'next/link';
-import strategyRegistry from '../../../strategies_local/registry.json';
+import EmetiqNav from '@/components/EmetiqNav';
 import { useToast } from '@/components/Toast';
 
 const StockChart = dynamic(() => import("@/components/StockChart"), { ssr: false });
 const IndicatorSubChart = dynamic(() => import("@/components/IndicatorSubChart"), { ssr: false });
 
 type SubPanelType = 'rsi' | 'macd' | 'stoch' | 'volume';
-type Timeframe = '1M' | '3M' | '6M' | '1Y' | 'ALL';
+type Timeframe = '3M' | '6M' | '1Y' | 'ALL';
+type SortKey = 'name' | 'price' | 'change';
 
-type StrategyConfig = {
-  ma20: boolean; ma50: boolean; ema12: boolean;
-  ma200: boolean; ema26: boolean; bb: boolean;
-  subPanel: SubPanelType | null;
-};
+// ── EMETIQ theme tokens ────────────────────────────────────────
+const ACCENT = '#F26A1B';
+const BG = '#FCFCFB';
+const INK = '#14140F';
+const MUTED = '#56564F';
+const FAINT = '#9A9A92';
+const HAIR = '#ECEBE6';
+const UP = '#138A50';
+const DOWN = '#D23B3B';
+const UP_BG = '#E7F6EE';
+const DOWN_BG = '#FBE9E9';
+const SANS = "'Plus Jakarta Sans', system-ui, sans-serif";
+const MONO = "'IBM Plex Mono', monospace";
 
-const STRATEGY_INDICATORS: Record<string, StrategyConfig> = {
-  'manual-intuition':    { ma20: true,  ma50: true,  ema12: false, ma200: false, ema26: false, bb: false, subPanel: null    },
-  'rsi-reversion':       { ma20: false, ma50: false, ema12: false, ma200: false, ema26: false, bb: false, subPanel: 'rsi'   },
-  'triple-confirmation': { ma20: true,  ma50: false, ema12: false, ma200: false, ema26: false, bb: false, subPanel: 'macd'  },
-  'volatility-sniper':   { ma20: false, ma50: false, ema12: false, ma200: false, ema26: false, bb: true,  subPanel: 'stoch' },
-  'institutional-trend': { ma20: false, ma50: false, ema12: true,  ma200: true,  ema26: true,  bb: false, subPanel: null    },
-  'exhaustion-play':     { ma20: false, ma50: false, ema12: false, ma200: false, ema26: false, bb: true,  subPanel: 'rsi'   },
-  'trend-accelerator':   { ma20: false, ma50: true,  ema12: false, ma200: false, ema26: false, bb: false, subPanel: 'macd'  },
-  'pure-momentum':       { ma20: false, ma50: false, ema12: true,  ma200: false, ema26: true,  bb: false, subPanel: 'macd'  },
-  'defensive-bull':      { ma20: false, ma50: true,  ema12: false, ma200: true,  ema26: false, bb: false, subPanel: 'rsi'   },
-  'stoch-rsi-hybrid':    { ma20: false, ma50: false, ema12: false, ma200: false, ema26: false, bb: false, subPanel: 'stoch' },
-  'ma-cross':            { ma20: true,  ma50: true,  ema12: false, ma200: false, ema26: false, bb: false, subPanel: null    },
+const CARD: React.CSSProperties = {
+  background: '#fff',
+  border: `1px solid ${HAIR}`,
+  borderRadius: 18,
+  boxShadow: '0 18px 44px -28px rgba(20,20,15,.24)',
 };
 
 interface Indicators {
@@ -46,10 +47,10 @@ interface Indicators {
 }
 
 function rsiColor(v: number | null) {
-  if (!v) return "text-gray-500";
-  if (v < 30) return "text-green-400";
-  if (v > 70) return "text-red-400";
-  return "text-blue-400";
+  if (v == null) return MUTED;
+  if (v < 30) return UP;
+  if (v > 70) return DOWN;
+  return '#2563EB';
 }
 
 function fmt(v: number | null) {
@@ -57,13 +58,13 @@ function fmt(v: number | null) {
   return v.toLocaleString("id-ID", { maximumFractionDigits: 2 });
 }
 
-export default function TradingTerminalPage() {
+export default function StockDetailPage() {
   const params = useParams();
   const router = useRouter();
   const ticker = params?.ticker as string;
 
   useEffect(() => {
-    if (ticker) document.title = `${ticker} — IDXAnalyst`;
+    if (ticker) document.title = `${ticker} — EMETIQ`;
   }, [ticker]);
 
   const { toast } = useToast();
@@ -80,9 +81,8 @@ export default function TradingTerminalPage() {
   const [mlResult, setMlResult] = useState<MlResult | null>(null);
   const [mlStatus, setMlStatus] = useState<MlStatus | null>(null);
   const [mlLoading, setMlLoading] = useState(false);
-  const [mlTraining, setMlTraining] = useState(false);
 
-  // Professional Order State
+  // Order state
   const [orderSide, setOrderSide] = useState<'BUY' | 'SELL'>('BUY');
   const [tradeQty, setTradeQty] = useState(1);
   const [isTrading, setIsTrading] = useState(false);
@@ -91,17 +91,18 @@ export default function TradingTerminalPage() {
   // Watchlist state
   const [watchlist, setWatchlist] = useState<Set<string>>(new Set());
 
-  // Sidebar sort state
-  const [sidebarSort, setSidebarSort] = useState<'default' | 'change_asc' | 'change_desc'>('default');
-  
-  // Discipline Fields
-  const [selectedStrategy, setSelectedStrategy] = useState('manual-intuition');
+  // Sidebar sort — mirrors the Market page (Nama / Harga / %)
+  const [sortKey, setSortKey] = useState<SortKey>('name');
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc');
+
+  // Order note (strategy fixed to manual since the picker was removed)
+  const selectedStrategy = 'manual-intuition';
   const [reasoning, setReasoning] = useState('');
 
   // Shared time scale sync between price chart and indicator sub-panels
   const chartSync = useRef(createChartSync());
 
-  // Chart Visibility State
+  // Chart visibility state
   const [showMA20, setShowMA20] = useState(true);
   const [showMA50, setShowMA50] = useState(true);
   const [showMA200, setShowMA200] = useState(false);
@@ -109,7 +110,7 @@ export default function TradingTerminalPage() {
   const [showEMA26, setShowEMA26] = useState(false);
   const [showBB, setShowBB] = useState(false);
   const [activeSubPanel, setActiveSubPanel] = useState<SubPanelType | null>(null);
-  const [timeframe, setTimeframe] = useState<Timeframe>('1Y');
+  const [timeframe, setTimeframe] = useState<Timeframe>('3M');
 
   useEffect(() => {
     api.getStocks().then(setStocks);
@@ -145,7 +146,6 @@ export default function TradingTerminalPage() {
       setIndicators(indData.indicators || null);
       setPortfolio(portfolioData.USER.assets.find((p: any) => p.ticker === ticker) || null);
       setMlStatus(status);
-      // Jika model sudah ada, langsung ambil prediksi
       if (status.trained) {
         setMlLoading(true);
         api.getMlPrediction(ticker).then(setMlResult).finally(() => setMlLoading(false));
@@ -157,49 +157,12 @@ export default function TradingTerminalPage() {
     }
   }, [ticker]);
 
-  const handleMlTrain = async () => {
-    setMlTraining(true);
-    setMlResult(null);
-    try {
-      const res = await api.trainMlModel(ticker);
-      if (res.status === 'trained') {
-        setMlStatus({ trained: true, trained_at: new Date().toISOString(), accuracy: res.accuracy, auc: res.auc });
-        setMlLoading(true);
-        api.getMlPrediction(ticker).then(setMlResult).finally(() => setMlLoading(false));
-      } else {
-        setMlResult({ status: 'error', message: res.message });
-      }
-    } catch {
-      setMlResult({ status: 'error', message: 'Gagal menghubungi server' });
-    } finally {
-      setMlTraining(false);
-    }
-  };
-
   useEffect(() => {
     fetchData();
   }, [fetchData]);
 
-  // Auto-apply indicators when strategy changes
-  useEffect(() => {
-    const cfg = STRATEGY_INDICATORS[selectedStrategy];
-    if (!cfg) return;
-    setShowMA20(cfg.ma20);
-    setShowMA50(cfg.ma50);
-    setShowMA200(cfg.ma200);
-    setShowEMA12(cfg.ema12);
-    setShowEMA26(cfg.ema26);
-    setShowBB(cfg.bb);
-    setActiveSubPanel(cfg.subPanel);
-  }, [selectedStrategy]);
-
   const handleTrade = async () => {
     if (!ticker) return;
-    if (orderSide === 'BUY' && !reasoning) {
-        toast("Harap masukkan alasan beli!", 'error');
-        return;
-    }
-
     setIsTrading(true);
     try {
       const res = await api.executeTrade(ticker, orderSide, tradeQty, undefined, 'MANUAL', reasoning, selectedStrategy);
@@ -219,239 +182,262 @@ export default function TradingTerminalPage() {
 
   const latestPrice = ohlcv[ohlcv.length - 1]?.close || 0;
   const totalValue = latestPrice * tradeQty * 100;
+
+  const toggleSort = (key: SortKey) => {
+    if (sortKey === key) setSortDir(d => (d === 'asc' ? 'desc' : 'asc'));
+    else { setSortKey(key); setSortDir(key === 'name' ? 'asc' : 'desc'); }
+  };
+
   const filteredStocks = stocks
-    .filter(s => s.ticker !== '^JKSE' && s.ticker.toLowerCase().includes(searchTerm.toLowerCase()))
+    .filter(s => s.ticker !== '^JKSE' && (s.ticker.toLowerCase().includes(searchTerm.toLowerCase()) || s.name.toLowerCase().includes(searchTerm.toLowerCase())))
     .sort((a, b) => {
-      if (sidebarSort === 'change_desc') return (b.change_pct ?? -999) - (a.change_pct ?? -999);
-      if (sidebarSort === 'change_asc') return (a.change_pct ?? 999) - (b.change_pct ?? 999);
-      return 0;
+      let cmp = 0;
+      if (sortKey === 'name') cmp = a.ticker.localeCompare(b.ticker);
+      else if (sortKey === 'price') cmp = (a.last_price ?? 0) - (b.last_price ?? 0);
+      else cmp = (a.change_pct ?? 0) - (b.change_pct ?? 0);
+      return sortDir === 'asc' ? cmp : -cmp;
     });
+
   const currentStockInfo = stocks.find(s => s.ticker === ticker);
+  const priceUp = (currentStockInfo?.change_pct ?? 0) >= 0;
 
   const displayedOhlcv = (() => {
     if (timeframe === 'ALL' || ohlcv.length === 0) return ohlcv;
-    const months = { '1M': 1, '3M': 3, '6M': 6, '1Y': 12 }[timeframe];
+    const months = { '3M': 3, '6M': 6, '1Y': 12 }[timeframe];
     const cutoff = new Date();
     cutoff.setMonth(cutoff.getMonth() - months);
     const cutoffStr = cutoff.toISOString().slice(0, 10);
     return ohlcv.filter(d => d.date >= cutoffStr);
   })();
 
-  return (
-    <div className="flex flex-col md:flex-row h-screen bg-[#050505] text-white overflow-hidden pt-16">
-      {/* Sidebar: Market Watch */}
-      <aside className="hidden md:flex w-64 border-r border-white/10 flex-col bg-[#0a0a0a] shrink-0">
-        <div className="p-4 border-b border-white/10">
-          <div className="flex items-center gap-2 mb-4 text-left">
-            <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center font-bold text-[10px] text-black shadow-lg shadow-blue-600/20">IX</div>
-            <span className="text-xs font-black tracking-widest uppercase text-blue-500">Market Hub</span>
-          </div>
-          <input
-            type="text"
-            placeholder="Quick search..."
-            className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-xs focus:outline-none focus:border-blue-500/50"
-            onChange={(e) => setSearchTerm(e.target.value)}
-          />
-          <div className="flex items-center gap-1 mt-2">
-            <span className="text-[8px] text-gray-700 font-mono uppercase tracking-widest">Sort:</span>
-            {[
-              { val: 'default' as const, label: 'DEF' },
-              { val: 'change_desc' as const, label: '▲%' },
-              { val: 'change_asc' as const, label: '▼%' },
-            ].map(opt => (
-              <button
-                key={opt.val}
-                onClick={() => setSidebarSort(opt.val)}
-                className={`text-[8px] font-black px-2 py-0.5 rounded transition-colors ${sidebarSort === opt.val ? 'bg-blue-600/20 text-blue-400' : 'text-gray-700 hover:text-gray-400'}`}
-              >
-                {opt.label}
-              </button>
-            ))}
-          </div>
-        </div>
-        <div className="flex-1 overflow-y-auto custom-scrollbar">
-          {filteredStocks.map(stock => (
-            <div
-              key={stock.ticker}
-              onClick={() => router.push(`/stocks/${stock.ticker}`)}
-              role="button"
-              tabIndex={0}
-              className={`w-full p-4 flex justify-between items-center hover:bg-white/5 transition-all border-b border-white/[0.02] cursor-pointer ${ticker === stock.ticker ? 'bg-blue-600/10 border-r-4 border-r-blue-500' : ''}`}
-            >
-              <div className="text-left">
-                <p className={`text-sm font-black ${ticker === stock.ticker ? 'text-blue-400' : 'text-gray-300'}`}>{stock.ticker}</p>
-                <p className="text-[9px] text-gray-600 uppercase truncate w-24">{stock.name}</p>
-              </div>
-              <button
-                onClick={(e) => toggleWatchlist(e, stock.ticker)}
-                className="text-[10px] px-1 transition-colors"
-                style={{ color: watchlist.has(stock.ticker) ? '#F59E0B' : 'rgba(255,255,255,0.1)' }}
-              >
-                ★
-              </button>
-              <div className="text-right text-xs font-mono font-bold">
-                Rp {stock.last_price?.toLocaleString('id-ID')}
-                {stock.change_pct != null && (
-                  <span className={`text-[8px] font-mono block ${stock.change_pct >= 0 ? 'text-green-400' : 'text-red-400'}`}>
-                    {stock.change_pct >= 0 ? '+' : ''}{stock.change_pct.toFixed(2)}%
-                  </span>
-                )}
-              </div>
-            </div>
-          ))}
-        </div>
-        <Link href="/dashboard" className="p-4 text-[10px] text-gray-500 hover:text-white text-center border-t border-white/10 uppercase tracking-widest font-black bg-black/40">
-          Exit Terminal
-        </Link>
-      </aside>
+  // ── Price overlay toggles (dot color = the line color drawn on the chart) ──
+  const overlayToggles = [
+    { label: 'MA 20',  on: showMA20,  set: () => setShowMA20(v => !v),   dot: '#f59e0b' },
+    { label: 'MA 50',  on: showMA50,  set: () => setShowMA50(v => !v),   dot: '#a78bfa' },
+    { label: 'MA 200', on: showMA200, set: () => setShowMA200(v => !v),  dot: '#f97316' },
+    { label: 'EMA 12', on: showEMA12, set: () => setShowEMA12(v => !v),  dot: '#38bdf8' },
+    { label: 'EMA 26', on: showEMA26, set: () => setShowEMA26(v => !v),  dot: '#22d3ee' },
+    { label: 'BB',     on: showBB,    set: () => setShowBB(v => !v),     dot: '#ec4899' },
+  ];
 
-      {/* Main Trading Area */}
-      <main className="flex-1 flex flex-col overflow-hidden bg-gradient-to-br from-[#050505] to-black">
-        {/* Mobile stock selector — visible only on small screens */}
-        <div className="md:hidden px-4 pt-3 pb-2 border-b border-white/10 bg-[#0a0a0a]">
+  const subPanelToggles: { label: string; panel: SubPanelType }[] = [
+    { label: 'RSI', panel: 'rsi' },
+    { label: 'MACD', panel: 'macd' },
+    { label: 'STOCH', panel: 'stoch' },
+    { label: 'VOL', panel: 'volume' },
+  ];
+
+  // ── Technical indicators grouped by family for compact reading ──
+  const indGroups: { title: string; items: { label: string; value: number | null; color?: string; tag?: string | null }[] }[] = [
+    {
+      title: 'Moving Average',
+      items: [
+        { label: 'MA 20', value: indicators?.MA_20 ?? null },
+        { label: 'MA 50', value: indicators?.MA_50 ?? null },
+        { label: 'MA 200', value: indicators?.MA_200 ?? null },
+      ],
+    },
+    {
+      title: 'Exponential MA',
+      items: [
+        { label: 'EMA 12', value: indicators?.EMA_12 ?? null },
+        { label: 'EMA 26', value: indicators?.EMA_26 ?? null },
+      ],
+    },
+    {
+      title: 'MACD',
+      items: [
+        { label: 'Line', value: indicators?.MACD_LINE ?? null },
+        { label: 'Signal', value: indicators?.MACD_SIGNAL ?? null },
+        { label: 'Histogram', value: indicators?.MACD_HIST ?? null },
+      ],
+    },
+    {
+      title: 'Bollinger Bands',
+      items: [
+        { label: 'Upper', value: indicators?.BB_UPPER ?? null },
+        { label: 'Middle', value: indicators?.BB_MIDDLE ?? null },
+        { label: 'Lower', value: indicators?.BB_LOWER ?? null },
+      ],
+    },
+    {
+      title: 'Oscillator',
+      items: [
+        {
+          label: 'RSI 14',
+          value: indicators?.RSI_14 ?? null,
+          color: rsiColor(indicators?.RSI_14 ?? null),
+          tag: indicators?.RSI_14 != null ? (indicators.RSI_14 < 30 ? 'Oversold' : indicators.RSI_14 > 70 ? 'Overbought' : 'Neutral') : null,
+        },
+        { label: 'Stoch %K', value: indicators?.STOCH_K ?? null },
+        { label: 'Stoch %D', value: indicators?.STOCH_D ?? null },
+      ],
+    },
+    {
+      title: 'Volatility',
+      items: [
+        { label: 'ATR 14', value: indicators?.ATR_14 ?? null },
+      ],
+    },
+  ];
+
+  // Reusable pill style
+  const pill = (active: boolean): React.CSSProperties => ({
+    display: 'inline-flex', alignItems: 'center', gap: 6,
+    fontSize: 11.5, fontWeight: 700, padding: '6px 12px', borderRadius: 999,
+    cursor: 'pointer', transition: 'all .15s ease', whiteSpace: 'nowrap',
+    border: `1px solid ${active ? ACCENT : HAIR}`,
+    background: active ? `color-mix(in oklab, ${ACCENT}, white 88%)` : '#fff',
+    color: active ? ACCENT : MUTED,
+  });
+
+  const labelStyle: React.CSSProperties = { display: 'block', fontSize: 10.5, fontWeight: 600, color: FAINT, textTransform: 'uppercase', letterSpacing: '.08em', marginBottom: 6 };
+
+  return (
+    <main style={{ minHeight: '100vh', background: BG, color: INK, fontFamily: SANS, WebkitFontSmoothing: 'antialiased' }}>
+      {/* Fonts — React 19 hoists these into <head> */}
+      <link rel="preconnect" href="https://fonts.googleapis.com" />
+      <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="" />
+      <link
+        href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500;600&display=swap"
+        rel="stylesheet"
+      />
+
+      <EmetiqNav active="market" />
+
+      <div style={{ maxWidth: 1320, margin: '0 auto', padding: '24px 20px 80px' }}>
+        {/* ── Stock header ───────────────────────────────────── */}
+        <div style={{ ...CARD, padding: 22, marginBottom: 20 }} className="flex flex-row items-center justify-between gap-4">
+          <div className="flex items-center gap-3 md:gap-5 min-w-0">
+            <button
+              onClick={() => router.back()}
+              title="Kembali"
+              style={{ flex: 'none', width: 38, height: 38, borderRadius: 11, border: `1px solid ${HAIR}`, background: '#fff', cursor: 'pointer', fontSize: 19, color: INK, lineHeight: 1 }}
+            >‹</button>
+            <div>
+              <div className="flex items-center gap-3">
+                <h1 style={{ fontSize: 30, fontWeight: 800, letterSpacing: '-.02em', lineHeight: 1 }}>{ticker}</h1>
+                <button
+                  onClick={(e) => toggleWatchlist(e, ticker)}
+                  title={watchlist.has(ticker) ? 'Hapus dari watchlist' : 'Tambah ke watchlist'}
+                  style={{ fontSize: 18, lineHeight: 1, background: 'none', border: 'none', cursor: 'pointer', color: watchlist.has(ticker) ? ACCENT : '#D6D5CE' }}
+                >★</button>
+              </div>
+              <p className="truncate" style={{ fontFamily: MONO, fontSize: 11, color: FAINT, textTransform: 'uppercase', letterSpacing: '.14em', marginTop: 5 }}>{currentStockInfo?.sector || 'Sektor tidak diketahui'}</p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2 md:gap-3 flex-wrap justify-end" style={{ flex: 'none' }}>
+            <p style={{ fontFamily: MONO, fontSize: 26, fontWeight: 600, letterSpacing: '-.01em' }}>Rp {latestPrice.toLocaleString('id-ID')}</p>
+            {currentStockInfo?.change_pct != null && (
+              <span style={{ fontFamily: MONO, fontSize: 12, fontWeight: 600, color: priceUp ? UP : DOWN, background: priceUp ? UP_BG : DOWN_BG, padding: '3px 9px', borderRadius: 7, display: 'inline-block' }}>
+                {priceUp ? '▲' : '▼'} {Math.abs(currentStockInfo.change_pct).toFixed(2)}%
+              </span>
+            )}
+          </div>
+        </div>
+
+        {/* Mobile stock selector (sidebar is hidden on small screens) */}
+        <div className="term-mobile-select" style={{ marginBottom: 18 }}>
           <select
             value={ticker}
             onChange={e => router.push(`/stocks/${e.target.value}`)}
-            className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm text-white focus:outline-none"
+            className="emx-input"
+            style={{ width: '100%', background: '#fff', border: `1px solid ${HAIR}`, borderRadius: 12, padding: '11px 14px', fontSize: 14, color: INK, fontFamily: SANS }}
           >
             {filteredStocks.map(s => (
-              <option key={s.ticker} value={s.ticker} className="bg-[#0a0a0a]">
-                {s.ticker} — {s.name || ''}
-              </option>
+              <option key={s.ticker} value={s.ticker}>{s.ticker} — {s.name || ''}</option>
             ))}
           </select>
         </div>
-        {/* Top Header */}
-        <header className="h-auto md:h-24 border-b border-white/10 bg-[#0a0a0a]/80 backdrop-blur-md flex flex-col md:flex-row items-start md:items-center justify-between px-4 md:px-8 py-4 md:py-0 shrink-0 gap-4 md:gap-0">
-          <div className="flex items-center gap-8">
-            <div className="text-left">
-              <h1 className="text-4xl font-black tracking-tighter leading-none mb-1">{ticker}</h1>
-              <p className="text-gray-600 text-[10px] font-mono tracking-[0.3em] uppercase">{currentStockInfo?.sector || 'UNKNOWN SECTOR'}</p>
-            </div>
-            <div className="h-10 w-px bg-white/10" />
-            <div className="flex flex-col text-left">
-              <span className="text-2xl font-mono font-bold text-blue-400 italic">Rp {latestPrice.toLocaleString('id-ID')}</span>
-              <span className="text-[9px] text-gray-500 font-mono uppercase tracking-widest">Live Market Price</span>
-            </div>
-          </div>
 
-          {/* DISCIPLINED TRADE PANEL */}
-          <div className="flex flex-wrap items-center gap-4 bg-white/5 p-3 rounded-2xl border border-white/10 shadow-2xl w-full md:w-auto">
-            <div className="flex flex-col gap-2">
-               <div className="flex items-center gap-2">
-                  <select 
-                    value={selectedStrategy}
-                    onChange={(e) => setSelectedStrategy(e.target.value)}
-                    className="bg-black/40 border border-white/10 rounded-lg px-2 py-1 text-[9px] font-bold text-blue-400 uppercase outline-none"
-                  >
-                     <option value="manual-intuition">Manual Intuition</option>
-                     {strategyRegistry.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
-                  </select>
-                  <input 
-                    type="text" 
-                    placeholder="Reason for buying..." 
-                    value={reasoning}
-                    onChange={(e) => setReasoning(e.target.value)}
-                    className="bg-black/40 border border-white/10 rounded-lg px-3 py-1.5 text-[10px] w-48 focus:border-blue-500/50 outline-none"
-                  />
-               </div>
-               <div className="flex items-center gap-2">
-                  <input 
-                    type="number" 
-                    value={tradeQty} 
-                    onChange={(e) => setTradeQty(Math.max(1, parseInt(e.target.value) || 1))}
-                    className="bg-black/60 border border-white/20 rounded-lg px-3 py-1.5 text-xs w-16 text-center font-bold text-blue-400 focus:outline-none"
-                  />
-                  <button onClick={() => setOrderSide('BUY')} className={`text-[8px] font-black px-3 py-1.5 rounded ${orderSide === 'BUY' ? 'bg-green-600 text-white' : 'bg-white/5 text-gray-500'}`}>BUY</button>
-                  <button onClick={() => setOrderSide('SELL')} className={`text-[8px] font-black px-3 py-1.5 rounded ${orderSide === 'SELL' ? 'bg-red-600 text-white' : 'bg-white/5 text-gray-500'}`}>SELL</button>
-                  <button onClick={handleTrade} disabled={isTrading} className="ml-2 bg-white text-black text-[9px] font-black px-6 py-1.5 rounded-lg hover:bg-blue-400 transition-all uppercase tracking-widest disabled:opacity-50">
-                    {isTrading ? '...' : 'EXECUTE'}
-                  </button>
-               </div>
-            </div>
-            <div className="flex flex-col px-6 border-l border-white/10 text-right">
-              <span className="text-[9px] text-gray-500 font-mono uppercase">Your Position</span>
-              <span className="text-sm font-black text-blue-400 font-mono leading-none mt-1">{portfolio ? `${portfolio.shares / 100} Lot` : '0 Lot'}</span>
-            </div>
-          </div>
-        </header>
-
-        {/* Workspace */}
-        <div className="flex-1 overflow-y-auto p-4 md:p-8 custom-scrollbar">
-           <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-6">
-              <div className="flex gap-2 flex-wrap items-center">
-                {/* Price overlay toggles */}
-                {[
-                  { label: "MA 20",  state: showMA20,  toggle: () => setShowMA20(!showMA20),   color: "border-yellow-500/50 text-yellow-500" },
-                  { label: "MA 50",  state: showMA50,  toggle: () => setShowMA50(!showMA50),   color: "border-purple-500/50 text-purple-500" },
-                  { label: "MA 200", state: showMA200, toggle: () => setShowMA200(!showMA200), color: "border-orange-500/50 text-orange-500" },
-                  { label: "EMA 12", state: showEMA12, toggle: () => setShowEMA12(!showEMA12), color: "border-blue-400/50 text-blue-400"     },
-                  { label: "EMA 26", state: showEMA26, toggle: () => setShowEMA26(!showEMA26), color: "border-cyan-400/50 text-cyan-400"     },
-                  { label: "BB",     state: showBB,    toggle: () => setShowBB(!showBB),       color: "border-pink-500/50 text-pink-500"     },
-                ].map(({ label, state, toggle, color }) => (
-                  <button
-                    key={label}
-                    onClick={toggle}
-                    className={`text-[9px] font-black tracking-widest uppercase px-4 py-2 rounded-xl border transition-all ${
-                      state ? `${color} bg-white/5` : "border-white/5 text-gray-700 hover:text-gray-500"
-                    }`}
-                  >
-                    {label}
-                  </button>
-                ))}
-                <div className="w-px h-6 bg-white/10 mx-1" />
-                {/* Oscillator sub-panel toggles */}
-                {([
-                  { label: "RSI",   panel: 'rsi'    as SubPanelType, color: "border-amber-400/50 text-amber-400"    },
-                  { label: "MACD",  panel: 'macd'   as SubPanelType, color: "border-blue-400/50 text-blue-400"      },
-                  { label: "STOCH", panel: 'stoch'  as SubPanelType, color: "border-emerald-400/50 text-emerald-400" },
-                  { label: "VOL",   panel: 'volume' as SubPanelType, color: "border-violet-400/50 text-violet-400"  },
-                ] as { label: string; panel: SubPanelType; color: string }[]).map(({ label, panel, color }) => (
-                  <button
-                    key={label}
-                    onClick={() => setActiveSubPanel(p => p === panel ? null : panel)}
-                    className={`text-[9px] font-black tracking-widest uppercase px-4 py-2 rounded-xl border transition-all ${
-                      activeSubPanel === panel ? `${color} bg-white/5` : "border-white/5 text-gray-700 hover:text-gray-500"
-                    }`}
-                  >
-                    {label}
-                  </button>
-                ))}
-                <div className="w-px h-6 bg-white/10 mx-1" />
-                {(['1M', '3M', '6M', '1Y', 'ALL'] as Timeframe[]).map(tf => (
-                  <button
-                    key={tf}
-                    onClick={() => setTimeframe(tf)}
-                    className={`text-[9px] font-black tracking-widest uppercase px-4 py-2 rounded-xl border transition-all ${
-                      timeframe === tf
-                        ? 'border-white/30 bg-white/10 text-white'
-                        : 'border-white/5 text-gray-600 hover:text-gray-400'
-                    }`}
-                  >
-                    {tf}
-                  </button>
-                ))}
+        {/* ── 3-column workspace ─────────────────────────────── */}
+        <div className="term-grid">
+          {/* LEFT: Market watch */}
+          <aside className="term-side">
+            <div style={{ ...CARD, padding: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column', maxHeight: 'calc(100vh - 108px)' }}>
+              <div style={{ padding: 14, borderBottom: `1px solid ${HAIR}` }}>
+                <input
+                  type="text"
+                  placeholder="Cari saham..."
+                  className="emx-input"
+                  style={{ width: '100%', background: '#fff', border: `1px solid ${HAIR}`, borderRadius: 10, padding: '9px 12px', fontSize: 13, color: INK, fontFamily: SANS }}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                />
+                <div className="flex items-center gap-1.5 mt-2.5">
+                  <span style={{ fontSize: 11, fontWeight: 600, color: FAINT, marginRight: 2 }}>Urut</span>
+                  {([['name', 'Nama'], ['price', 'Harga'], ['change', '%']] as const).map(([key, label]) => {
+                    const active = sortKey === key;
+                    return (
+                      <button key={key} onClick={() => toggleSort(key)} style={{ ...pill(active), padding: '5px 9px', fontSize: 11 }}>
+                        {label}{active && <span style={{ fontSize: 8 }}>{sortDir === 'asc' ? '▲' : '▼'}</span>}
+                      </button>
+                    );
+                  })}
+                </div>
               </div>
-              
-              <div className="grid grid-cols-3 sm:grid-cols-3 gap-3 p-4 bg-white/[0.02] border border-white/5 rounded-2xl">
-                 <div>
-                    <p className="text-[8px] text-gray-500 font-bold uppercase tracking-widest">P/E Ratio</p>
-                    <p className="text-xs font-bold font-mono text-white">{currentStockInfo?.pe_ratio?.toFixed(2) || '-'}</p>
-                 </div>
-                 <div>
-                    <p className="text-[8px] text-gray-500 font-bold uppercase tracking-widest">P/B Ratio</p>
-                    <p className="text-xs font-bold font-mono text-white">{currentStockInfo?.pbv_ratio?.toFixed(2) || '-'}</p>
-                 </div>
-                 <div>
-                    <p className="text-[8px] text-gray-500 font-bold uppercase tracking-widest">Div. Yield</p>
-                    <p className="text-xs font-bold font-mono text-green-400">{currentStockInfo?.dividend_yield ? `${(currentStockInfo.dividend_yield * 100).toFixed(2)}%` : '-'}</p>
-                 </div>
+              <div className="emx-scroll" style={{ overflowY: 'auto', flex: 1 }}>
+                {filteredStocks.map(stock => {
+                  const active = ticker === stock.ticker;
+                  const up = stock.change_pct != null && stock.change_pct >= 0;
+                  return (
+                    <div
+                      key={stock.ticker}
+                      onClick={() => router.push(`/stocks/${stock.ticker}`)}
+                      role="button"
+                      tabIndex={0}
+                      className="emx-listrow"
+                      style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, padding: '11px 14px', cursor: 'pointer', borderBottom: '1px solid #F4F3EF', borderLeft: `3px solid ${active ? ACCENT : 'transparent'}`, background: active ? `color-mix(in oklab, ${ACCENT}, white 92%)` : 'transparent' }}
+                    >
+                      <div className="min-w-0">
+                        <p style={{ fontWeight: 700, fontSize: 13, color: active ? ACCENT : INK }}>{stock.ticker}</p>
+                        <p style={{ fontFamily: MONO, fontSize: 9.5, color: FAINT }} className="truncate w-24">{stock.name}</p>
+                      </div>
+                      <button
+                        onClick={(e) => toggleWatchlist(e, stock.ticker)}
+                        style={{ fontSize: 12, lineHeight: 1, background: 'none', border: 'none', cursor: 'pointer', color: watchlist.has(stock.ticker) ? ACCENT : '#D6D5CE', flex: 'none' }}
+                      >★</button>
+                      <div style={{ textAlign: 'right', flex: 'none' }}>
+                        <p style={{ fontFamily: MONO, fontSize: 12, fontWeight: 600 }}>{stock.last_price?.toLocaleString('id-ID') ?? '-'}</p>
+                        {stock.change_pct != null && (
+                          <p style={{ fontFamily: MONO, fontSize: 9.5, fontWeight: 600, color: up ? UP : DOWN }}>{up ? '+' : ''}{stock.change_pct.toFixed(2)}%</p>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
-           </div>
+            </div>
+          </aside>
 
-           <div className="bg-white/[0.02] border border-white/5 rounded-[2.5rem] overflow-hidden mb-12 shadow-2xl relative">
+          {/* CENTER (top): chart toolbar + chart */}
+          <div className="term-main-top" style={{ minWidth: 0 }}>
+            {/* Chart toolbar */}
+            <div className="flex flex-wrap items-center gap-2 mb-4">
+              {overlayToggles.map(t => (
+                <button key={t.label} onClick={t.set} style={pill(t.on)}>
+                  <span style={{ width: 8, height: 8, borderRadius: '50%', background: t.dot, flex: 'none', opacity: t.on ? 1 : .45 }} />
+                  {t.label}
+                </button>
+              ))}
+              <span style={{ width: 1, height: 22, background: HAIR, margin: '0 4px' }} />
+              {subPanelToggles.map(t => (
+                <button key={t.panel} onClick={() => setActiveSubPanel(p => p === t.panel ? null : t.panel)} style={pill(activeSubPanel === t.panel)}>
+                  {t.label}
+                </button>
+              ))}
+              <span style={{ width: 1, height: 22, background: HAIR, margin: '0 4px' }} />
+              {(['3M', '6M', '1Y', 'ALL'] as Timeframe[]).map(tf => (
+                <button key={tf} onClick={() => setTimeframe(tf)} style={pill(timeframe === tf)}>{tf}</button>
+              ))}
+            </div>
+
+            {/* Chart card */}
+            <div style={{ ...CARD, padding: 0, overflow: 'hidden' }}>
               {loading ? (
-                <div className="h-[450px] flex items-center justify-center text-gray-600 font-mono text-sm italic tracking-widest uppercase">Syncing Market Data...</div>
+                <div style={{ height: 460, fontFamily: MONO, color: ACCENT }} className="flex items-center justify-center text-xs tracking-[0.3em] uppercase animate-pulse">
+                  Memuat data pasar...
+                </div>
               ) : (
                 <>
                   <StockChart
@@ -463,206 +449,284 @@ export default function TradingTerminalPage() {
                     showEMA12={showEMA12}
                     showEMA26={showEMA26}
                     showBB={showBB}
+                    height={460}
+                    light
                     sync={chartSync.current}
                   />
                   {activeSubPanel && ohlcv.length > 0 && (
-                    <IndicatorSubChart data={displayedOhlcv} type={activeSubPanel} sync={chartSync.current} />
+                    <IndicatorSubChart data={displayedOhlcv} type={activeSubPanel} light sync={chartSync.current} />
                   )}
                 </>
               )}
-           </div>
+            </div>
+          </div>
 
-           {/* ── ML PREDICTION CARD ── */}
-           <div className="mb-10 bg-white/[0.02] border border-white/5 rounded-[2rem] overflow-hidden shadow-2xl">
-             <div className="flex items-center justify-between px-8 py-5 border-b border-white/5 bg-white/[0.01]">
-               <div className="flex items-center gap-3">
-                 <span className="w-2 h-2 rounded-full bg-purple-500" />
-                 <h2 className="text-[9px] font-black uppercase tracking-[0.4em] text-purple-400">ML Price Prediction</h2>
-                 <span className="text-[8px] font-mono text-gray-700 bg-white/5 px-2 py-0.5 rounded-full">5-Day Horizon</span>
-               </div>
-               <div className="flex items-center gap-3">
-                 {mlStatus?.trained && mlStatus.trained_at && (
-                   <span className="text-[8px] font-mono text-gray-700 hidden md:block">
-                     Trained: {new Date(mlStatus.trained_at).toLocaleDateString('id-ID')}
-                     {mlStatus.accuracy ? ` · Acc ${(mlStatus.accuracy * 100).toFixed(1)}%` : ''}
-                   </span>
-                 )}
-                 <button
-                   onClick={handleMlTrain}
-                   disabled={mlTraining}
-                   className="text-[8px] font-black uppercase tracking-widest px-4 py-1.5 rounded-full border border-purple-500/30 text-purple-400 bg-purple-500/5 hover:bg-purple-500/10 disabled:opacity-40 transition-all"
-                 >
-                   {mlTraining ? 'TRAINING...' : mlStatus?.trained ? 'RE-TRAIN' : 'TRAIN MODEL'}
-                 </button>
-               </div>
-             </div>
+          {/* CENTER (bottom): ML + indicators */}
+          <div className="term-main-bottom" style={{ minWidth: 0 }}>
+            {/* ── ML PREDICTION ── */}
+            <div style={{ ...CARD, padding: 0, overflow: 'hidden', marginBottom: 24 }}>
+              <div className="flex items-center justify-between" style={{ padding: '16px 22px', borderBottom: `1px solid ${HAIR}` }}>
+                <div className="flex items-center gap-2.5">
+                  <span style={{ width: 8, height: 8, borderRadius: '50%', background: '#7C3AED' }} />
+                  <h2 style={{ fontFamily: MONO, fontSize: 11, fontWeight: 600, letterSpacing: '.14em', textTransform: 'uppercase', color: '#7C3AED' }}>Prediksi ML</h2>
+                  <span style={{ fontFamily: MONO, fontSize: 10, color: FAINT, background: '#F2F1EC', padding: '2px 8px', borderRadius: 999 }}>Horizon 5 hari</span>
+                </div>
+                {mlStatus?.trained && mlStatus.trained_at && (
+                  <span style={{ fontFamily: MONO, fontSize: 10, color: FAINT }} className="hidden md:block">
+                    Dilatih {new Date(mlStatus.trained_at).toLocaleDateString('id-ID')}{mlStatus.accuracy ? ` · Acc ${(mlStatus.accuracy * 100).toFixed(1)}%` : ''}
+                  </span>
+                )}
+              </div>
 
-             <div className="p-8">
-               {/* Belum di-train */}
-               {!mlStatus?.trained && !mlTraining && (
-                 <div className="flex flex-col items-center justify-center py-8 gap-3 opacity-50">
-                   <p className="text-xs font-mono text-gray-500">Model belum dilatih untuk saham ini.</p>
-                   <p className="text-[9px] text-gray-700">Klik TRAIN MODEL untuk memulai (~5 detik)</p>
-                 </div>
-               )}
+              <div style={{ padding: 22 }}>
+                {!mlStatus?.trained && !mlLoading && (
+                  <div className="flex flex-col items-center justify-center gap-2" style={{ padding: '28px 0' }}>
+                    <p style={{ fontSize: 13, color: MUTED }}>Prediksi belum tersedia untuk saham ini.</p>
+                    <p style={{ fontSize: 11.5, color: FAINT }}>Model dilatih otomatis setiap hari setelah sinkronisasi data.</p>
+                  </div>
+                )}
+                {mlLoading && (
+                  <div className="flex items-center justify-center" style={{ padding: '28px 0' }}>
+                    <p style={{ fontFamily: MONO, fontSize: 11, color: FAINT, textTransform: 'uppercase', letterSpacing: '.12em' }} className="animate-pulse">Menghitung prediksi...</p>
+                  </div>
+                )}
+                {mlResult?.status === 'error' && (
+                  <div style={{ color: DOWN, fontSize: 12.5, fontFamily: MONO, textAlign: 'center', padding: '16px 0' }}>{mlResult.message}</div>
+                )}
+                {mlResult?.status === 'ok' && !mlLoading && (
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-7">
+                    <div>
+                      <div className="inline-flex items-center gap-3" style={{ padding: '11px 16px', borderRadius: 14, marginBottom: 18,
+                        background: mlResult.direction === 'BULLISH' ? UP_BG : mlResult.direction === 'BEARISH' ? DOWN_BG : '#FEF6E7',
+                        color: mlResult.direction === 'BULLISH' ? UP : mlResult.direction === 'BEARISH' ? DOWN : '#B7791F',
+                        border: `1px solid ${mlResult.direction === 'BULLISH' ? '#BBE6CC' : mlResult.direction === 'BEARISH' ? '#F2C9C9' : '#F5E0B0'}` }}>
+                        <span style={{ fontSize: 20, fontWeight: 800 }}>{mlResult.direction === 'BULLISH' ? '▲' : mlResult.direction === 'BEARISH' ? '▼' : '◆'}</span>
+                        <div>
+                          <p style={{ fontSize: 16, fontWeight: 800, letterSpacing: '-.01em', lineHeight: 1 }}>{mlResult.direction}</p>
+                          <p style={{ fontFamily: MONO, fontSize: 9.5, opacity: .8, textTransform: 'uppercase', letterSpacing: '.1em', marginTop: 3 }}>Rekomendasi: {mlResult.recommendation}</p>
+                        </div>
+                      </div>
 
-               {/* Sedang training */}
-               {mlTraining && (
-                 <div className="flex flex-col items-center justify-center py-8 gap-3">
-                   <div className="w-6 h-6 border-2 border-purple-500/30 border-t-purple-400 rounded-full animate-spin" />
-                   <p className="text-[9px] font-mono text-gray-500 uppercase tracking-widest animate-pulse">Melatih model GradientBoosting...</p>
-                 </div>
-               )}
+                      <div style={{ marginBottom: 18 }}>
+                        <div className="flex justify-between items-center" style={{ marginBottom: 7 }}>
+                          <span style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.08em', color: FAINT }}>Confidence</span>
+                          <span style={{ fontFamily: MONO, fontSize: 14, fontWeight: 700 }}>{mlResult.confidence}%</span>
+                        </div>
+                        <div style={{ width: '100%', background: '#F2F1EC', borderRadius: 999, height: 7 }}>
+                          <div style={{ height: 7, borderRadius: 999, width: `${mlResult.confidence}%`, background: mlResult.direction === 'BULLISH' ? UP : mlResult.direction === 'BEARISH' ? DOWN : '#D9A441', transition: 'width .7s ease' }} />
+                        </div>
+                      </div>
 
-               {/* Loading prediksi */}
-               {mlLoading && !mlTraining && (
-                 <div className="flex items-center justify-center py-8">
-                   <p className="text-[9px] font-mono text-gray-600 animate-pulse uppercase tracking-widest">Menghitung prediksi...</p>
-                 </div>
-               )}
+                      <div className="grid grid-cols-2 gap-3" style={{ marginBottom: 14 }}>
+                        <div style={{ background: UP_BG, border: '1px solid #BBE6CC', borderRadius: 12, padding: 14, textAlign: 'center' }}>
+                          <p style={{ fontSize: 9.5, color: MUTED, textTransform: 'uppercase', letterSpacing: '.1em', fontWeight: 700, marginBottom: 4 }}>Prob. Naik</p>
+                          <p style={{ fontFamily: MONO, fontSize: 19, fontWeight: 800, color: UP }}>{((mlResult.probability_up ?? 0) * 100).toFixed(1)}%</p>
+                        </div>
+                        <div style={{ background: DOWN_BG, border: '1px solid #F2C9C9', borderRadius: 12, padding: 14, textAlign: 'center' }}>
+                          <p style={{ fontSize: 9.5, color: MUTED, textTransform: 'uppercase', letterSpacing: '.1em', fontWeight: 700, marginBottom: 4 }}>Prob. Turun</p>
+                          <p style={{ fontFamily: MONO, fontSize: 19, fontWeight: 800, color: DOWN }}>{((mlResult.probability_down ?? 0) * 100).toFixed(1)}%</p>
+                        </div>
+                      </div>
 
-               {/* Error */}
-               {mlResult?.status === 'error' && (
-                 <div className="text-red-400 text-xs font-mono py-4 text-center">{mlResult.message}</div>
-               )}
+                      {mlResult.model_accuracy && (
+                        <div className="flex gap-4 flex-wrap" style={{ fontFamily: MONO, fontSize: 10, color: FAINT }}>
+                          <span>Akurasi: <span style={{ color: INK, fontWeight: 700 }}>{(mlResult.model_accuracy * 100).toFixed(1)}%</span></span>
+                          {mlResult.model_auc && <span>AUC: <span style={{ color: INK, fontWeight: 700 }}>{mlResult.model_auc.toFixed(3)}</span></span>}
+                          {mlResult.samples_train && <span>Train: <span style={{ color: INK, fontWeight: 700 }}>{mlResult.samples_train} bar</span></span>}
+                        </div>
+                      )}
+                    </div>
 
-               {/* Hasil prediksi */}
-               {mlResult?.status === 'ok' && !mlLoading && (
-                 <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                   {/* Kolom kiri: Arah + Confidence */}
-                   <div>
-                     {/* Direction badge */}
-                     <div className={`inline-flex items-center gap-3 px-5 py-3 rounded-2xl border mb-5 ${
-                       mlResult.direction === 'BULLISH'
-                         ? 'bg-green-500/10 border-green-500/20 text-green-400'
-                         : mlResult.direction === 'BEARISH'
-                           ? 'bg-red-500/10 border-red-500/20 text-red-400'
-                           : 'bg-yellow-500/10 border-yellow-500/20 text-yellow-400'
-                     }`}>
-                       <span className="text-xl font-black">
-                         {mlResult.direction === 'BULLISH' ? '▲' : mlResult.direction === 'BEARISH' ? '▼' : '◆'}
-                       </span>
-                       <div>
-                         <p className="text-lg font-black tracking-tight leading-none">{mlResult.direction}</p>
-                         <p className="text-[8px] font-mono opacity-70 uppercase tracking-widest mt-0.5">Rekomendasi: {mlResult.recommendation}</p>
-                       </div>
-                     </div>
+                    <div>
+                      <p style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.08em', color: FAINT, marginBottom: 14 }}>Faktor Penentu Utama</p>
+                      <div className="space-y-3">
+                        {mlResult.top_features?.map((f, i) => {
+                          const maxImp = mlResult.top_features![0].importance;
+                          const pct = Math.round((f.importance / maxImp) * 100);
+                          return (
+                            <div key={i}>
+                              <div className="flex justify-between items-center" style={{ marginBottom: 5 }}>
+                                <span style={{ fontSize: 11.5, fontWeight: 600, color: MUTED }}>{f.name}</span>
+                                <span style={{ fontFamily: MONO, fontSize: 10, color: FAINT }}>{(f.importance * 100).toFixed(1)}%</span>
+                              </div>
+                              <div style={{ width: '100%', background: '#F2F1EC', borderRadius: 999, height: 6 }}>
+                                <div style={{ height: 6, borderRadius: 999, width: `${pct}%`, background: 'color-mix(in oklab, #7C3AED, white 35%)' }} />
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                      <p style={{ fontFamily: MONO, fontSize: 9.5, color: FAINT, marginTop: 16, lineHeight: 1.6 }}>
+                        ⚠ Prediksi berbasis probabilitas historis — bukan jaminan. Selalu konfirmasi dengan analisa teknikal & fundamental.
+                      </p>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
 
-                     {/* Confidence bar */}
-                     <div className="mb-5">
-                       <div className="flex justify-between items-center mb-2">
-                         <span className="text-[9px] font-black uppercase tracking-widest text-gray-500">Confidence</span>
-                         <span className="text-sm font-black font-mono text-white">{mlResult.confidence}%</span>
-                       </div>
-                       <div className="w-full bg-white/5 rounded-full h-2">
-                         <div
-                           className={`h-2 rounded-full transition-all duration-700 ${
-                             mlResult.direction === 'BULLISH' ? 'bg-green-500' :
-                             mlResult.direction === 'BEARISH' ? 'bg-red-500' : 'bg-yellow-500'
-                           }`}
-                           style={{ width: `${mlResult.confidence}%` }}
-                         />
-                       </div>
-                     </div>
+            {/* ── TECHNICAL INDICATORS (compact, grouped) ── */}
+            <div className="flex items-center gap-3 mb-4">
+              <h2 style={{ fontFamily: MONO, fontSize: 12, fontWeight: 600, letterSpacing: '.16em', textTransform: 'uppercase', color: FAINT }}>Indikator Teknikal</h2>
+              <span style={{ flex: 1, height: 1, background: HAIR }} />
+            </div>
+            <div style={{ ...CARD, padding: 0, overflow: 'hidden' }}>
+              {indGroups.map((g, gi) => (
+                <div key={g.title} className="ind-group" style={{ display: 'flex', alignItems: 'center', gap: 16, padding: '14px 20px', borderBottom: gi < indGroups.length - 1 ? '1px solid #F4F3EF' : 'none' }}>
+                  <span className="ind-group-label" style={{ fontFamily: MONO, fontSize: 10.5, fontWeight: 600, letterSpacing: '.06em', textTransform: 'uppercase', color: FAINT, width: 132, flex: 'none' }}>{g.title}</span>
+                  <div className="ind-group-items" style={{ display: 'flex', flexWrap: 'wrap', gap: 26, flex: 1 }}>
+                    {g.items.map(it => (
+                      <div key={it.label} style={{ minWidth: 84 }}>
+                        <p style={{ fontSize: 10, color: FAINT, fontWeight: 600, marginBottom: 3 }}>
+                          {it.label}
+                          {it.tag && <span style={{ marginLeft: 6, fontFamily: MONO, fontSize: 8.5, fontWeight: 700, color: it.color, textTransform: 'uppercase' }}>{it.tag}</span>}
+                        </p>
+                        <p style={{ fontFamily: MONO, fontSize: 14.5, fontWeight: 700, color: it.color ?? INK }}>{fmt(it.value)}</p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
 
-                     {/* Probabilitas naik/turun */}
-                     <div className="grid grid-cols-2 gap-3 mb-4">
-                       <div className="bg-green-500/5 border border-green-500/10 rounded-xl p-4 text-center">
-                         <p className="text-[8px] text-gray-600 uppercase tracking-widest mb-1 font-black">Prob. Naik</p>
-                         <p className="text-xl font-black font-mono text-green-400">
-                           {((mlResult.probability_up ?? 0) * 100).toFixed(1)}%
-                         </p>
-                       </div>
-                       <div className="bg-red-500/5 border border-red-500/10 rounded-xl p-4 text-center">
-                         <p className="text-[8px] text-gray-600 uppercase tracking-widest mb-1 font-black">Prob. Turun</p>
-                         <p className="text-xl font-black font-mono text-red-400">
-                           {((mlResult.probability_down ?? 0) * 100).toFixed(1)}%
-                         </p>
-                       </div>
-                     </div>
+          {/* RIGHT: Buy & Sell panel */}
+          <div className="term-trade">
+            <div style={{ ...CARD, padding: 18 }}>
+              <h2 style={{ fontFamily: MONO, fontSize: 11, fontWeight: 600, letterSpacing: '.16em', textTransform: 'uppercase', color: FAINT, marginBottom: 14 }}>Order</h2>
 
-                     {/* Model stats */}
-                     {mlResult.model_accuracy && (
-                       <div className="flex gap-4 text-[8px] font-mono text-gray-600">
-                         <span>Akurasi model: <span className="text-gray-400 font-black">{((mlResult.model_accuracy) * 100).toFixed(1)}%</span></span>
-                         {mlResult.model_auc && <span>AUC: <span className="text-gray-400 font-black">{mlResult.model_auc.toFixed(3)}</span></span>}
-                         {mlResult.samples_train && <span>Train: <span className="text-gray-400 font-black">{mlResult.samples_train} bar</span></span>}
-                       </div>
-                     )}
-                   </div>
+              {/* BUY / SELL segmented */}
+              <div style={{ display: 'flex', gap: 4, padding: 4, background: '#F2F1EC', borderRadius: 12, marginBottom: 16 }}>
+                {(['BUY', 'SELL'] as const).map(side => {
+                  const active = orderSide === side;
+                  const col = side === 'BUY' ? UP : DOWN;
+                  return (
+                    <button
+                      key={side}
+                      onClick={() => setOrderSide(side)}
+                      style={{ flex: 1, padding: '9px 0', borderRadius: 9, fontSize: 13, fontWeight: 800, letterSpacing: '.04em', border: 'none', cursor: 'pointer', transition: 'all .15s ease', background: active ? '#fff' : 'transparent', color: active ? col : MUTED, boxShadow: active ? '0 1px 4px rgba(20,20,15,.1)' : 'none' }}
+                    >
+                      {side === 'BUY' ? 'Beli' : 'Jual'}
+                    </button>
+                  );
+                })}
+              </div>
 
-                   {/* Kolom kanan: Top Feature Drivers */}
-                   <div>
-                     <p className="text-[9px] font-black uppercase tracking-widest text-gray-500 mb-4">Top Faktor Penentu</p>
-                     <div className="space-y-3">
-                       {mlResult.top_features?.map((f, i) => {
-                         const maxImp = mlResult.top_features![0].importance;
-                         const pct    = Math.round((f.importance / maxImp) * 100);
-                         return (
-                           <div key={i}>
-                             <div className="flex justify-between items-center mb-1">
-                               <span className="text-[9px] font-bold text-gray-400">{f.name}</span>
-                               <span className="text-[8px] font-mono text-gray-600">{(f.importance * 100).toFixed(1)}%</span>
-                             </div>
-                             <div className="w-full bg-white/5 rounded-full h-1.5">
-                               <div
-                                 className="h-1.5 rounded-full bg-purple-500/60"
-                                 style={{ width: `${pct}%` }}
-                               />
-                             </div>
-                           </div>
-                         );
-                       })}
-                     </div>
-                     <p className="text-[7px] font-mono text-gray-700 mt-5 leading-relaxed">
-                       ⚠ Prediksi berbasis probabilitas historis — bukan jaminan. Selalu gunakan analisa teknikal dan fundamental sebagai konfirmasi.
-                     </p>
-                   </div>
-                 </div>
-               )}
-             </div>
-           </div>
+              {/* Reason (optional) */}
+              <div style={{ marginBottom: 14 }}>
+                <label style={labelStyle}>Catatan (opsional)</label>
+                <input
+                  type="text"
+                  placeholder="Alasan / catatan order..."
+                  value={reasoning}
+                  onChange={(e) => setReasoning(e.target.value)}
+                  className="emx-input"
+                  style={{ width: '100%', background: '#fff', border: `1px solid ${HAIR}`, borderRadius: 10, padding: '9px 12px', fontSize: 13, color: INK, fontFamily: SANS }}
+                />
+              </div>
 
-           <h2 className="text-sm font-black font-mono uppercase tracking-[0.5em] text-gray-700 mb-8 flex items-center gap-6">
-              <span className="w-12 h-px bg-white/10"></span>
-              Technical Intelligence Core
-              <span className="flex-1 h-px bg-white/10"></span>
-           </h2>
-           
-           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4 mb-16">
-             {[
-               { label: "RSI (14)", value: indicators?.RSI_14, valueClass: rsiColor(indicators?.RSI_14 ?? null), extra: indicators?.RSI_14 ? (indicators.RSI_14 < 30 ? "OVERSOLD" : indicators.RSI_14 > 70 ? "OVERBOUGHT" : "NEUTRAL") : null },
-               { label: "MA 20", value: indicators?.MA_20 },
-               { label: "MA 50", value: indicators?.MA_50 },
-               { label: "MA 200", value: indicators?.MA_200 },
-               { label: "EMA 12", value: indicators?.EMA_12 },
-               { label: "EMA 26", value: indicators?.EMA_26 },
-               { label: "MACD Line", value: indicators?.MACD_LINE },
-               { label: "MACD Signal", value: indicators?.MACD_SIGNAL },
-               { label: "MACD Hist", value: indicators?.MACD_HIST },
-               { label: "BB Upper", value: indicators?.BB_UPPER },
-               { label: "BB Middle", value: indicators?.BB_MIDDLE },
-               { label: "BB Lower", value: indicators?.BB_LOWER },
-               { label: "ATR (14)", value: indicators?.ATR_14 },
-               { label: "Stoch %K", value: indicators?.STOCH_K },
-               { label: "Stoch %D", value: indicators?.STOCH_D },
-             ].map((ind, i) => (
-               <div key={i} className="bg-white/[0.03] border border-white/5 p-6 rounded-3xl hover:bg-white/[0.06] transition-all text-center group shadow-sm">
-                 <p className="text-[9px] text-gray-600 font-black uppercase mb-2 tracking-widest group-hover:text-blue-500 transition-colors">{ind.label}</p>
-                 <p className={`text-base font-black font-mono ${ind.valueClass ?? "text-white"}`}>
-                   {fmt(ind.value ?? null)}
-                 </p>
-                 {ind.extra && <p className={`text-[9px] mt-2 font-black ${ind.valueClass} tracking-tighter`}>{ind.extra}</p>}
-               </div>
-             ))}
-           </div>
+              {/* Quantity */}
+              <div style={{ marginBottom: 14 }}>
+                <label style={labelStyle}>Jumlah (Lot)</label>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <button onClick={() => setTradeQty(q => Math.max(1, q - 1))} className="emx-btn" style={{ width: 38, height: 38, flex: 'none', borderRadius: 10, border: `1px solid ${HAIR}`, background: '#fff', fontSize: 18, color: INK, cursor: 'pointer', lineHeight: 1 }}>−</button>
+                  <input
+                    type="number"
+                    value={tradeQty}
+                    onChange={(e) => setTradeQty(Math.max(1, parseInt(e.target.value) || 1))}
+                    className="emx-input"
+                    style={{ flex: 1, minWidth: 0, textAlign: 'center', background: '#fff', border: `1px solid ${HAIR}`, borderRadius: 10, padding: '9px 8px', fontSize: 15, fontWeight: 700, fontFamily: MONO, color: INK }}
+                  />
+                  <button onClick={() => setTradeQty(q => q + 1)} className="emx-btn" style={{ width: 38, height: 38, flex: 'none', borderRadius: 10, border: `1px solid ${HAIR}`, background: '#fff', fontSize: 18, color: INK, cursor: 'pointer', lineHeight: 1 }}>+</button>
+                </div>
+                <p style={{ fontFamily: MONO, fontSize: 10.5, color: FAINT, marginTop: 6 }}>{tradeQty} lot = {(tradeQty * 100).toLocaleString('id-ID')} lembar</p>
+              </div>
+
+              {/* Estimated total */}
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 14px', background: '#FBFBF9', border: `1px solid ${HAIR}`, borderRadius: 12, marginBottom: 16 }}>
+                <span style={{ fontSize: 11, fontWeight: 600, color: FAINT, textTransform: 'uppercase', letterSpacing: '.06em' }}>Estimasi Total</span>
+                <span style={{ fontFamily: MONO, fontSize: 15, fontWeight: 700 }}>Rp {totalValue.toLocaleString('id-ID')}</span>
+              </div>
+
+              {/* Execute */}
+              <button
+                onClick={handleTrade}
+                disabled={isTrading}
+                className="emx-btn"
+                style={{ width: '100%', padding: '13px 0', borderRadius: 12, fontSize: 14, fontWeight: 800, letterSpacing: '.04em', border: 'none', cursor: 'pointer', color: '#fff', background: orderSide === 'BUY' ? UP : DOWN, opacity: isTrading ? 0.6 : 1, boxShadow: `0 6px 18px -8px ${orderSide === 'BUY' ? UP : DOWN}` }}
+              >
+                {isTrading ? 'Memproses...' : orderSide === 'BUY' ? `Beli ${ticker}` : `Jual ${ticker}`}
+              </button>
+
+              {/* Position */}
+              <div style={{ marginTop: 16, paddingTop: 16, borderTop: `1px solid ${HAIR}` }}>
+                <div className="flex items-center justify-between" style={{ marginBottom: portfolio ? 10 : 0 }}>
+                  <span style={{ fontSize: 11, fontWeight: 600, color: FAINT, textTransform: 'uppercase', letterSpacing: '.06em' }}>Posisi Kamu</span>
+                  <span style={{ fontFamily: MONO, fontSize: 14, fontWeight: 700, color: portfolio ? INK : FAINT }}>{portfolio ? `${portfolio.shares / 100} Lot` : '0 Lot'}</span>
+                </div>
+                {portfolio && (
+                  <div className="grid grid-cols-2 gap-2" style={{ fontFamily: MONO, fontSize: 11 }}>
+                    <div>
+                      <p style={{ color: FAINT, fontSize: 9.5, textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 2 }}>Avg Price</p>
+                      <p style={{ fontWeight: 700 }}>Rp {portfolio.avg_price?.toLocaleString('id-ID')}</p>
+                    </div>
+                    <div style={{ textAlign: 'right' }}>
+                      <p style={{ color: FAINT, fontSize: 9.5, textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 2 }}>Unrealized</p>
+                      <p style={{ fontWeight: 700, color: (portfolio.unrealized_pnl ?? 0) >= 0 ? UP : DOWN }}>
+                        {(portfolio.unrealized_pnl ?? 0) >= 0 ? '+' : ''}Rp {Math.abs(portfolio.unrealized_pnl ?? 0).toLocaleString('id-ID')}
+                      </p>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
         </div>
-      </main>
+      </div>
 
-      <style jsx>{`
-        .custom-scrollbar::-webkit-scrollbar { width: 4px; }
-        .custom-scrollbar::-webkit-scrollbar-thumb { background: #333; border-radius: 10px; }
+      <style jsx global>{`
+        .term-grid {
+          display: grid;
+          grid-template-columns: 248px minmax(0, 1fr) 320px;
+          grid-template-areas:
+            "side top trade"
+            "side bottom trade";
+          gap: 20px;
+          align-items: start;
+        }
+        .term-side { grid-area: side; position: sticky; top: 84px; }
+        .term-main-top { grid-area: top; min-width: 0; }
+        .term-main-bottom { grid-area: bottom; min-width: 0; margin-top: 4px; }
+        .term-trade { grid-area: trade; position: sticky; top: 84px; }
+        .term-mobile-select { display: none; }
+        @media (max-width: 1180px) {
+          /* Stack into one column and reorder so Buy/Sell sits right under the chart.
+             align-items stretch makes every stacked card span the full width
+             (otherwise the inherited start value shrinks the order card to its content). */
+          .term-grid { display: flex; flex-direction: column; align-items: stretch; gap: 18px; }
+          .term-side { display: none; }
+          .term-main-top, .term-main-bottom, .term-trade { width: 100%; min-width: 0; }
+          .term-main-top { order: 1; }
+          .term-trade { order: 2; position: static; }
+          .term-main-bottom { order: 3; margin-top: 0; }
+          .term-mobile-select { display: block; }
+        }
+        @media (max-width: 520px) {
+          .ind-group { flex-direction: column; align-items: flex-start !important; gap: 8px !important; }
+          .ind-group-label { width: auto !important; }
+          .ind-group-items { gap: 18px !important; }
+        }
+        .emx-listrow { transition: background .14s ease; }
+        .emx-listrow:hover { background: #FBFBF9; }
+        .emx-input { transition: border-color .15s ease, box-shadow .15s ease; }
+        .emx-input:focus { outline: none; border-color: color-mix(in oklab, ${ACCENT}, white 50%); box-shadow: 0 0 0 3px color-mix(in oklab, ${ACCENT}, transparent 86%); }
+        .emx-input::placeholder { color: #A9A9A1; }
+        .emx-btn { transition: transform .15s ease, filter .15s ease; }
+        .emx-btn:hover { transform: translateY(-1px); filter: brightness(1.02); }
+        .emx-scroll::-webkit-scrollbar { width: 6px; }
+        .emx-scroll::-webkit-scrollbar-thumb { background: #E2E1DB; border-radius: 10px; }
+        ::selection { background: color-mix(in oklab, ${ACCENT}, white 70%); }
       `}</style>
-    </div>
+    </main>
   );
 }

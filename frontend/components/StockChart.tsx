@@ -241,17 +241,28 @@ export default function StockChart({
       });
     }
 
-    const handleResize = () => {
-      if (chartRef.current) chart.applyOptions({ width: chartRef.current.clientWidth });
-    };
-    window.addEventListener("resize", handleResize);
+    // Watch the chart container itself (not the window). ResizeObserver fires
+    // after layout settles, so we always read the true element width — this
+    // fixes the chart not snapping back to full width on mobile↔desktop toggles.
+    const ro = new ResizeObserver((entries) => {
+      const w = entries[0]?.contentRect.width;
+      if (w && w > 0) chart.applyOptions({ width: Math.floor(w) });
+    });
+    ro.observe(chartRef.current);
 
     return () => {
       unregisterSync?.();
-      window.removeEventListener("resize", handleResize);
+      ro.disconnect();
       chart.remove();
     };
   }, [data, showMA20, showMA50, showMA200, showEMA12, showEMA26, showBB, height, transparent, light, chartType, interactive, lineColor, markerDate, markerColor, sync]);
 
-  return <div ref={chartRef} className="w-full" />;
+  // The chart is absolutely positioned so its (pixel-sized) canvas can never
+  // push the surrounding card wider than the viewport — it always shrinks to
+  // fit the container instead of forcing horizontal overflow.
+  return (
+    <div style={{ position: "relative", width: "100%", height, overflow: "hidden" }}>
+      <div ref={chartRef} style={{ position: "absolute", inset: 0 }} />
+    </div>
+  );
 }

@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, Suspense } from 'react';
+import { useEffect, useState, Suspense, useRef } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { api, Stock, BacktestResult } from '@/lib/api';
 import Link from 'next/link';
@@ -77,6 +77,8 @@ function ScreenerInner() {
   const [selectedSector, setSelectedSector] = useState('');
   const [fundSortKey, setFundSortKey]   = useState<FundSortKey>('market_cap');
   const [fundSortDir, setFundSortDir]   = useState<'asc' | 'desc'>('desc');
+  const [fundPage, setFundPage]         = useState(30);
+  const fundSentinelRef                 = useRef<HTMLDivElement>(null);
 
   // ── Backtest states ──────────────────────────────────────
   const [bktTicker, setBktTicker]     = useState('BBCA');
@@ -179,6 +181,24 @@ function ScreenerInner() {
       return fundSortDir === 'desc' ? bv - av : av - bv;
     });
 
+  const visibleFund = filtered.slice(0, fundPage);
+  const hasMoreFund = fundPage < filtered.length;
+
+  // Reset visible page when filters or sort change
+  useEffect(() => { setFundPage(30); }, [peMax, pbvMax, divYieldMin, selectedSector, fundSortKey, fundSortDir]);
+
+  // Infinite scroll sentinel for fundamental tab
+  useEffect(() => {
+    const el = fundSentinelRef.current;
+    if (!el) return;
+    const observer = new IntersectionObserver(
+      (entries) => { if (entries[0].isIntersecting) setFundPage(c => c + 30); },
+      { rootMargin: '300px' }
+    );
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [hasMoreFund, filtered.length]);
+
   function toggleFundSort(key: FundSortKey) {
     if (fundSortKey === key) setFundSortDir(d => (d === 'desc' ? 'asc' : 'desc'));
     else { setFundSortKey(key); setFundSortDir('desc'); }
@@ -274,16 +294,16 @@ function ScreenerInner() {
               <div style={{ width: 28, height: 28, border: `2px solid ${ACCENT}`, borderTopColor: 'transparent', borderRadius: '50%' }} className="animate-spin" />
             </div>
           ) : (
-            <div className="overflow-x-auto">
+            <div className="overflow-x-auto emx-scroll">
               <table className="min-w-full" style={{ borderCollapse: 'collapse' }}>
                 <thead>
                   <tr style={{ borderBottom: `1px solid ${HAIR}`, background: '#FBFBF9' }}>
                     <th style={TH}>Saham</th>
-                    <th style={TH}>Sektor</th>
+                    <th style={TH} className="fund-col-hide">Sektor</th>
                     <th style={THR} onClick={() => toggleFundSort('last_price')}>Harga <SortIcon k="last_price" /></th>
                     <th style={THR} onClick={() => toggleFundSort('change_pct')}>Chg% <SortIcon k="change_pct" /></th>
-                    <th style={THR} onClick={() => toggleFundSort('pe_ratio')}>PE <SortIcon k="pe_ratio" /></th>
-                    <th style={THR} onClick={() => toggleFundSort('pbv_ratio')}>PBV <SortIcon k="pbv_ratio" /></th>
+                    <th style={THR} className="fund-col-hide" onClick={() => toggleFundSort('pe_ratio')}>PE <SortIcon k="pe_ratio" /></th>
+                    <th style={THR} className="fund-col-hide" onClick={() => toggleFundSort('pbv_ratio')}>PBV <SortIcon k="pbv_ratio" /></th>
                     <th style={THR} onClick={() => toggleFundSort('dividend_yield')}>Div. Yield <SortIcon k="dividend_yield" /></th>
                     <th style={THR} onClick={() => toggleFundSort('market_cap')}>Mkt Cap <SortIcon k="market_cap" /></th>
                     <th style={{ ...TH, textAlign: 'right' }} />
@@ -293,19 +313,19 @@ function ScreenerInner() {
                   {filtered.length === 0 ? (
                     <tr><td colSpan={9} style={{ padding: '72px 18px', textAlign: 'center', color: FAINT, fontSize: 13 }}>Tidak ada saham yang memenuhi kriteria filter.</td></tr>
                   ) : (
-                    filtered.map((s, i) => {
+                    visibleFund.map((s, i) => {
                       const up = (s.change_pct ?? 0) >= 0;
                       return (
-                        <tr key={s.ticker} className="emx-listrow" style={{ borderBottom: i < filtered.length - 1 ? '1px solid #F2F1EC' : 'none' }}>
+                        <tr key={s.ticker} className="emx-listrow" style={{ borderBottom: (i < visibleFund.length - 1 || hasMoreFund) ? '1px solid #F2F1EC' : 'none' }}>
                           <td style={TD}>
                             <span style={{ fontWeight: 700, fontSize: 14, display: 'block' }}>{s.ticker}</span>
                             <span style={{ fontFamily: MONO, fontSize: 10.5, color: FAINT, display: 'block', marginTop: 1 }} className="truncate w-36">{s.name}</span>
                           </td>
-                          <td style={{ ...TD, fontSize: 11.5, color: MUTED, whiteSpace: 'nowrap' }}>{s.sector || '-'}</td>
+                          <td className="fund-col-hide" style={{ ...TD, fontSize: 11.5, color: MUTED, whiteSpace: 'nowrap' }}>{s.sector || '-'}</td>
                           <td style={{ ...TDR, fontWeight: 600 }}>{s.last_price?.toLocaleString('id-ID') ?? '-'}</td>
                           <td style={{ ...TDR, fontWeight: 600, color: up ? UP : DOWN }}>{s.change_pct != null ? `${up ? '+' : ''}${s.change_pct.toFixed(2)}%` : '-'}</td>
-                          <td style={{ ...TDR, color: MUTED }}>{fmtRatio(s.pe_ratio)}</td>
-                          <td style={{ ...TDR, color: MUTED }}>{fmtRatio(s.pbv_ratio)}</td>
+                          <td className="fund-col-hide" style={{ ...TDR, color: MUTED }}>{fmtRatio(s.pe_ratio)}</td>
+                          <td className="fund-col-hide" style={{ ...TDR, color: MUTED }}>{fmtRatio(s.pbv_ratio)}</td>
                           <td style={{ ...TDR, fontWeight: 600, color: s.dividend_yield && s.dividend_yield > 0 ? ACCENT : MUTED }}>{s.dividend_yield != null && s.dividend_yield > 0 ? `${s.dividend_yield.toFixed(2)}%` : '-'}</td>
                           <td style={{ ...TDR, color: MUTED }}>{fmtCap(s.market_cap)}</td>
                           <td style={{ ...TD, textAlign: 'right' }}>
@@ -320,6 +340,7 @@ function ScreenerInner() {
             </div>
           )}
         </div>
+        {hasMoreFund && <div ref={fundSentinelRef} style={{ height: 1 }} />}
       </>
     );
   };
@@ -633,6 +654,9 @@ function ScreenerInner() {
         }
         ::selection {
           background: color-mix(in oklab, ${ACCENT}, white 70%);
+        }
+        @media (max-width: 640px) {
+          .fund-col-hide { display: none; }
         }
       `}</style>
     </main>
