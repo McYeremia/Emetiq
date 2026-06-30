@@ -7,6 +7,8 @@ import { createChartSync } from '@/lib/chartSync';
 import dynamic from 'next/dynamic';
 import EmetiqNav from '@/components/EmetiqNav';
 import { useToast } from '@/components/Toast';
+import { useAuth } from '@/components/AuthProvider';
+import { useWatchlist } from '@/components/WatchlistProvider';
 
 const StockChart = dynamic(() => import("@/components/StockChart"), { ssr: false });
 const IndicatorSubChart = dynamic(() => import("@/components/IndicatorSubChart"), { ssr: false });
@@ -61,6 +63,7 @@ function fmt(v: number | null) {
 export default function StockDetailPage() {
   const params = useParams();
   const router = useRouter();
+  const { user } = useAuth();
   const ticker = params?.ticker as string;
 
   useEffect(() => {
@@ -88,8 +91,8 @@ export default function StockDetailPage() {
   const [isTrading, setIsTrading] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
 
-  // Watchlist state
-  const [watchlist, setWatchlist] = useState<Set<string>>(new Set());
+  // Watchlist (per user, shared provider)
+  const { watchlist, toggle: toggleWatchlist } = useWatchlist();
 
   // Sidebar sort — mirrors the Market page (Nama / Harga / %)
   const [sortKey, setSortKey] = useState<SortKey>('name');
@@ -116,21 +119,6 @@ export default function StockDetailPage() {
     api.getStocks().then(setStocks);
   }, []);
 
-  useEffect(() => {
-    const saved = localStorage.getItem('watchlist');
-    if (saved) { try { setWatchlist(new Set(JSON.parse(saved))); } catch {} }
-  }, []);
-
-  const toggleWatchlist = (e: React.MouseEvent, tickerSymbol: string) => {
-    e.preventDefault();
-    e.stopPropagation();
-    setWatchlist(prev => {
-      const next = new Set(prev);
-      next.has(tickerSymbol) ? next.delete(tickerSymbol) : next.add(tickerSymbol);
-      localStorage.setItem('watchlist', JSON.stringify([...next]));
-      return next;
-    });
-  };
 
   const fetchData = useCallback(async () => {
     if (!ticker) return;
@@ -163,6 +151,11 @@ export default function StockDetailPage() {
 
   const handleTrade = async () => {
     if (!ticker) return;
+    if (!user) {
+      toast('Masuk dulu untuk transaksi saham.', 'error');
+      router.push(`/login?next=/stocks/${ticker}`);
+      return;
+    }
     setIsTrading(true);
     try {
       const res = await api.executeTrade(ticker, orderSide, tradeQty, undefined, 'MANUAL', reasoning, selectedStrategy);

@@ -20,7 +20,7 @@ REASONING_EFFORT = {
 
 # ── Kuota harian per tier (reset tengah malam). None = unlimited. ────────────
 TIER_LIMITS = {
-    "free":    0,
+    "free":    1,
     "basic":   3,
     "pro":     5,
     "premium": 10,

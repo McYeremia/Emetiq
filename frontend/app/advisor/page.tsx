@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import EmetiqNav from '@/components/EmetiqNav';
+import RequireAuth from '@/components/RequireAuth';
 import { api, AdvisorResponse, AdvisorQuota } from '@/lib/api';
 
 // ── EMETIQ theme tokens ────────────────────────────────────────
@@ -53,6 +54,14 @@ function actionColor(a: string) {
 }
 
 export default function AdvisorPage() {
+  return (
+    <RequireAuth>
+      <AdvisorInner />
+    </RequireAuth>
+  );
+}
+
+function AdvisorInner() {
   useEffect(() => { document.title = 'AI Advisor — EMETIQ'; }, []);
   const [messages, setMessages] = useState<Msg[]>([WELCOME]);
   const [input, setInput] = useState('');

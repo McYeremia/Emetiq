@@ -34,9 +34,12 @@ def test_consume_increments(db):
     assert info.used == 2 and info.remaining == 1
 
 
-def test_free_tier_blocked_immediately(db):
+def test_free_tier_one_then_blocked(db):
+    u = AdvisorUser("f", "free")                               # limit 1
+    quota.ensure_available(db, u)                              # pesan ke-1 boleh
+    quota.consume(db, u)
     with pytest.raises(quota.QuotaExceeded):
-        quota.ensure_available(db, AdvisorUser("f", "free"))   # limit 0
+        quota.ensure_available(db, u)                          # ke-2 habis
 
 
 def test_basic_tier_blocks_when_exhausted(db):

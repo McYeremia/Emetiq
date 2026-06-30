@@ -6,6 +6,7 @@ import { INDEX_MEMBERS, INDEX_TABS, IndexKey } from '@/lib/indices';
 import Link from 'next/link';
 import EmetiqNav from '@/components/EmetiqNav';
 import { useToast } from '@/components/Toast';
+import { useWatchlist } from '@/components/WatchlistProvider';
 import dynamic from 'next/dynamic';
 
 const StockChart = dynamic(() => import("@/components/StockChart"), { ssr: false });
@@ -71,7 +72,7 @@ export default function Dashboard() {
   const [syncStatus, setSyncStatus] = useState<SyncStatus | null>(null);
   const syncPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
-  const [watchlist, setWatchlist] = useState<Set<string>>(new Set());
+  const { watchlist, toggle: toggleWatchlist } = useWatchlist();
   const [activeIndex, setActiveIndex] = useState<'ALL' | IndexKey>('ALL');
   const [sortKey, setSortKey] = useState<'name' | 'price' | 'change'>('name');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc');
@@ -91,23 +92,6 @@ export default function Dashboard() {
     { label: 'Blue Chip', value: 50_000_000_000_000 },
   ];
 
-  useEffect(() => {
-    const saved = localStorage.getItem('watchlist');
-    if (saved) {
-      try { setWatchlist(new Set(JSON.parse(saved))); } catch {}
-    }
-  }, []);
-
-  const toggleWatchlist = (e: React.MouseEvent, ticker: string) => {
-    e.preventDefault();
-    e.stopPropagation();
-    setWatchlist(prev => {
-      const next = new Set(prev);
-      next.has(ticker) ? next.delete(ticker) : next.add(ticker);
-      localStorage.setItem('watchlist', JSON.stringify([...next]));
-      return next;
-    });
-  };
 
   const loadData = async () => {
     try {

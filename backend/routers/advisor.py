@@ -8,9 +8,9 @@ import logging
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
+from auth import CurrentUser, get_current_user
 from database import get_db
 from services.advisor import router as intent_router, pipelines, quota, groq_client
-from services.advisor.auth import get_current_user
 from services.advisor.schemas import ChatRequest, ChatResponse, RouterOutput
 
 log = logging.getLogger("advisor.endpoint")
@@ -33,9 +33,8 @@ def _clarify_reply(route_out: RouterOutput) -> str:
 
 
 @router.post("/chat", response_model=ChatResponse)
-def chat(req: ChatRequest, db: Session = Depends(get_db)):
-    user = get_current_user()
-
+def chat(req: ChatRequest, db: Session = Depends(get_db),
+         user: CurrentUser = Depends(get_current_user)):
     # 1) Router intent
     try:
         route_out = intent_router.route(req.message, req.history, req.form)
@@ -61,7 +60,7 @@ def chat(req: ChatRequest, db: Session = Depends(get_db)):
 
     # 4) Jalankan pipeline. Gagal -> pesan ramah, kuota TIDAK dipotong.
     try:
-        result = pipelines.run(db, route_out, user_key="USER")
+        result = pipelines.run(db, route_out, user_id=user.id)
     except groq_client.GroqConfigError:
         return ChatResponse(reply=CONFIG_REPLY, intent=route_out.intent, quota=quota.peek(db, user))
     except groq_client.GroqError:

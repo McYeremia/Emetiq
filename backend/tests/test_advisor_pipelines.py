@@ -103,7 +103,7 @@ def test_run_analyze_full(db, monkeypatch):
 # ── Portofolio ───────────────────────────────────────────────────────────────
 
 def test_run_portfolio_empty(db):
-    out = pipelines.run_portfolio(db)
+    out = pipelines.run_portfolio(db, "u1")
     assert out["data"]["holdings"] == []
     assert "belum ada posisi" in out["reply"].lower()
 
@@ -111,7 +111,7 @@ def test_run_portfolio_empty(db):
 def test_run_portfolio_full(db, monkeypatch):
     bbri = db.query(models.Stock).filter_by(ticker="BBRI").first()
     db.add(models.TradeLog(stock_id=bbri.id, action="BUY", date=date(2026, 2, 1),
-                           price=4000, quantity=5, trade_type="MANUAL"))
+                           price=4000, quantity=5, trade_type="MANUAL", user_id="u1"))
     db.commit()
     _mock(monkeypatch, {
         "penasihat portofolio": {"overview": "Portofolio terkonsentrasi di BBRI.",
@@ -119,7 +119,7 @@ def test_run_portfolio_full(db, monkeypatch):
                                   "cash_advice": "Sisakan kas untuk peluang."},
         "pemeriksa risiko":     {"confidence": 0.6, "notes": "ok", "warnings": []},
     })
-    out = pipelines.run_portfolio(db)
+    out = pipelines.run_portfolio(db, "u1")
     assert out["data"]["actions"][0]["ticker"] == "BBRI"
     assert "terkonsentrasi" in out["reply"].lower()
     assert out["confidence"] == 0.6

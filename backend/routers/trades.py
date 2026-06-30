@@ -1,15 +1,28 @@
 from typing import Optional, List, Dict
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
-from sqlalchemy import desc
+from sqlalchemy import desc, or_
 from datetime import date
 from pydantic import BaseModel
 import models
+from auth import CurrentUser, get_current_user
 from database import get_db
 
 router = APIRouter(prefix="/trades", tags=["trades"])
 
 INITIAL_MODAL = 15_000_000
+
+# Trade AI bersifat global (user_id NULL); trade USER milik pemiliknya. Helper di bawah
+# membatasi himpunan trade yang "terlihat" oleh seorang user: trade miliknya + trade AI.
+AI_TRADE_TYPES = ["AUTO_GEMINI", "AUTO_CLAUDE"]
+
+
+def _visible_trades(db: Session, user_id: str):
+    """Query trade yang relevan bagi user: miliknya (USER) + trade AI global."""
+    return db.query(models.TradeLog).filter(
+        or_(models.TradeLog.user_id == user_id,
+            models.TradeLog.trade_type.in_(AI_TRADE_TYPES))
+    )
 
 class TradeRequest(BaseModel):
     ticker: str
@@ -22,8 +35,9 @@ class TradeRequest(BaseModel):
 
 
 @router.get("/portfolio")
-def get_portfolio(db: Session = Depends(get_db)):
-    all_trades = db.query(models.TradeLog).order_by(models.TradeLog.date).all()
+def get_portfolio(db: Session = Depends(get_db),
+                  user: CurrentUser = Depends(get_current_user)):
+    all_trades = _visible_trades(db, user.id).order_by(models.TradeLog.date).all()
 
     raw_portfolios = {"USER": {}, "GEMINI": {}, "CLAUDE": {}}
 
@@ -98,9 +112,10 @@ def get_portfolio(db: Session = Depends(get_db)):
 
 
 @router.get("/growth")
-def get_portfolio_growth(db: Session = Depends(get_db)):
+def get_portfolio_growth(db: Session = Depends(get_db),
+                         user: CurrentUser = Depends(get_current_user)):
     """Returns equity curve snapshots per agent for growth chart."""
-    all_trades = db.query(models.TradeLog).order_by(models.TradeLog.date).all()
+    all_trades = _visible_trades(db, user.id).order_by(models.TradeLog.date).all()
     result = {}
 
     for agent_key in ["USER", "GEMINI", "CLAUDE"]:
@@ -158,9 +173,10 @@ def get_portfolio_growth(db: Session = Depends(get_db)):
 
 
 @router.get("/history")
-def get_trade_history(agent: str = "USER", db: Session = Depends(get_db)):
+def get_trade_history(agent: str = "USER", db: Session = Depends(get_db),
+                      user: CurrentUser = Depends(get_current_user)):
     """Returns all trade logs for a given agent with P&L on sell trades."""
-    all_trades = db.query(models.TradeLog).order_by(models.TradeLog.date, models.TradeLog.created_at).all()
+    all_trades = _visible_trades(db, user.id).order_by(models.TradeLog.date, models.TradeLog.created_at).all()
 
     # Track positions per agent to calculate P&L on sells
     positions: Dict[str, Dict[str, dict]] = {"USER": {}, "GEMINI": {}, "CLAUDE": {}}
@@ -213,9 +229,13 @@ def get_trade_history(agent: str = "USER", db: Session = Depends(get_db)):
 
 
 @router.get("/{trade_id}")
-def get_trade_detail(trade_id: int, db: Session = Depends(get_db)):
+def get_trade_detail(trade_id: int, db: Session = Depends(get_db),
+                     user: CurrentUser = Depends(get_current_user)):
     trade = db.query(models.TradeLog).filter(models.TradeLog.id == trade_id).first()
     if not trade:
+        raise HTTPException(status_code=404, detail="Trade not found")
+    # Trade manual milik user lain tidak boleh dilihat (trade AI global = user_id NULL boleh).
+    if trade.user_id is not None and trade.user_id != user.id:
         raise HTTPException(status_code=404, detail="Trade not found")
 
     if trade.trade_type == "AUTO_GEMINI": agent = "GEMINI"
@@ -226,9 +246,9 @@ def get_trade_detail(trade_id: int, db: Session = Depends(get_db)):
     ticker = stock.ticker
     qty_shares = trade.quantity * 100
 
-    # Hitung avg_buy_price dan P&L dengan replay semua trade sebelumnya
+    # Hitung avg_buy_price dan P&L dengan replay trade sebelumnya (di-scope ke user + AI)
     prior_trades = (
-        db.query(models.TradeLog)
+        _visible_trades(db, user.id)
         .filter(
             (models.TradeLog.date < trade.date) |
             ((models.TradeLog.date == trade.date) & (models.TradeLog.id <= trade.id))
@@ -310,7 +330,8 @@ def get_trade_detail(trade_id: int, db: Session = Depends(get_db)):
 
 
 @router.post("")
-def create_trade(req: TradeRequest, db: Session = Depends(get_db)):
+def create_trade(req: TradeRequest, db: Session = Depends(get_db),
+                 user: CurrentUser = Depends(get_current_user)):
     stock = db.query(models.Stock).filter(models.Stock.ticker == req.ticker.upper()).first()
     if not stock: raise HTTPException(status_code=404, detail="Stock not found")
 
@@ -330,7 +351,7 @@ def create_trade(req: TradeRequest, db: Session = Depends(get_db)):
 
     if req.action.upper() == "SELL":
         # Replay trades to check holdings
-        all_prev = db.query(models.TradeLog).order_by(models.TradeLog.date).all()
+        all_prev = _visible_trades(db, user.id).order_by(models.TradeLog.date).all()
         holdings: dict = {}
         for t in all_prev:
             t_type = t.trade_type.upper()
@@ -358,7 +379,7 @@ def create_trade(req: TradeRequest, db: Session = Depends(get_db)):
             raise HTTPException(status_code=400, detail=f"Insufficient position: hold {held // 100} lots, need {req.quantity} lots.")
 
     elif req.action.upper() == "BUY":
-        all_prev = db.query(models.TradeLog).order_by(models.TradeLog.date).all()
+        all_prev = _visible_trades(db, user.id).order_by(models.TradeLog.date).all()
         holdings_buy: dict = {}
         for t in all_prev:
             t_type = t.trade_type.upper()
@@ -388,10 +409,12 @@ def create_trade(req: TradeRequest, db: Session = Depends(get_db)):
         if trade_cost > available_cash:
             raise HTTPException(status_code=400, detail=f"Insufficient funds: need Rp {trade_cost:,.0f}, available Rp {available_cash:,.0f}.")
 
+    # Trade AI (AUTO_*) tetap global (user_id NULL); trade manual menjadi milik user ini.
+    owner_id = None if trade_type_upper in AI_TRADE_TYPES else user.id
     new_trade = models.TradeLog(
         stock_id=stock.id, action=req.action.upper(), date=date.today(),
-        price=price, quantity=req.quantity, trade_type=req.trade_type.upper(),
-        strategy_id=req.strategy_id, notes=req.notes
+        price=price, quantity=req.quantity, trade_type=trade_type_upper,
+        strategy_id=req.strategy_id, notes=req.notes, user_id=owner_id
     )
     db.add(new_trade)
     db.commit()

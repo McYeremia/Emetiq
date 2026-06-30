@@ -1,4 +1,15 @@
+import { getAccessToken } from './authToken';
+
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:8000';
+
+// Pembungkus fetch yang menyisipkan header Authorization (Supabase access token)
+// bila user sedang login. Endpoint publik tetap jalan tanpa token.
+async function apiFetch(input: string, init: RequestInit = {}): Promise<Response> {
+  const token = getAccessToken();
+  const headers: Record<string, string> = { ...(init.headers as Record<string, string> | undefined) };
+  if (token) headers['Authorization'] = `Bearer ${token}`;
+  return globalThis.fetch(input, { ...init, headers });
+}
 
 export interface Stock {
   ticker: string;
@@ -108,7 +119,7 @@ export interface BacktestResult {
 
 export const api = {
   async getStocks(): Promise<Stock[]> {
-    const res = await fetch(`${API_BASE_URL}/stocks`);
+    const res = await apiFetch(`${API_BASE_URL}/stocks`);
     return res.json();
   },
 
@@ -116,17 +127,17 @@ export const api = {
     const url = from
       ? `${API_BASE_URL}/stocks/${ticker}/ohlcv?from=${from}`
       : `${API_BASE_URL}/stocks/${ticker}/ohlcv`;
-    const res = await fetch(url);
+    const res = await apiFetch(url);
     return res.json();
   },
 
   async getIndicators(ticker: string) {
-    const res = await fetch(`${API_BASE_URL}/stocks/${ticker}/indicators`);
+    const res = await apiFetch(`${API_BASE_URL}/stocks/${ticker}/indicators`);
     return res.json();
   },
 
   async getPortfolio(): Promise<MultiPortfolioResponse> {
-    const res = await fetch(`${API_BASE_URL}/trades/portfolio`);
+    const res = await apiFetch(`${API_BASE_URL}/trades/portfolio`);
     return res.json();
   },
 
@@ -139,7 +150,7 @@ export const api = {
     notes?: string,
     strategyId?: string
   ) {
-    const res = await fetch(`${API_BASE_URL}/trades`, {
+    const res = await apiFetch(`${API_BASE_URL}/trades`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -159,7 +170,7 @@ export const api = {
     const url = ticker
       ? `${API_BASE_URL}/stocks/${ticker}/refresh`
       : `${API_BASE_URL}/stocks/refresh`;
-    const res = await fetch(url, { method: 'POST' });
+    const res = await apiFetch(url, { method: 'POST' });
     return res.json();
   },
 
@@ -173,12 +184,12 @@ export const api = {
     errors: number;
     message: string;
   }> {
-    const res = await fetch(`${API_BASE_URL}/stocks/sync-status`);
+    const res = await apiFetch(`${API_BASE_URL}/stocks/sync-status`);
     return res.json();
   },
 
   async runBacktest(ticker: string, strategyId: string, capital: number = 10_000_000): Promise<BacktestResult> {
-    const res = await fetch(`${API_BASE_URL}/backtest/run/${ticker}/${strategyId}?capital=${capital}`);
+    const res = await apiFetch(`${API_BASE_URL}/backtest/run/${ticker}/${strategyId}?capital=${capital}`);
     return res.json();
   },
 
@@ -186,7 +197,7 @@ export const api = {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 120_000); // 2 menit
     try {
-      const res = await fetch(`${API_BASE_URL}/backtest/screen/${strategyId}`, {
+      const res = await apiFetch(`${API_BASE_URL}/backtest/screen/${strategyId}`, {
         signal: controller.signal,
       });
       return res.json();
@@ -196,27 +207,27 @@ export const api = {
   },
 
   async addStock(ticker: string) {
-    const res = await fetch(`${API_BASE_URL}/stocks/${ticker}`, { method: 'POST' });
+    const res = await apiFetch(`${API_BASE_URL}/stocks/${ticker}`, { method: 'POST' });
     return res.json();
   },
 
   async getSignals() {
-    const res = await fetch(`${API_BASE_URL}/stocks/signals`);
+    const res = await apiFetch(`${API_BASE_URL}/stocks/signals`);
     return res.json();
   },
 
   async triggerScan() {
-    const res = await fetch(`${API_BASE_URL}/stocks/scan`, { method: 'POST' });
+    const res = await apiFetch(`${API_BASE_URL}/stocks/scan`, { method: 'POST' });
     return res.json();
   },
 
   async getPortfolioGrowth(): Promise<Record<'USER' | 'GEMINI' | 'CLAUDE', { date: string; value: number }[]>> {
-    const res = await fetch(`${API_BASE_URL}/trades/growth`);
+    const res = await apiFetch(`${API_BASE_URL}/trades/growth`);
     return res.json();
   },
 
   async getTradeHistory(agent: 'USER' | 'GEMINI' | 'CLAUDE'): Promise<TradeHistory[]> {
-    const res = await fetch(`${API_BASE_URL}/trades/history?agent=${agent}`);
+    const res = await apiFetch(`${API_BASE_URL}/trades/history?agent=${agent}`);
     return res.json();
   },
 
@@ -226,7 +237,7 @@ export const api = {
     accuracy?: number;
     auc?: number;
   }> {
-    const res = await fetch(`${API_BASE_URL}/stocks/${ticker}/ml/status`);
+    const res = await apiFetch(`${API_BASE_URL}/stocks/${ticker}/ml/status`);
     return res.json();
   },
 
@@ -237,7 +248,7 @@ export const api = {
     samples_train?: number;
     message?: string;
   }> {
-    const res = await fetch(`${API_BASE_URL}/stocks/${ticker}/ml/train`, { method: 'POST' });
+    const res = await apiFetch(`${API_BASE_URL}/stocks/${ticker}/ml/train`, { method: 'POST' });
     return res.json();
   },
 
@@ -257,7 +268,7 @@ export const api = {
     samples_train?: number;
     message?: string;
   }> {
-    const res = await fetch(`${API_BASE_URL}/stocks/${ticker}/ml/predict`);
+    const res = await apiFetch(`${API_BASE_URL}/stocks/${ticker}/ml/predict`);
     return res.json();
   },
 
@@ -265,12 +276,12 @@ export const api = {
     const url = date
       ? `${API_BASE_URL}/broker-flow?date=${date}`
       : `${API_BASE_URL}/broker-flow`;
-    const res = await fetch(url);
+    const res = await apiFetch(url);
     return res.json();
   },
 
   async getBrokerFlowDates(): Promise<{ dates: string[] }> {
-    const res = await fetch(`${API_BASE_URL}/broker-flow/available-dates`);
+    const res = await apiFetch(`${API_BASE_URL}/broker-flow/available-dates`);
     return res.json();
   },
 
@@ -278,7 +289,7 @@ export const api = {
     const url = date
       ? `${API_BASE_URL}/broker-flow/scrape?date=${date}`
       : `${API_BASE_URL}/broker-flow/scrape`;
-    const res = await fetch(url, { method: 'POST' });
+    const res = await apiFetch(url, { method: 'POST' });
     return res.json();
   },
 
@@ -301,7 +312,7 @@ export const api = {
     notes: string;
     ohlcv: { date: string; open: number; high: number; low: number; close: number; volume: number }[];
   }> {
-    const res = await fetch(`${API_BASE_URL}/trades/${id}`);
+    const res = await apiFetch(`${API_BASE_URL}/trades/${id}`);
     return res.json();
   },
 
@@ -310,7 +321,7 @@ export const api = {
     history?: AdvisorTurn[];
     form?: Record<string, unknown>;
   }): Promise<AdvisorResponse> {
-    const res = await fetch(`${API_BASE_URL}/advisor/chat`, {
+    const res = await apiFetch(`${API_BASE_URL}/advisor/chat`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
@@ -329,6 +340,27 @@ export const api = {
       return { reply: 'Gagal menghubungi advisor. Periksa koneksi backend.', intent: 'error', data: null, quota: null, confidence: null };
     }
     return res.json();
+  },
+
+  // ── Watchlist (per user, butuh login) ──────────────────────────────────────
+  async getWatchlist(): Promise<string[]> {
+    const res = await apiFetch(`${API_BASE_URL}/watchlist`);
+    if (!res.ok) return [];
+    return (await res.json()).tickers ?? [];
+  },
+
+  async addWatchlist(ticker: string): Promise<boolean> {
+    const res = await apiFetch(`${API_BASE_URL}/watchlist`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ticker }),
+    });
+    return res.ok;
+  },
+
+  async removeWatchlist(ticker: string): Promise<boolean> {
+    const res = await apiFetch(`${API_BASE_URL}/watchlist/${ticker}`, { method: 'DELETE' });
+    return res.ok;
   },
 };
 

@@ -4,6 +4,7 @@ import { useEffect, useState, useCallback, useRef } from 'react';
 import { api, TradeHistory, PortfolioItem, AgentPortfolio } from '@/lib/api';
 import { INITIAL_MODAL } from '@/lib/constants';
 import EmetiqNav from '@/components/EmetiqNav';
+import RequireAuth from '@/components/RequireAuth';
 import dynamic from 'next/dynamic';
 import Link from 'next/link';
 
@@ -58,6 +59,14 @@ function buildDonutPath(s: number, e: number, cx: number, cy: number, ro: number
 }
 
 export default function PortfolioPage() {
+  return (
+    <RequireAuth>
+      <PortfolioInner />
+    </RequireAuth>
+  );
+}
+
+function PortfolioInner() {
   useEffect(() => { document.title = 'Portofolio - EMETIQ'; }, []);
   const [port, setPort] = useState<AgentPortfolio | null>(null);
   const [growth, setGrowth] = useState<{ date: string; value: number }[]>([]);

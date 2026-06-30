@@ -154,8 +154,8 @@ def run_analyze(db: Session, params: RouterParams) -> Dict[str, Any]:
 
 # ── Pipeline 3: Saran portofolio ─────────────────────────────────────────────
 
-def run_portfolio(db: Session, user_key: str = "USER") -> Dict[str, Any]:
-    port = dp.portfolio(db, user_key)
+def run_portfolio(db: Session, user_id: str) -> Dict[str, Any]:
+    port = dp.portfolio(db, user_id)
     if port["position_count"] == 0:
         return {
             "reply": "Belum ada posisi aktif di portofolio kamu. Tambah posisi dulu untuk dapat saran.",
@@ -192,12 +192,12 @@ def run_portfolio(db: Session, user_key: str = "USER") -> Dict[str, Any]:
 
 # ── Dispatcher ───────────────────────────────────────────────────────────────
 
-def run(db: Session, route_out: RouterOutput, user_key: str = "USER") -> Dict[str, Any]:
+def run(db: Session, route_out: RouterOutput, user_id: str) -> Dict[str, Any]:
     """Jalankan pipeline sesuai intent. (clarify/chitchat ditangani di endpoint.)"""
     if route_out.intent == "screen":
         return run_screen(db, route_out.params)
     if route_out.intent == "analyze":
         return run_analyze(db, route_out.params)
     if route_out.intent == "portfolio":
-        return run_portfolio(db, user_key)
+        return run_portfolio(db, user_id)
     raise ValueError(f"Intent bukan pipeline: {route_out.intent}")

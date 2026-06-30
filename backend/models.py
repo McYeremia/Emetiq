@@ -117,6 +117,9 @@ class TradeLog(Base):
     strategy_id = Column(String(50), nullable=True)  # New: ID strategi yang digunakan
     notes = Column(String(255))                      # New: Alasan beli/jual (reasoning)
     backtest_run_id = Column(Integer, ForeignKey("backtest_runs.id"), nullable=True)
+    # Pemilik trade. NULL = trade global/AI (AUTO_GEMINI/AUTO_CLAUDE). Trade manual user
+    # diisi UUID Supabase agar portofolio ter-scope per user.
+    user_id = Column(String(36), index=True, nullable=True)
     created_at = Column(DateTime, server_default=func.now())
 
     stock = relationship("Stock", back_populates="trades")
@@ -174,6 +177,31 @@ class AdvisorUsage(Base):
     user_id = Column(String(64), nullable=False, index=True)
     date    = Column(Date, nullable=False, index=True)
     count   = Column(Integer, default=0, nullable=False)
+
+
+class Profile(Base):
+    """Profil user aplikasi, 1:1 dengan user Supabase Auth (id = UUID Supabase).
+
+    Dibuat otomatis saat user terautentikasi pertama kali (lihat auth.ensure_profile).
+    Tier diatur manual oleh admin (SQL/Supabase dashboard); semua user baru = 'free'.
+    """
+    __tablename__ = "profiles"
+
+    id         = Column(String(36), primary_key=True)   # = Supabase auth user UUID
+    email      = Column(String(255), index=True)
+    tier       = Column(String(20), nullable=False, default="free")
+    created_at = Column(DateTime, server_default=func.now())
+
+
+class Watchlist(Base):
+    """Watchlist per user (sebelumnya localStorage di frontend). Unik per (user, ticker)."""
+    __tablename__ = "watchlist"
+    __table_args__ = (UniqueConstraint("user_id", "ticker", name="uq_watchlist_user_ticker"),)
+
+    id         = Column(Integer, primary_key=True, index=True)
+    user_id    = Column(String(36), nullable=False, index=True)
+    ticker     = Column(String(10), nullable=False)
+    created_at = Column(DateTime, server_default=func.now())
 
 
 class BrokerFlow(Base):

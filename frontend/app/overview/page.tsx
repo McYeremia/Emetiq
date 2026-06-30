@@ -5,6 +5,8 @@ import { api, Stock, OHLCV } from '@/lib/api';
 import Link from 'next/link';
 import EmetiqNav from '@/components/EmetiqNav';
 import { useToast } from '@/components/Toast';
+import { useAuth } from '@/components/AuthProvider';
+import { useWatchlist } from '@/components/WatchlistProvider';
 import dynamic from 'next/dynamic';
 
 const StockChart = dynamic(() => import('@/components/StockChart'), { ssr: false });
@@ -76,26 +78,9 @@ export default function Overview() {
   const [stocks, setStocks] = useState<Stock[]>([]);
   const [ihsgData, setIhsgData] = useState<OHLCV[]>([]);
   const [loading, setLoading] = useState(true);
-  const [watchlist, setWatchlist] = useState<Set<string>>(new Set());
   const { toast } = useToast();
-
-  useEffect(() => {
-    const saved = localStorage.getItem('watchlist');
-    if (saved) {
-      try { setWatchlist(new Set(JSON.parse(saved))); } catch {}
-    }
-  }, []);
-
-  const toggleWatchlist = (e: React.MouseEvent, ticker: string) => {
-    e.preventDefault();
-    e.stopPropagation();
-    setWatchlist(prev => {
-      const next = new Set(prev);
-      next.has(ticker) ? next.delete(ticker) : next.add(ticker);
-      localStorage.setItem('watchlist', JSON.stringify([...next]));
-      return next;
-    });
-  };
+  const { user } = useAuth();
+  const { watchlist, toggle } = useWatchlist();
 
   const loadData = async () => {
     try {
@@ -180,7 +165,14 @@ export default function Overview() {
             {/* Watchlist */}
             <div style={{ ...CARD, padding: 0, overflow: 'hidden' }}>
               <CardHead title="Watchlist" badge={`${watchlistStocks.length} saham`} />
-              {watchlistStocks.length === 0 ? (
+              {!user ? (
+                <div style={{ padding: '32px 18px', textAlign: 'center' }}>
+                  <p style={{ fontSize: 13.5, color: MUTED }}>Masuk untuk menyimpan watchlist pribadi.</p>
+                  <Link href="/login?next=/overview" style={{ display: 'inline-block', marginTop: 12, fontSize: 13, fontWeight: 700, color: '#fff', background: ACCENT, padding: '9px 16px', borderRadius: 11, textDecoration: 'none' }} className="emx-btn">
+                    Masuk
+                  </Link>
+                </div>
+              ) : watchlistStocks.length === 0 ? (
                 <div style={{ padding: '32px 18px', textAlign: 'center' }}>
                   <p style={{ fontSize: 13.5, color: MUTED }}>Belum ada saham di watchlist.</p>
                   <Link href="/dashboard" style={{ display: 'inline-block', marginTop: 12, fontSize: 13, fontWeight: 700, color: '#fff', background: ACCENT, padding: '9px 16px', borderRadius: 11, textDecoration: 'none' }} className="emx-btn">
@@ -190,7 +182,7 @@ export default function Overview() {
               ) : (
                 <div className="emx-rows">
                   {watchlistStocks.map(stock => (
-                    <QuoteRow key={stock.ticker} stock={stock} starred={watchlist.has(stock.ticker)} onStar={(e) => toggleWatchlist(e, stock.ticker)} />
+                    <QuoteRow key={stock.ticker} stock={stock} starred={watchlist.has(stock.ticker)} onStar={(e) => toggle(e, stock.ticker)} />
                   ))}
                 </div>
               )}

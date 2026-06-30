@@ -103,12 +103,12 @@ def test_analyze_not_found(db):
 def test_portfolio_aggregation(db):
     bbri = db.query(models.Stock).filter_by(ticker="BBRI").first()
     db.add(models.TradeLog(stock_id=bbri.id, action="BUY", date=date(2026, 2, 1),
-                           price=4000, quantity=5, trade_type="MANUAL"))
+                           price=4000, quantity=5, trade_type="MANUAL", user_id="u1"))
     db.add(models.TradeLog(stock_id=bbri.id, action="BUY", date=date(2026, 2, 2),
-                           price=4200, quantity=5, trade_type="MANUAL"))
+                           price=4200, quantity=5, trade_type="MANUAL", user_id="u1"))
     db.commit()
 
-    p = dp.portfolio(db)
+    p = dp.portfolio(db, "u1")
     assert p["position_count"] == 1
     h = p["holdings"][0]
     assert h["ticker"] == "BBRI"
@@ -125,5 +125,5 @@ def test_portfolio_excludes_bot_trades(db):
     db.add(models.TradeLog(stock_id=bbri.id, action="BUY", date=date(2026, 2, 1),
                            price=4000, quantity=5, trade_type="AUTO_GEMINI"))
     db.commit()
-    p = dp.portfolio(db)
+    p = dp.portfolio(db, "u1")
     assert p["position_count"] == 0          # trade bot tidak masuk portofolio user

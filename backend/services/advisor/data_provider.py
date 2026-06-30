@@ -14,7 +14,6 @@ import services.ml_predictor as ml
 from services.advisor import config
 
 INITIAL_MODAL = 15_000_000  # samakan dengan routers/trades.py
-USER_TRADE_TYPES_EXCLUDED = {"AUTO_GEMINI", "AUTO_CLAUDE"}  # sisanya = milik user
 
 
 # ── Helper kecil ─────────────────────────────────────────────────────────────
@@ -180,10 +179,11 @@ def analyze(db: Session, ticker: str) -> Dict[str, Any]:
 
 # ── Pipeline 3: Portofolio ───────────────────────────────────────────────────
 
-def portfolio(db: Session, user_key: str = "USER") -> Dict[str, Any]:
-    """Snapshot holding milik user (default: trade MANUAL = 'USER')."""
+def portfolio(db: Session, user_id: str) -> Dict[str, Any]:
+    """Snapshot holding milik satu user (di-scope berdasarkan user_id trade)."""
     trades = (
         db.query(models.TradeLog)
+        .filter(models.TradeLog.user_id == user_id)
         .order_by(models.TradeLog.date)
         .all()
     )
@@ -191,8 +191,6 @@ def portfolio(db: Session, user_key: str = "USER") -> Dict[str, Any]:
     positions: Dict[str, Dict[str, Any]] = {}
     realized = 0.0
     for t in trades:
-        if t.trade_type in USER_TRADE_TYPES_EXCLUDED:
-            continue  # bukan milik user
         ticker = t.stock.ticker
         pos = positions.setdefault(ticker, {"shares": 0, "avg_price": 0.0, "stock_id": t.stock_id})
         qty = t.quantity * 100

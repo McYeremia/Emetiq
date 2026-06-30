@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { api, Stock, BacktestResult } from '@/lib/api';
 import Link from 'next/link';
 import EmetiqNav from '@/components/EmetiqNav';
+import RequireAuth from '@/components/RequireAuth';
 import strategyRegistry from '../../strategies_local/registry.json';
 
 type FundSortKey = 'last_price' | 'change_pct' | 'pe_ratio' | 'pbv_ratio' | 'dividend_yield' | 'market_cap';
@@ -665,8 +666,10 @@ function ScreenerInner() {
 
 export default function ScreenerPage() {
   return (
-    <Suspense fallback={<div style={{ minHeight: '100vh', background: BG }} />}>
-      <ScreenerInner />
-    </Suspense>
+    <RequireAuth>
+      <Suspense fallback={<div style={{ minHeight: '100vh', background: BG }} />}>
+        <ScreenerInner />
+      </Suspense>
+    </RequireAuth>
   );
 }

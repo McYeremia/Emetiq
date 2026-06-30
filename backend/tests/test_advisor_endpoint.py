@@ -7,12 +7,11 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
+from auth import CurrentUser, get_current_user
 from database import Base, get_db
 import models
 import main
-import routers.advisor as advisor_ep
 from services.advisor import groq_client
-from services.advisor.auth import AdvisorUser
 
 
 @pytest.fixture
@@ -62,7 +61,8 @@ def _install_groq(monkeypatch, router_payload):
 
 
 def _user(monkeypatch, tier):
-    monkeypatch.setattr(advisor_ep, "get_current_user", lambda: AdvisorUser("u-test", tier))
+    # Override dependency auth nyata dengan user uji bertier tertentu.
+    main.app.dependency_overrides[get_current_user] = lambda: CurrentUser("u-test", None, tier)
 
 
 def test_chitchat_no_quota(client, monkeypatch):
@@ -96,8 +96,12 @@ def test_analyze_consumes_quota(client, monkeypatch):
     assert body["quota"]["used"] == 1          # pipeline sukses -> kuota dipotong
 
 
-def test_quota_exhausted_429(client, monkeypatch):
-    _user(monkeypatch, "free")                 # limit 0
+def test_quota_exhausted_429(client, session_factory, monkeypatch):
+    _user(monkeypatch, "free")                 # limit 1
+    # Habiskan jatah free (1) lebih dulu agar request berikut tertolak.
+    s = session_factory()
+    s.add(models.AdvisorUsage(user_id="u-test", date=date.today(), count=1))
+    s.commit(); s.close()
     _install_groq(monkeypatch, {"intent": "analyze", "params": {"ticker": "BBRI"}})
     r = client.post("/advisor/chat", json={"message": "analisa BBRI"})
     assert r.status_code == 429
