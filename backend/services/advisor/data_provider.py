@@ -10,7 +10,6 @@ from sqlalchemy import desc
 
 import models
 from services.indicators import calculate_indicators
-import services.ml_predictor as ml
 from services.advisor import config
 
 INITIAL_MODAL = 15_000_000  # samakan dengan routers/trades.py
@@ -150,10 +149,6 @@ def analyze(db: Session, ticker: str) -> Dict[str, Any]:
     high_20 = max(window) if window else None
     low_20 = min(window) if window else None
 
-    pred = ml.read_prediction(ticker, db)
-    if pred.get("status") != "ok":
-        pred = None
-
     return {
         "found": True,
         "ticker": ticker,
@@ -173,7 +168,6 @@ def analyze(db: Session, ticker: str) -> Dict[str, Any]:
         "indicators": inds,
         "rsi_band": rsi_band(inds.get("RSI_14")),
         "trend": trend_of(inds, last_close),
-        "ml_prediction": pred,
     }
 
 

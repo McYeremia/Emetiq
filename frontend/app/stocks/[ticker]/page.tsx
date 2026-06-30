@@ -78,13 +78,6 @@ export default function StockDetailPage() {
   const [portfolio, setPortfolio] = useState<any | null>(null);
   const [loading, setLoading] = useState(true);
 
-  // ML state
-  type MlResult = Awaited<ReturnType<typeof api.getMlPrediction>>;
-  type MlStatus = Awaited<ReturnType<typeof api.getMlStatus>>;
-  const [mlResult, setMlResult] = useState<MlResult | null>(null);
-  const [mlStatus, setMlStatus] = useState<MlStatus | null>(null);
-  const [mlLoading, setMlLoading] = useState(false);
-
   // Order state
   const [orderSide, setOrderSide] = useState<'BUY' | 'SELL'>('BUY');
   const [tradeQty, setTradeQty] = useState(1);
@@ -124,24 +117,29 @@ export default function StockDetailPage() {
     if (!ticker) return;
     setLoading(true);
     try {
-      const [ohlcvData, indData, portfolioData, status] = await Promise.all([
+      const [ohlcvData, indData] = await Promise.all([
         api.getOHLCV(ticker),
         api.getIndicators(ticker),
-        api.getPortfolio(),
-        api.getMlStatus(ticker),
       ]);
       setOhlcv(ohlcvData.data || []);
       setIndicators(indData.indicators || null);
-      setPortfolio(portfolioData.USER.assets.find((p: any) => p.ticker === ticker) || null);
-      setMlStatus(status);
-      if (status.trained) {
-        setMlLoading(true);
-        api.getMlPrediction(ticker).then(setMlResult).finally(() => setMlLoading(false));
-      }
     } catch (err) {
       toast('Gagal memuat data saham. Periksa koneksi backend.', 'error');
     } finally {
       setLoading(false);
+    }
+
+    // Posisi user pada saham ini (personal) — hanya saat login; 401 tak boleh
+    // menggagalkan halaman detail yang bersifat publik.
+    try {
+      if (user) {
+        const p = await api.getPortfolio();
+        setPortfolio(p && 'USER' in p ? p.USER.assets.find((a: any) => a.ticker === ticker) || null : null);
+      } else {
+        setPortfolio(null);
+      }
+    } catch {
+      setPortfolio(null);
     }
   }, [ticker]);
 
@@ -454,110 +452,8 @@ export default function StockDetailPage() {
             </div>
           </div>
 
-          {/* CENTER (bottom): ML + indicators */}
+          {/* CENTER (bottom): indicators */}
           <div className="term-main-bottom" style={{ minWidth: 0 }}>
-            {/* ── ML PREDICTION ── */}
-            <div style={{ ...CARD, padding: 0, overflow: 'hidden', marginBottom: 24 }}>
-              <div className="flex items-center justify-between" style={{ padding: '16px 22px', borderBottom: `1px solid ${HAIR}` }}>
-                <div className="flex items-center gap-2.5">
-                  <span style={{ width: 8, height: 8, borderRadius: '50%', background: '#7C3AED' }} />
-                  <h2 style={{ fontFamily: MONO, fontSize: 11, fontWeight: 600, letterSpacing: '.14em', textTransform: 'uppercase', color: '#7C3AED' }}>Prediksi ML</h2>
-                  <span style={{ fontFamily: MONO, fontSize: 10, color: FAINT, background: '#F2F1EC', padding: '2px 8px', borderRadius: 999 }}>Horizon 5 hari</span>
-                </div>
-                {mlStatus?.trained && mlStatus.trained_at && (
-                  <span style={{ fontFamily: MONO, fontSize: 10, color: FAINT }} className="hidden md:block">
-                    Dilatih {new Date(mlStatus.trained_at).toLocaleDateString('id-ID')}{mlStatus.accuracy ? ` · Acc ${(mlStatus.accuracy * 100).toFixed(1)}%` : ''}
-                  </span>
-                )}
-              </div>
-
-              <div style={{ padding: 22 }}>
-                {!mlStatus?.trained && !mlLoading && (
-                  <div className="flex flex-col items-center justify-center gap-2" style={{ padding: '28px 0' }}>
-                    <p style={{ fontSize: 13, color: MUTED }}>Prediksi belum tersedia untuk saham ini.</p>
-                    <p style={{ fontSize: 11.5, color: FAINT }}>Model dilatih otomatis setiap hari setelah sinkronisasi data.</p>
-                  </div>
-                )}
-                {mlLoading && (
-                  <div className="flex items-center justify-center" style={{ padding: '28px 0' }}>
-                    <p style={{ fontFamily: MONO, fontSize: 11, color: FAINT, textTransform: 'uppercase', letterSpacing: '.12em' }} className="animate-pulse">Menghitung prediksi...</p>
-                  </div>
-                )}
-                {mlResult?.status === 'error' && (
-                  <div style={{ color: DOWN, fontSize: 12.5, fontFamily: MONO, textAlign: 'center', padding: '16px 0' }}>{mlResult.message}</div>
-                )}
-                {mlResult?.status === 'ok' && !mlLoading && (
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-7">
-                    <div>
-                      <div className="inline-flex items-center gap-3" style={{ padding: '11px 16px', borderRadius: 14, marginBottom: 18,
-                        background: mlResult.direction === 'BULLISH' ? UP_BG : mlResult.direction === 'BEARISH' ? DOWN_BG : '#FEF6E7',
-                        color: mlResult.direction === 'BULLISH' ? UP : mlResult.direction === 'BEARISH' ? DOWN : '#B7791F',
-                        border: `1px solid ${mlResult.direction === 'BULLISH' ? '#BBE6CC' : mlResult.direction === 'BEARISH' ? '#F2C9C9' : '#F5E0B0'}` }}>
-                        <span style={{ fontSize: 20, fontWeight: 800 }}>{mlResult.direction === 'BULLISH' ? '▲' : mlResult.direction === 'BEARISH' ? '▼' : '◆'}</span>
-                        <div>
-                          <p style={{ fontSize: 16, fontWeight: 800, letterSpacing: '-.01em', lineHeight: 1 }}>{mlResult.direction}</p>
-                          <p style={{ fontFamily: MONO, fontSize: 9.5, opacity: .8, textTransform: 'uppercase', letterSpacing: '.1em', marginTop: 3 }}>Rekomendasi: {mlResult.recommendation}</p>
-                        </div>
-                      </div>
-
-                      <div style={{ marginBottom: 18 }}>
-                        <div className="flex justify-between items-center" style={{ marginBottom: 7 }}>
-                          <span style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.08em', color: FAINT }}>Confidence</span>
-                          <span style={{ fontFamily: MONO, fontSize: 14, fontWeight: 700 }}>{mlResult.confidence}%</span>
-                        </div>
-                        <div style={{ width: '100%', background: '#F2F1EC', borderRadius: 999, height: 7 }}>
-                          <div style={{ height: 7, borderRadius: 999, width: `${mlResult.confidence}%`, background: mlResult.direction === 'BULLISH' ? UP : mlResult.direction === 'BEARISH' ? DOWN : '#D9A441', transition: 'width .7s ease' }} />
-                        </div>
-                      </div>
-
-                      <div className="grid grid-cols-2 gap-3" style={{ marginBottom: 14 }}>
-                        <div style={{ background: UP_BG, border: '1px solid #BBE6CC', borderRadius: 12, padding: 14, textAlign: 'center' }}>
-                          <p style={{ fontSize: 9.5, color: MUTED, textTransform: 'uppercase', letterSpacing: '.1em', fontWeight: 700, marginBottom: 4 }}>Prob. Naik</p>
-                          <p style={{ fontFamily: MONO, fontSize: 19, fontWeight: 800, color: UP }}>{((mlResult.probability_up ?? 0) * 100).toFixed(1)}%</p>
-                        </div>
-                        <div style={{ background: DOWN_BG, border: '1px solid #F2C9C9', borderRadius: 12, padding: 14, textAlign: 'center' }}>
-                          <p style={{ fontSize: 9.5, color: MUTED, textTransform: 'uppercase', letterSpacing: '.1em', fontWeight: 700, marginBottom: 4 }}>Prob. Turun</p>
-                          <p style={{ fontFamily: MONO, fontSize: 19, fontWeight: 800, color: DOWN }}>{((mlResult.probability_down ?? 0) * 100).toFixed(1)}%</p>
-                        </div>
-                      </div>
-
-                      {mlResult.model_accuracy && (
-                        <div className="flex gap-4 flex-wrap" style={{ fontFamily: MONO, fontSize: 10, color: FAINT }}>
-                          <span>Akurasi: <span style={{ color: INK, fontWeight: 700 }}>{(mlResult.model_accuracy * 100).toFixed(1)}%</span></span>
-                          {mlResult.model_auc && <span>AUC: <span style={{ color: INK, fontWeight: 700 }}>{mlResult.model_auc.toFixed(3)}</span></span>}
-                          {mlResult.samples_train && <span>Train: <span style={{ color: INK, fontWeight: 700 }}>{mlResult.samples_train} bar</span></span>}
-                        </div>
-                      )}
-                    </div>
-
-                    <div>
-                      <p style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.08em', color: FAINT, marginBottom: 14 }}>Faktor Penentu Utama</p>
-                      <div className="space-y-3">
-                        {mlResult.top_features?.map((f, i) => {
-                          const maxImp = mlResult.top_features![0].importance;
-                          const pct = Math.round((f.importance / maxImp) * 100);
-                          return (
-                            <div key={i}>
-                              <div className="flex justify-between items-center" style={{ marginBottom: 5 }}>
-                                <span style={{ fontSize: 11.5, fontWeight: 600, color: MUTED }}>{f.name}</span>
-                                <span style={{ fontFamily: MONO, fontSize: 10, color: FAINT }}>{(f.importance * 100).toFixed(1)}%</span>
-                              </div>
-                              <div style={{ width: '100%', background: '#F2F1EC', borderRadius: 999, height: 6 }}>
-                                <div style={{ height: 6, borderRadius: 999, width: `${pct}%`, background: 'color-mix(in oklab, #7C3AED, white 35%)' }} />
-                              </div>
-                            </div>
-                          );
-                        })}
-                      </div>
-                      <p style={{ fontFamily: MONO, fontSize: 9.5, color: FAINT, marginTop: 16, lineHeight: 1.6 }}>
-                        ⚠ Prediksi berbasis probabilitas historis — bukan jaminan. Selalu konfirmasi dengan analisa teknikal & fundamental.
-                      </p>
-                    </div>
-                  </div>
-                )}
-              </div>
-            </div>
-
             {/* ── TECHNICAL INDICATORS (compact, grouped) ── */}
             <div className="flex items-center gap-3 mb-4">
               <h2 style={{ fontFamily: MONO, fontSize: 12, fontWeight: 600, letterSpacing: '.16em', textTransform: 'uppercase', color: FAINT }}>Indikator Teknikal</h2>

@@ -50,17 +50,6 @@ interface Signal {
   market_cap: number | null;
 }
 
-interface SyncStatus {
-  is_running: boolean;
-  phase: string;
-  phase_label: string;
-  total: number;
-  done: number;
-  current: string;
-  errors: number;
-  message: string;
-}
-
 export default function Dashboard() {
   useEffect(() => { document.title = 'Dashboard - EMETIQ'; }, []);
   const [stocks, setStocks] = useState<Stock[]>([]);
@@ -69,9 +58,6 @@ export default function Dashboard() {
   const [ihsgData, setIhsgData] = useState<OHLCV[]>([]);
   const [loading, setLoading] = useState(true);
   const [isScanning, setIsRunningScan] = useState(false);
-  const [isSyncing, setIsSyncing] = useState(false);
-  const [syncStatus, setSyncStatus] = useState<SyncStatus | null>(null);
-  const syncPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const { watchlist, toggle: toggleWatchlist } = useWatchlist();
   const { user } = useAuth();
@@ -135,10 +121,6 @@ export default function Dashboard() {
     return () => clearInterval(interval);
   }, []);
 
-  useEffect(() => {
-    return () => { if (syncPollRef.current) clearInterval(syncPollRef.current); };
-  }, []);
-
   const handleScan = async () => {
     setIsRunningScan(true);
     try {
@@ -148,37 +130,6 @@ export default function Dashboard() {
       toast('Scan gagal. Periksa koneksi backend.', 'error');
     } finally {
       setIsRunningScan(false);
-    }
-  };
-
-  const handleSync = async () => {
-    if (syncPollRef.current) clearInterval(syncPollRef.current);
-    setIsSyncing(true);
-    setSyncStatus(null);
-    try {
-      await api.refreshData();
-
-      syncPollRef.current = setInterval(async () => {
-        try {
-          const status = await api.getSyncStatus();
-          setSyncStatus(status);
-          if (!status.is_running) {
-            clearInterval(syncPollRef.current!);
-            syncPollRef.current = null;
-            setIsSyncing(false);
-            await loadData();
-            // Auto-hide done toast setelah 4 detik
-            setTimeout(() => setSyncStatus(null), 4000);
-          }
-        } catch {
-          clearInterval(syncPollRef.current!);
-          syncPollRef.current = null;
-          setIsSyncing(false);
-        }
-      }, 1000);
-    } catch (err) {
-      toast('Sync gagal. Periksa koneksi backend.', 'error');
-      setIsSyncing(false);
     }
   };
 
@@ -253,18 +204,6 @@ export default function Dashboard() {
   const ihsgChange = currentIhsg - prevIhsg;
   const ihsgUp = ihsgChange >= 0;
 
-  const dataLastDate = stocks.length > 0
-    ? stocks.filter(s => s.last_date).map(s => s.last_date!).sort().at(-1) ?? null
-    : null;
-
-  const isDataStale = (() => {
-    if (!dataLastDate) return false;
-    const last = new Date(dataLastDate);
-    const now = new Date();
-    const diffDays = Math.floor((now.getTime() - last.getTime()) / (1000 * 60 * 60 * 24));
-    return diffDays >= 2; // stale if 2+ days old (accounts for weekends)
-  })();
-
   if (loading && stocks.length === 0) return (
     <div
       style={{ minHeight: '100vh', background: BG, fontFamily: MONO, color: ACCENT }}
@@ -288,18 +227,6 @@ export default function Dashboard() {
 
       <div style={{ maxWidth: 1200, margin: '0 auto', padding: '28px 24px 80px' }}>
 
-        {isDataStale && (
-          <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 24, padding: '12px 18px', borderRadius: 12, background: `color-mix(in oklab, ${ACCENT}, white 90%)`, border: `1px solid color-mix(in oklab, ${ACCENT}, white 78%)` }}>
-            <span style={{ color: ACCENT }}>⚠</span>
-            <span style={{ fontSize: 12.5, fontWeight: 700, color: `color-mix(in oklab, ${ACCENT}, black 20%)` }}>
-              Data terakhir {dataLastDate}, sync diperlukan
-            </span>
-            <span style={{ marginLeft: 'auto', fontFamily: MONO, fontSize: 11, color: FAINT }}>
-              Klik Sync untuk memperbarui
-            </span>
-          </div>
-        )}
-
         {/* IHSG INDEX */}
         <div style={{ ...CARD, padding: 28, marginBottom: 32 }}>
           <div className="flex justify-between items-start mb-5 gap-4">
@@ -308,9 +235,6 @@ export default function Dashboard() {
               <h1 style={{ fontSize: 28, fontWeight: 800, letterSpacing: '-.02em' }}>IHSG</h1>
             </div>
             <div className="flex items-center gap-4">
-              <button onClick={handleSync} disabled={isSyncing} className="emx-btn" style={{ background: '#F2F1EC', color: MUTED, padding: '7px 13px', borderRadius: 999, fontSize: 11.5, fontWeight: 700, border: 'none', cursor: 'pointer', opacity: isSyncing ? 0.5 : 1 }}>
-                {isSyncing ? 'Syncing...' : '⟳ Sync'}
-              </button>
               <div className="text-right">
                 <p style={{ fontFamily: MONO, fontSize: 24, fontWeight: 600 }}>{currentIhsg.toLocaleString('id-ID')}</p>
                 <span style={{ fontFamily: MONO, fontSize: 12, fontWeight: 600, color: ihsgUp ? UP : DOWN, background: ihsgUp ? UP_BG : DOWN_BG, padding: '3px 9px', borderRadius: 7, display: 'inline-block', marginTop: 4 }}>
@@ -440,66 +364,6 @@ export default function Dashboard() {
           )}
         </div>
       </div>
-
-      {/* Sync Progress Toast */}
-      {isSyncing && (
-        <div style={{ position: 'fixed', bottom: 24, right: 24, zIndex: 50, width: 320, maxWidth: 'calc(100vw - 32px)', ...CARD, padding: 20 }}>
-          <div className="flex items-center justify-between mb-3">
-            <div className="flex items-center gap-2">
-              <span style={{ width: 8, height: 8, borderRadius: '50%', background: ACCENT, display: 'inline-block' }} className="animate-pulse" />
-              <span style={{ fontSize: 12, fontWeight: 700, color: `color-mix(in oklab, ${ACCENT}, black 12%)` }}>
-                {syncStatus?.phase_label || 'Memulai sync...'}
-              </span>
-            </div>
-            {syncStatus && syncStatus.total > 0 && (
-              <span style={{ fontFamily: MONO, fontSize: 11, color: FAINT }}>
-                {syncStatus.done} / {syncStatus.total}
-              </span>
-            )}
-          </div>
-
-          {/* Progress bar */}
-          <div style={{ width: '100%', background: '#F2F1EC', borderRadius: 999, height: 6, marginBottom: 12 }}>
-            <div
-              style={{
-                background: ACCENT,
-                height: 6,
-                borderRadius: 999,
-                transition: 'width .5s ease',
-                width: syncStatus && syncStatus.total > 0
-                  ? `${Math.round((syncStatus.done / syncStatus.total) * 100)}%`
-                  : '5%'
-              }}
-            />
-          </div>
-
-          <div className="flex items-center justify-between">
-            {syncStatus?.current ? (
-              <p style={{ fontFamily: MONO, fontSize: 10.5, color: FAINT }} className="truncate flex-1">
-                <span style={{ color: '#B6B6AE' }}>→</span> {syncStatus.current}
-              </p>
-            ) : (
-              <p style={{ fontFamily: MONO, fontSize: 10.5, color: '#B6B6AE', fontStyle: 'italic' }}>Menghubungi server...</p>
-            )}
-            {syncStatus && syncStatus.errors > 0 && (
-              <span style={{ fontFamily: MONO, fontSize: 10.5, color: DOWN, marginLeft: 8, flex: 'none' }}>
-                {syncStatus.errors} error
-              </span>
-            )}
-          </div>
-        </div>
-      )}
-
-      {/* Sync Done Toast — tampil sebentar setelah selesai */}
-      {!isSyncing && syncStatus?.phase === 'done' && (
-        <div style={{ position: 'fixed', bottom: 24, right: 24, zIndex: 50, width: 320, maxWidth: 'calc(100vw - 32px)', ...CARD, border: `1px solid color-mix(in oklab, ${ACCENT}, white 60%)`, padding: 20 }}>
-          <div className="flex items-center gap-2">
-            <span style={{ color: UP, fontSize: 14 }}>✓</span>
-            <span style={{ fontSize: 12, fontWeight: 700, color: INK }}>Sync Selesai</span>
-          </div>
-          <p style={{ fontFamily: MONO, fontSize: 10.5, color: FAINT, marginTop: 4 }}>{syncStatus.message}</p>
-        </div>
-      )}
 
       <style jsx global>{`
         .emx-card {

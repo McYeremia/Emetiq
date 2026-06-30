@@ -146,7 +146,6 @@ def run_analyze(db: Session, params: RouterParams) -> Dict[str, Any]:
             "rsi": data["indicators"].get("RSI_14"),
             "rsi_band": data.get("rsi_band"),
             "trend": data.get("trend"),
-            "ml": data.get("ml_prediction"),
         },
     }
     return {"reply": synth.reasoning or "Analisa selesai.", "data": card, "confidence": crit.confidence}

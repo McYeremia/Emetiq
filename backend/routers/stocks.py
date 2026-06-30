@@ -277,33 +277,6 @@ def trigger_scan(db: Session = Depends(get_db)):
     return {"status": "ok", "message": f"Scan complete. Found {count} signals."}
 
 
-# ---------------------------------------------------------------------------
-# ML Endpoints — harus SEBELUM /{ticker} agar tidak ter-capture
-# ---------------------------------------------------------------------------
-
-@router.post("/{ticker}/ml/train")
-def ml_train(ticker: str, background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
-    """Latih model lalu simpan prediksinya (upsert) ke tabel ml_predictions."""
-    import services.ml_predictor as ml
-
-    # Latih + hitung + simpan prediksi (overwrite baris saham ini)
-    return ml.train_and_store(ticker.upper(), db)
-
-
-@router.get("/{ticker}/ml/predict")
-def ml_predict(ticker: str, db: Session = Depends(get_db)):
-    """Kembalikan prediksi ML tersimpan (dihitung offline oleh cron harian)."""
-    import services.ml_predictor as ml
-    return ml.read_prediction(ticker.upper(), db)
-
-
-@router.get("/{ticker}/ml/status")
-def ml_status(ticker: str, db: Session = Depends(get_db)):
-    """Cek apakah prediksi tersimpan tersedia, beserta metadata model."""
-    import services.ml_predictor as ml
-    return ml.read_status(ticker.upper(), db)
-
-
 # Parameterized routes after static ones
 @router.post("/{ticker}")
 def add_custom_stock(ticker: str, db: Session = Depends(get_db)):
