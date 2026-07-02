@@ -21,3 +21,13 @@ export const supabase = createClient(safeUrl, safeAnon, {
     detectSessionInUrl: true,
   },
 });
+
+// Base URL publik untuk redirect verifikasi email & OAuth. Set
+// NEXT_PUBLIC_SITE_URL ke domain produksi (mis. https://emetiq.vercel.app) agar
+// link verifikasi email TIDAK mengarah ke localhost saat register dari lokal /
+// preview. Bila tak diset, fallback ke origin runtime.
+export function siteUrl(): string {
+  const configured = process.env.NEXT_PUBLIC_SITE_URL;
+  const base = configured || (typeof window !== 'undefined' ? window.location.origin : '');
+  return base.replace(/\/$/, '');
+}

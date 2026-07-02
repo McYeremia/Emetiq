@@ -3,7 +3,8 @@
 import { Suspense, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { supabase, supabaseConfigured } from '@/lib/supabase';
+import { supabase, supabaseConfigured, siteUrl } from '@/lib/supabase';
+import PasswordInput from '@/components/PasswordInput';
 
 const ACCENT = '#F26A1B';
 const BG = '#FCFCFB';
@@ -48,7 +49,7 @@ function LoginForm() {
     setErr(null);
     const { error } = await supabase.auth.signInWithOAuth({
       provider: 'google',
-      options: { redirectTo: `${window.location.origin}/auth/callback?next=${encodeURIComponent(next)}` },
+      options: { redirectTo: `${siteUrl()}/auth/callback?next=${encodeURIComponent(next)}` },
     });
     if (error) setErr(error.message);
   };
@@ -71,7 +72,7 @@ function LoginForm() {
 
         <form onSubmit={submit} style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
           <input style={inputStyle} type="email" placeholder="Email" value={email} onChange={e => setEmail(e.target.value)} required />
-          <input style={inputStyle} type="password" placeholder="Password" value={pw} onChange={e => setPw(e.target.value)} required />
+          <PasswordInput placeholder="Password" value={pw} onChange={e => setPw(e.target.value)} required />
           {err && <p style={{ color: '#D23B3B', fontSize: 13 }}>{err}</p>}
           <button style={{ ...btnPrimary, opacity: busy ? 0.7 : 1 }} type="submit" disabled={busy}>
             {busy ? 'Memproses...' : 'Masuk'}

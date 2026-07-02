@@ -3,7 +3,8 @@
 import { Suspense, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
-import { supabase, supabaseConfigured } from '@/lib/supabase';
+import { supabase, supabaseConfigured, siteUrl } from '@/lib/supabase';
+import PasswordInput from '@/components/PasswordInput';
 
 const ACCENT = '#F26A1B';
 const BG = '#FCFCFB';
@@ -38,11 +39,13 @@ function RegisterForm() {
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setErr(null); setBusy(true);
+    setErr(null);
+    if (pw.length < 8) { setErr('Password minimal 8 karakter.'); return; }
+    setBusy(true);
     const { data, error } = await supabase.auth.signUp({
       email,
       password: pw,
-      options: { emailRedirectTo: `${window.location.origin}/auth/callback?next=${encodeURIComponent(next)}` },
+      options: { emailRedirectTo: `${siteUrl()}/auth/callback?next=${encodeURIComponent(next)}` },
     });
     setBusy(false);
     if (error) { setErr(error.message); return; }
@@ -55,7 +58,7 @@ function RegisterForm() {
     setErr(null);
     const { error } = await supabase.auth.signInWithOAuth({
       provider: 'google',
-      options: { redirectTo: `${window.location.origin}/auth/callback?next=${encodeURIComponent(next)}` },
+      options: { redirectTo: `${siteUrl()}/auth/callback?next=${encodeURIComponent(next)}` },
     });
     if (error) setErr(error.message);
   };
@@ -91,7 +94,7 @@ function RegisterForm() {
 
             <form onSubmit={submit} style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
               <input style={inputStyle} type="email" placeholder="Email" value={email} onChange={e => setEmail(e.target.value)} required />
-              <input style={inputStyle} type="password" placeholder="Password (min. 6 karakter)" value={pw} onChange={e => setPw(e.target.value)} minLength={6} required />
+              <PasswordInput placeholder="Password (min. 8 karakter)" value={pw} onChange={e => setPw(e.target.value)} minLength={8} required />
               {err && <p style={{ color: '#D23B3B', fontSize: 13 }}>{err}</p>}
               <button style={{ ...btnPrimary, opacity: busy ? 0.7 : 1 }} type="submit" disabled={busy}>
                 {busy ? 'Memproses...' : 'Daftar'}
