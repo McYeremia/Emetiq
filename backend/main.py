@@ -1,13 +1,39 @@
+import math
 import os
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from database import Base, engine
 import models  # noqa: F401 — register ORM models
 
 Base.metadata.create_all(bind=engine)
 
-app = FastAPI(title="IDXAnalyst API", version="1.0.0")
+
+def _sanitize(obj):
+    """Ganti float non-finite (NaN/Inf) jadi None secara rekursif.
+
+    yfinance kadang mengisi fundamental (mis. pe_ratio) dengan Inf/NaN. Starlette
+    men-serialisasi respons dengan allow_nan=False, jadi nilai seperti itu bikin
+    seluruh endpoint 500. Sanitasi di sini menutup semua endpoint sekaligus.
+    """
+    if isinstance(obj, float):
+        return None if (math.isnan(obj) or math.isinf(obj)) else obj
+    if isinstance(obj, dict):
+        return {k: _sanitize(v) for k, v in obj.items()}
+    if isinstance(obj, (list, tuple)):
+        return [_sanitize(v) for v in obj]
+    return obj
+
+
+class SafeJSONResponse(JSONResponse):
+    """JSONResponse yang membersihkan NaN/Inf sebelum encode."""
+
+    def render(self, content) -> bytes:
+        return super().render(_sanitize(content))
+
+
+app = FastAPI(title="IDXAnalyst API", version="1.0.0", default_response_class=SafeJSONResponse)
 
 # Origins yang diizinkan — dari env (comma-separated) saat deploy; default localhost dev.
 _origins = os.getenv("ALLOWED_ORIGINS", "http://localhost:3000,http://127.0.0.1:3000")
