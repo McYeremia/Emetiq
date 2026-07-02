@@ -91,7 +91,10 @@ export interface AiPortoOrder {
 }
 export interface AiPortoResponse {
   reply: string;
+  regime: string | null;
+  guardrails: Record<string, number> | null;
   strategy_note: string;
+  auto_exits: AiPortoOrder[];
   executed: AiPortoOrder[];
   skipped: AiPortoOrder[];
   snapshot: AiPortoSnapshot;

@@ -15,6 +15,7 @@ const FAINT = '#9A9A92';
 const HAIR = '#ECEBE6';
 const UP = '#138A50';
 const DOWN = '#D23B3B';
+const AMBER = '#B7791F';
 const SANS = "'Plus Jakarta Sans', system-ui, sans-serif";
 const MONO = "'IBM Plex Mono', monospace";
 
@@ -25,6 +26,12 @@ const CARD: React.CSSProperties = {
 
 const rp = (n: number | null | undefined) =>
   n == null ? '—' : 'Rp ' + Math.round(n).toLocaleString('id-ID');
+
+const REGIME: Record<string, { label: string; color: string }> = {
+  AGGRESSIVE: { label: 'Agresif', color: UP },
+  NORMAL: { label: 'Normal', color: AMBER },
+  DEFENSIVE: { label: 'Defensif', color: DOWN },
+};
 
 type Msg = { role: 'user' | 'assistant'; content: string; resp?: AiPortoResponse };
 
@@ -71,6 +78,7 @@ function AiPortoInner() {
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
   const [snapshot, setSnapshot] = useState<AiPortoSnapshot | null>(null);
+  const [regime, setRegime] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -92,6 +100,7 @@ function AiPortoInner() {
       const resp = await api.aiPortoChat({ message });
       setMessages([...next, { role: 'assistant', content: resp.reply, resp }]);
       if (resp.snapshot) setSnapshot(resp.snapshot);
+      if (resp.regime) setRegime(resp.regime);
     } catch {
       setMessages([...next, { role: 'assistant', content: 'Gagal menghubungi AI Porto. Periksa koneksi backend.' }]);
     } finally {
@@ -153,7 +162,14 @@ function AiPortoInner() {
 
         {/* Portfolio panel */}
         <aside style={{ ...CARD, padding: 18, position: 'sticky', top: 84 }} className="aip-panel">
-          <h2 style={{ fontFamily: MONO, fontSize: 11, fontWeight: 700, letterSpacing: '.14em', textTransform: 'uppercase', color: FAINT }}>Porto AI</h2>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+            <h2 style={{ fontFamily: MONO, fontSize: 11, fontWeight: 700, letterSpacing: '.14em', textTransform: 'uppercase', color: FAINT }}>Porto AI</h2>
+            {regime && REGIME[regime] && (
+              <span title="Rezim risiko adaptif" style={{ fontSize: 10.5, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '.05em', color: REGIME[regime].color, background: `color-mix(in oklab, ${REGIME[regime].color}, white 86%)`, border: `1px solid color-mix(in oklab, ${REGIME[regime].color}, white 72%)`, padding: '3px 9px', borderRadius: 999 }}>
+                {REGIME[regime].label}
+              </span>
+            )}
+          </div>
           <div style={{ marginTop: 10 }}>
             <div style={{ fontFamily: MONO, fontSize: 24, fontWeight: 700 }}>{rp(snapshot?.total_value)}</div>
             <div style={{ fontSize: 13, fontWeight: 700, color: pnl >= 0 ? UP : DOWN, marginTop: 2 }}>
@@ -234,8 +250,11 @@ function Bubble({ msg }: { msg: Msg }) {
       <div style={{ ...CARD, padding: '12px 16px', fontSize: 14, lineHeight: 1.6, whiteSpace: 'pre-wrap' }}>
         {renderText(msg.content)}
       </div>
-      {resp && (resp.executed.length > 0 || resp.skipped.length > 0) && (
+      {resp && ((resp.auto_exits?.length ?? 0) > 0 || resp.executed.length > 0 || resp.skipped.length > 0) && (
         <div style={{ ...CARD, padding: 0, overflow: 'hidden' }}>
+          {(resp.auto_exits ?? []).map((o, i) => (
+            <Row key={'a' + i} o={o} ok tag="auto" />
+          ))}
           {resp.executed.map((o, i) => (
             <Row key={'e' + i} o={o} ok />
           ))}
@@ -248,7 +267,7 @@ function Bubble({ msg }: { msg: Msg }) {
   );
 }
 
-function Row({ o, ok }: { o: { ticker: string; action: string; lots: number; price?: number; reason: string }; ok?: boolean }) {
+function Row({ o, ok, tag }: { o: { ticker: string; action: string; lots: number; price?: number; reason: string }; ok?: boolean; tag?: 'auto' }) {
   const col = o.action === 'BUY' ? UP : DOWN;
   return (
     <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 10, padding: '10px 14px', borderTop: `1px solid #F2F1EC`, opacity: ok ? 1 : 0.6 }}>
@@ -256,6 +275,7 @@ function Row({ o, ok }: { o: { ticker: string; action: string; lots: number; pri
         <div className="flex items-center gap-2">
           <span style={{ fontWeight: 700, fontSize: 13.5 }}>{o.ticker}</span>
           <span style={{ fontFamily: MONO, fontSize: 10, fontWeight: 700, color: col, background: `color-mix(in oklab, ${col}, white 86%)`, padding: '1px 7px', borderRadius: 999 }}>{o.action} {o.lots}</span>
+          {tag === 'auto' && <span style={{ fontSize: 10, fontWeight: 800, color: AMBER, textTransform: 'uppercase', letterSpacing: '.04em' }}>auto</span>}
           {!ok && <span style={{ fontSize: 10.5, color: DOWN, fontWeight: 700 }}>dilewati</span>}
         </div>
         {o.reason && <p style={{ fontSize: 11.5, color: MUTED, marginTop: 3 }}>{o.reason}</p>}

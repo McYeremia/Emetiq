@@ -9,10 +9,12 @@ from sqlalchemy.orm import Session
 
 import models
 from services import trade_exec
+from services.indicators import calculate_indicators
 from services.advisor import data_provider as dp
+from services.ai_porto import scoring
 
 AGENT = "AI"
-DEFAULT_CANDIDATES = 20
+DEFAULT_CANDIDATES = 18
 DEFAULT_SIGNALS = 15
 
 
@@ -94,7 +96,57 @@ def _signals(db: Session, limit: int) -> List[Dict[str, Any]]:
     return out
 
 
+def price_of(db: Session, ticker: str):
+    """(stock, harga close terakhir) untuk sebuah ticker; (None, None) bila tak ada."""
+    stock = db.query(models.Stock).filter(models.Stock.ticker == ticker.upper()).first()
+    if not stock:
+        return None, None
+    return stock, _latest_close(db, stock.id)
+
+
+def scored_candidates(db: Session, limit: int = DEFAULT_CANDIDATES) -> List[Dict[str, Any]]:
+    """Kandidat ber-skor (lever 4): screening + sinyal watcher, diperkaya teknikal, diberi skor."""
+    sig_map = {s["ticker"]: s for s in _signals(db, DEFAULT_SIGNALS)}
+
+    # Universe: hasil screening likuid + ticker yang punya sinyal (walau di luar top-cap).
+    universe: Dict[str, Dict[str, Any]] = {}
+    for c in dp.screen(db, limit=limit + 8):
+        universe[c["ticker"]] = dict(c)
+    for tk in sig_map:
+        if tk not in universe:
+            stock, px = price_of(db, tk)
+            if stock is None:
+                continue
+            universe[tk] = {
+                "ticker": tk, "name": stock.name, "sector": stock.sector,
+                "last_price": px, "market_cap": stock.market_cap,
+                "pe": stock.pe_ratio, "pbv": stock.pbv_ratio,
+                "dividend_yield": stock.dividend_yield,
+            }
+
+    out: List[Dict[str, Any]] = []
+    for tk, c in universe.items():
+        stock = db.query(models.Stock).filter(models.Stock.ticker == tk).first()
+        if not stock:
+            continue
+        # Saham dengan data sangat sedikit bisa bikin lib indikator error — jangan
+        # sampai satu saham tipis menggagalkan seluruh pipeline.
+        try:
+            inds = calculate_indicators(db, stock)
+        except Exception:
+            inds = {}
+        last = c.get("last_price") or _latest_close(db, stock.id)
+        c["rsi"] = inds.get("RSI_14")
+        c["trend"] = dp.trend_of(inds, last)
+        c["signal_strength"] = sig_map.get(tk, {}).get("strength")
+        c["signal_type"] = sig_map.get(tk, {}).get("type")
+        c["score"] = scoring.score_candidate(c)
+        out.append(c)
+
+    out.sort(key=lambda x: x["score"], reverse=True)
+    return out[:limit]
+
+
 def candidates(db: Session, limit: int = DEFAULT_CANDIDATES) -> Dict[str, Any]:
-    """Universe kandidat: screening likuid (fundamental+harga) + sinyal watcher."""
-    screen = dp.screen(db, limit=limit)
-    return {"screen": screen, "signals": _signals(db, DEFAULT_SIGNALS)}
+    """Universe kandidat mentah (dipertahankan untuk kompatibilitas)."""
+    return {"screen": dp.screen(db, limit=limit), "signals": _signals(db, DEFAULT_SIGNALS)}

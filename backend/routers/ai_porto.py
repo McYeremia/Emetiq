@@ -45,8 +45,11 @@ def manage(req: ManageRequest, db: Session = Depends(get_db),
     try:
         return pipeline.run_manage(db, req.message)
     except groq_client.GroqConfigError:
-        return {"reply": CONFIG_REPLY, "executed": [], "skipped": [],
-                "snapshot": data.portfolio_state(db), "strategy_note": ""}
+        return _fallback(db, CONFIG_REPLY)
     except groq_client.GroqError:
-        return {"reply": BUSY_REPLY, "executed": [], "skipped": [],
-                "snapshot": data.portfolio_state(db), "strategy_note": ""}
+        return _fallback(db, BUSY_REPLY)
+
+
+def _fallback(db: Session, msg: str) -> dict:
+    return {"reply": msg, "regime": None, "guardrails": None, "strategy_note": "",
+            "auto_exits": [], "executed": [], "skipped": [], "snapshot": data.portfolio_state(db)}
