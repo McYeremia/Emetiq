@@ -4,7 +4,7 @@ from typing import Optional
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import desc, func
 import yfinance as yf
 
@@ -145,7 +145,14 @@ def get_ihsg(db: Session = Depends(get_db)):
 
 @router.get("/signals")
 def get_ai_signals(db: Session = Depends(get_db)):
-    signals = db.query(models.Signal).order_by(desc(models.Signal.created_at)).all()
+    # joinedload menghindari N+1 (dulu tiap s.stock jadi query terpisah — 400+
+    # round-trip ke pooler bikin endpoint hang belasan detik).
+    signals = (
+        db.query(models.Signal)
+        .options(joinedload(models.Signal.stock))
+        .order_by(desc(models.Signal.created_at))
+        .all()
+    )
     grouped: dict = {}
     for s in signals:
         ticker = s.stock.ticker
