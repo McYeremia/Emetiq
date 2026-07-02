@@ -19,6 +19,11 @@ const geistMono = Geist_Mono({
 export const metadata: Metadata = {
   title: "EMETIQ — Monitoring Saham",
   description: "Platform monitoring saham Indonesia — watchlist, portofolio, screener, dan AI Advisor.",
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: "default",
+    title: "EMETIQ",
+  },
 };
 
 export const viewport: Viewport = {
@@ -28,6 +33,7 @@ export const viewport: Viewport = {
   // shrink instead of scrolling; iOS is handled via the visualViewport API.
   interactiveWidget: "resizes-content",
   viewportFit: "cover",
+  themeColor: "#F26A1B",
 };
 
 export default function RootLayout({
