@@ -145,7 +145,7 @@ export default function Overview() {
           <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
             {/* IHSG Today */}
             <div style={{ ...CARD, padding: 24 }}>
-              <div className="flex justify-between items-start mb-4 gap-4">
+              <div className="flex flex-wrap justify-between items-start mb-4 gap-3">
                 <div>
                   <p style={{ fontFamily: MONO, fontSize: 11, fontWeight: 600, letterSpacing: '.16em', textTransform: 'uppercase', color: ACCENT, marginBottom: 6 }}>IHSG Today</p>
                   <h2 style={{ fontSize: 26, fontWeight: 800, letterSpacing: '-.02em' }}>Jakarta Composite</h2>
@@ -219,6 +219,11 @@ export default function Overview() {
       <style jsx global>{`
         .ov-grid {
           grid-template-columns: 1.5fr 1fr;
+        }
+        /* Grid tracks default to min-width:auto, which lets non-wrapping
+           card content push the whole page wider than the viewport. */
+        .ov-grid > * {
+          min-width: 0;
         }
         @media (max-width: 900px) {
           .ov-grid {

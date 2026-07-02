@@ -214,17 +214,23 @@ function ScreenerInner() {
 
   // ── Shared tab bar ───────────────────────────────────────
   const tabBar = () => (
-    <div className="emx-scroll" style={{ display: 'flex', gap: 4, padding: 4, background: '#F2F1EC', borderRadius: 12, marginBottom: 28, width: 'fit-content', maxWidth: '100%', overflowX: 'auto' }}>
+    <div className="emx-tabbar" style={{ display: 'flex', gap: 4, padding: 4, background: '#F2F1EC', borderRadius: 12, marginBottom: 28, maxWidth: '100%' }}>
       {(['teknikal', 'fundamental', 'backtest'] as const).map(tab => {
         const active = activeTab === tab;
-        const label = tab === 'teknikal' ? 'Strategi Teknikal' : tab === 'fundamental' ? 'Fundamental' : 'Backtest';
+        const labelFull = tab === 'teknikal' ? 'Strategi Teknikal' : tab === 'fundamental' ? 'Fundamental' : 'Backtest';
         return (
           <button
             key={tab}
             onClick={() => goTab(tab)}
+            className="emx-tab"
             style={{ flex: 'none', whiteSpace: 'nowrap', padding: '8px 18px', borderRadius: 9, fontSize: 12.5, fontWeight: 700, border: 'none', cursor: 'pointer', transition: 'all .15s ease', background: active ? '#fff' : 'transparent', color: active ? ACCENT : MUTED, boxShadow: active ? '0 1px 4px rgba(20,20,15,.08)' : 'none' }}
           >
-            {label}
+            {tab === 'teknikal' ? (
+              <>
+                <span className="emx-tab-full">{labelFull}</span>
+                <span className="emx-tab-short">Teknikal</span>
+              </>
+            ) : labelFull}
           </button>
         );
       })}
@@ -477,7 +483,7 @@ function ScreenerInner() {
 
         {/* Asset picker */}
         <div style={{ ...CARD, padding: 16, marginBottom: 20 }} className="flex flex-wrap items-end gap-4">
-          <div style={{ position: 'relative' }}>
+          <div style={{ position: 'relative', minWidth: 0 }}>
             <label style={labelStyle}>Aset</label>
             <input
               value={bktOpen ? bktQuery : bktTicker}
@@ -486,7 +492,7 @@ function ScreenerInner() {
               onChange={e => { setBktQuery(e.target.value); setBktOpen(true); }}
               placeholder="Cari kode / nama..."
               className="emx-input"
-              style={{ ...inputStyle, width: 230, fontWeight: 700, color: ACCENT }}
+              style={{ ...inputStyle, width: 230, maxWidth: '100%', fontWeight: 700, color: ACCENT }}
             />
             {bktOpen && (
               <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, marginTop: 6, zIndex: 30, background: '#fff', border: `1px solid ${HAIR}`, borderRadius: 12, boxShadow: '0 18px 40px -20px rgba(20,20,15,.3)', maxHeight: 264, overflowY: 'auto' }} className="emx-scroll">
@@ -656,8 +662,18 @@ function ScreenerInner() {
         ::selection {
           background: color-mix(in oklab, ${ACCENT}, white 70%);
         }
+        /* Tab bar: sized to its content on desktop, full-width equal tabs on
+           phones so the third tab ("Backtest") never gets clipped. */
+        .emx-tabbar { width: fit-content; }
+        .emx-tab-short { display: none; }
         @media (max-width: 640px) {
           .fund-col-hide { display: none; }
+        }
+        @media (max-width: 520px) {
+          .emx-tabbar { width: 100%; }
+          .emx-tab { flex: 1 1 0 !important; padding: 8px 6px !important; text-align: center; }
+          .emx-tab-full { display: none; }
+          .emx-tab-short { display: inline; }
         }
       `}</style>
     </main>
