@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import Header from "@/components/Header";
@@ -19,6 +19,15 @@ const geistMono = Geist_Mono({
 export const metadata: Metadata = {
   title: "EMETIQ — Monitoring Saham",
   description: "Platform monitoring saham Indonesia — watchlist, portofolio, screener, dan AI Advisor.",
+};
+
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  // Let the on-screen keyboard resize the layout (Chrome/Android) so chat pages
+  // shrink instead of scrolling; iOS is handled via the visualViewport API.
+  interactiveWidget: "resizes-content",
+  viewportFit: "cover",
 };
 
 export default function RootLayout({

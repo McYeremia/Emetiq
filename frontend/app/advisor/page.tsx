@@ -68,6 +68,29 @@ function AdvisorInner() {
   const [loading, setLoading] = useState(false);
   const [quota, setQuota] = useState<AdvisorQuota | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const mainRef = useRef<HTMLElement>(null);
+
+  // App-like mobile keyboard handling: pin the chat to the *visual* viewport so
+  // when the on-screen keyboard opens the layout shrinks smoothly (input rides
+  // just above the keyboard) instead of the whole page scrolling up and exposing
+  // the dark body background beneath it (iOS Safari's default behaviour).
+  useEffect(() => {
+    const vv = window.visualViewport;
+    const el = mainRef.current;
+    if (!vv || !el) return;
+    const sync = () => {
+      el.style.height = `${vv.height}px`;
+      el.style.transform = `translateY(${vv.offsetTop}px)`;
+      scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight });
+    };
+    sync();
+    vv.addEventListener('resize', sync);
+    vv.addEventListener('scroll', sync);
+    return () => {
+      vv.removeEventListener('resize', sync);
+      vv.removeEventListener('scroll', sync);
+    };
+  }, []);
 
   // Persist chat across navigation within the tab session (survives leaving to a
   // stock page and coming back; cleared only when the tab is closed or reset).
@@ -135,7 +158,7 @@ function AdvisorInner() {
     : null;
 
   return (
-    <main style={{ minHeight: '100vh', background: BG, color: INK, fontFamily: SANS, WebkitFontSmoothing: 'antialiased' }}>
+    <main ref={mainRef} style={{ position: 'fixed', top: 0, left: 0, right: 0, height: '100dvh', overflow: 'hidden', overscrollBehavior: 'none', background: BG, color: INK, fontFamily: SANS, WebkitFontSmoothing: 'antialiased' }}>
       <link rel="preconnect" href="https://fonts.googleapis.com" />
       <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="" />
       <link
@@ -145,7 +168,7 @@ function AdvisorInner() {
 
       <EmetiqNav active="advisor" />
 
-      <div style={{ maxWidth: 860, margin: '0 auto', padding: '24px 18px 28px', display: 'flex', flexDirection: 'column', height: 'calc(100vh - 64px)' }}>
+      <div style={{ maxWidth: 860, margin: '0 auto', padding: '24px 18px 28px', display: 'flex', flexDirection: 'column', height: 'calc(100% - 64px)' }}>
         {/* Header */}
         <div className="flex items-end justify-between gap-4 mb-4">
           <div>
