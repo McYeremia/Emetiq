@@ -229,18 +229,13 @@ export default function Dashboard() {
 
         {/* IHSG INDEX */}
         <div style={{ ...CARD, padding: 28, marginBottom: 32 }}>
-          <div className="flex justify-between items-start mb-5 gap-4">
-            <div>
-              <p style={{ fontFamily: MONO, fontSize: 11, fontWeight: 600, letterSpacing: '.16em', textTransform: 'uppercase', color: ACCENT, marginBottom: 6 }}>Jakarta Composite</p>
-              <h1 style={{ fontSize: 28, fontWeight: 800, letterSpacing: '-.02em' }}>IHSG</h1>
-            </div>
-            <div className="flex items-center gap-4">
-              <div className="text-right">
-                <p style={{ fontFamily: MONO, fontSize: 24, fontWeight: 600 }}>{currentIhsg.toLocaleString('id-ID')}</p>
-                <span style={{ fontFamily: MONO, fontSize: 12, fontWeight: 600, color: ihsgUp ? UP : DOWN, background: ihsgUp ? UP_BG : DOWN_BG, padding: '3px 9px', borderRadius: 7, display: 'inline-block', marginTop: 4 }}>
-                  {ihsgUp ? '▲' : '▼'} {prevIhsg ? Math.abs((ihsgChange / prevIhsg) * 100).toFixed(2) : '0.00'}%
-                </span>
-              </div>
+          <div className="flex flex-wrap justify-between items-center mb-5 gap-3">
+            <h1 style={{ fontSize: 28, fontWeight: 800, letterSpacing: '-.02em' }}>IHSG</h1>
+            <div className="flex items-center gap-3">
+              <p style={{ fontFamily: MONO, fontSize: 24, fontWeight: 600 }}>{currentIhsg.toLocaleString('id-ID')}</p>
+              <span style={{ fontFamily: MONO, fontSize: 12, fontWeight: 600, color: ihsgUp ? UP : DOWN, background: ihsgUp ? UP_BG : DOWN_BG, padding: '3px 9px', borderRadius: 7, display: 'inline-block' }}>
+                {ihsgUp ? '▲' : '▼'} {prevIhsg ? Math.abs((ihsgChange / prevIhsg) * 100).toFixed(2) : '0.00'}%
+              </span>
             </div>
           </div>
           <div style={{ height: 224 }}>

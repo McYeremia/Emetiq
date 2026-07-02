@@ -148,7 +148,7 @@ export default function Overview() {
               <div className="flex flex-wrap justify-between items-start mb-4 gap-3">
                 <div>
                   <p style={{ fontFamily: MONO, fontSize: 11, fontWeight: 600, letterSpacing: '.16em', textTransform: 'uppercase', color: ACCENT, marginBottom: 6 }}>IHSG Today</p>
-                  <h2 style={{ fontSize: 26, fontWeight: 800, letterSpacing: '-.02em' }}>Jakarta Composite</h2>
+                  <h2 style={{ fontSize: 26, fontWeight: 800, letterSpacing: '-.02em' }}>JCX</h2>
                 </div>
                 <div className="text-right">
                   <p style={{ fontFamily: MONO, fontSize: 22, fontWeight: 600 }}>{currentIhsg.toLocaleString('id-ID')}</p>
