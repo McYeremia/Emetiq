@@ -145,16 +145,16 @@ export default function Overview() {
           <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
             {/* IHSG Today */}
             <div style={{ ...CARD, padding: 24 }}>
-              <div className="flex flex-wrap justify-between items-start mb-4 gap-3">
-                <div>
-                  <p style={{ fontFamily: MONO, fontSize: 11, fontWeight: 600, letterSpacing: '.16em', textTransform: 'uppercase', color: ACCENT, marginBottom: 6 }}>IHSG Today</p>
+              <div className="mb-4">
+                <p style={{ fontFamily: MONO, fontSize: 11, fontWeight: 600, letterSpacing: '.16em', textTransform: 'uppercase', color: ACCENT, marginBottom: 6 }}>IHSG Today</p>
+                <div className="flex flex-wrap justify-between items-center gap-3">
                   <h2 style={{ fontSize: 26, fontWeight: 800, letterSpacing: '-.02em' }}>JCX</h2>
-                </div>
-                <div className="text-right">
-                  <p style={{ fontFamily: MONO, fontSize: 22, fontWeight: 600 }}>{currentIhsg.toLocaleString('id-ID')}</p>
-                  <span style={{ fontFamily: MONO, fontSize: 12, fontWeight: 600, color: ihsgUp ? UP : DOWN, background: ihsgUp ? UP_BG : DOWN_BG, padding: '3px 9px', borderRadius: 7, display: 'inline-block', marginTop: 4 }}>
-                    {ihsgUp ? '▲' : '▼'} {prevIhsg ? Math.abs((ihsgChange / prevIhsg) * 100).toFixed(2) : '0.00'}%
-                  </span>
+                  <div className="flex items-center gap-3">
+                    <p style={{ fontFamily: MONO, fontSize: 22, fontWeight: 600 }}>{currentIhsg.toLocaleString('id-ID')}</p>
+                    <span style={{ fontFamily: MONO, fontSize: 12, fontWeight: 600, color: ihsgUp ? UP : DOWN, background: ihsgUp ? UP_BG : DOWN_BG, padding: '3px 9px', borderRadius: 7, display: 'inline-block' }}>
+                      {ihsgUp ? '▲' : '▼'} {prevIhsg ? Math.abs((ihsgChange / prevIhsg) * 100).toFixed(2) : '0.00'}%
+                    </span>
+                  </div>
                 </div>
               </div>
               <div style={{ height: 210 }}>
