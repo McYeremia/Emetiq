@@ -49,6 +49,13 @@ function RegisterForm() {
     });
     setBusy(false);
     if (error) { setErr(error.message); return; }
+    // Supabase menyembunyikan info "email sudah terdaftar" (anti-enumeration):
+    // mengembalikan user dgn identities kosong dan TIDAK mengirim email verifikasi.
+    // Deteksi kasus ini agar UI tidak salah menyuruh "cek email".
+    if (data.user && (data.user.identities?.length ?? 0) === 0) {
+      setErr('Email ini sudah terdaftar. Silakan masuk atau reset password.');
+      return;
+    }
     // Bila email confirmation aktif, session null -> minta verifikasi email.
     if (!data.session) { setDone(true); return; }
     window.location.assign(next);

@@ -1,7 +1,9 @@
+import bisect
+from collections import defaultdict
 from typing import Optional, List, Dict
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy.orm import Session
-from sqlalchemy import desc, or_
+from sqlalchemy.orm import Session, joinedload
+from sqlalchemy import or_, and_, func
 from pydantic import BaseModel
 import models
 from auth import CurrentUser, get_current_user
@@ -19,11 +21,38 @@ BUCKETS = ["USER", "GEMINI", "CLAUDE", "AI"]
 
 
 def _visible_trades(db: Session, user_id: str):
-    """Query trade yang relevan bagi user: miliknya (USER) + trade AI global."""
-    return db.query(models.TradeLog).filter(
+    """Query trade yang relevan bagi user: miliknya (USER) + trade AI global.
+
+    joinedload(stock) menghindari N+1: tanpa ini, tiap akses ``t.stock.ticker``
+    memicu satu query terpisah — mahal karena Postgres Supabase remote.
+    """
+    return db.query(models.TradeLog).options(joinedload(models.TradeLog.stock)).filter(
         or_(models.TradeLog.user_id == user_id,
             models.TradeLog.trade_type.in_(AI_TRADE_TYPES))
     )
+
+
+def _latest_prices(db: Session, stock_ids) -> Dict[int, tuple]:
+    """Harga penutupan terakhir per stock_id dalam 2 query (bukan N).
+
+    Return: {stock_id: (close, date)}. Portable SQLite & Postgres (tanpa DISTINCT ON).
+    """
+    ids = list({sid for sid in stock_ids if sid is not None})
+    if not ids:
+        return {}
+    sub = (
+        db.query(models.OHLCVDaily.stock_id, func.max(models.OHLCVDaily.date).label("md"))
+        .filter(models.OHLCVDaily.stock_id.in_(ids))
+        .group_by(models.OHLCVDaily.stock_id)
+        .subquery()
+    )
+    rows = (
+        db.query(models.OHLCVDaily.stock_id, models.OHLCVDaily.close, models.OHLCVDaily.date)
+        .join(sub, and_(models.OHLCVDaily.stock_id == sub.c.stock_id,
+                        models.OHLCVDaily.date == sub.c.md))
+        .all()
+    )
+    return {sid: (close, d) for sid, close, d in rows}
 
 class TradeRequest(BaseModel):
     ticker: str
@@ -41,11 +70,13 @@ def get_portfolio(db: Session = Depends(get_db),
     all_trades = _visible_trades(db, user.id).order_by(models.TradeLog.date).all()
 
     raw_portfolios = {k: {} for k in BUCKETS}
+    ticker_to_stock_id: Dict[str, int] = {}
 
     for t in all_trades:
         p_key = agent_of(t.trade_type)
 
         ticker = t.stock.ticker
+        ticker_to_stock_id[ticker] = t.stock_id
         if ticker not in raw_portfolios[p_key]:
             raw_portfolios[p_key][ticker] = {"shares": 0, "avg_price": 0.0, "realized_pnl": 0.0, "strategy": "", "notes": ""}
 
@@ -61,6 +92,15 @@ def get_portfolio(db: Session = Depends(get_db),
             data["realized_pnl"] += (t.price - data["avg_price"]) * qty
             data["shares"] -= qty
 
+    # Harga terakhir semua saham yang masih dipegang, di-batch (2 query total).
+    held_ids = [
+        ticker_to_stock_id[tk]
+        for key in BUCKETS
+        for tk, d in raw_portfolios[key].items()
+        if d["shares"] > 0
+    ]
+    latest_prices = _latest_prices(db, held_ids)
+
     result = {}
     for key in BUCKETS:
         summary_list = []
@@ -72,10 +112,9 @@ def get_portfolio(db: Session = Depends(get_db),
             total_realized += data["realized_pnl"]
 
             if data["shares"] > 0:
-                stock = db.query(models.Stock).filter(models.Stock.ticker == ticker).first()
-                latest = db.query(models.OHLCVDaily).filter(models.OHLCVDaily.stock_id == stock.id).order_by(desc(models.OHLCVDaily.date)).first()
-                curr_price = latest.close if latest else data["avg_price"]
-                last_date = str(latest.date) if latest else None
+                close, ldate = latest_prices.get(ticker_to_stock_id[ticker], (None, None))
+                curr_price = close if close is not None else data["avg_price"]
+                last_date = str(ldate) if ldate else None
 
                 cost_basis = data["shares"] * data["avg_price"]
                 unrealized = (curr_price - data["avg_price"]) * data["shares"]
@@ -115,6 +154,31 @@ def get_portfolio_growth(db: Session = Depends(get_db),
                          user: CurrentUser = Depends(get_current_user)):
     """Returns equity curve snapshots per agent for growth chart."""
     all_trades = _visible_trades(db, user.id).order_by(models.TradeLog.date).all()
+
+    # Preload seluruh deret harga (date, close) untuk saham yang pernah ditransaksikan,
+    # dalam SATU query. Sebelumnya endpoint ini melakukan 1 query OHLCV per posisi per
+    # trade (O(trades × posisi)) — ratusan/ribuan round-trip ke Postgres remote.
+    stock_ids = {t.stock_id for t in all_trades}
+    series_dates: Dict[int, list] = defaultdict(list)
+    series_close: Dict[int, list] = defaultdict(list)
+    if stock_ids:
+        rows = (
+            db.query(models.OHLCVDaily.stock_id, models.OHLCVDaily.date, models.OHLCVDaily.close)
+            .filter(models.OHLCVDaily.stock_id.in_(stock_ids))
+            .order_by(models.OHLCVDaily.stock_id, models.OHLCVDaily.date)
+            .all()
+        )
+        for sid, d, c in rows:
+            series_dates[sid].append(d)
+            series_close[sid].append(c)
+
+    def price_asof(sid: int, d) -> Optional[float]:
+        dates = series_dates.get(sid)
+        if not dates:
+            return None
+        i = bisect.bisect_right(dates, d) - 1
+        return series_close[sid][i] if i >= 0 else None
+
     result = {}
 
     for agent_key in BUCKETS:
@@ -148,14 +212,9 @@ def get_portfolio_growth(db: Session = Depends(get_db),
             holdings_value = 0.0
             for tk, pos in positions.items():
                 if pos["shares"] > 0:
-                    closest = (
-                        db.query(models.OHLCVDaily)
-                        .filter(models.OHLCVDaily.stock_id == pos["stock_id"])
-                        .filter(models.OHLCVDaily.date <= t.date)
-                        .order_by(desc(models.OHLCVDaily.date))
-                        .first()
-                    )
-                    price = closest.close if closest else pos["avg_price"]
+                    price = price_asof(pos["stock_id"], t.date)
+                    if price is None:
+                        price = pos["avg_price"]
                     holdings_value += pos["shares"] * price
 
             date_str = str(t.date)
