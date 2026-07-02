@@ -39,6 +39,25 @@ def _jwt_aud() -> str:
     return os.getenv("SUPABASE_JWT_AUD", "authenticated")
 
 
+def _supabase_url() -> str:
+    # URL project Supabase (mis. https://xxxx.supabase.co). Dipakai untuk JWKS bila
+    # token ditandatangani dengan kunci asimetris (ES256/RS256) — default project baru.
+    return (os.getenv("SUPABASE_URL")
+            or os.getenv("NEXT_PUBLIC_SUPABASE_URL", "")).rstrip("/")
+
+
+# Cache PyJWKClient per-URL agar kunci publik JWKS tidak di-fetch tiap request.
+_jwks_clients: dict = {}
+
+
+def _jwks_client(url: str):
+    client = _jwks_clients.get(url)
+    if client is None:
+        client = jwt.PyJWKClient(f"{url}/auth/v1/.well-known/jwks.json", timeout=5)
+        _jwks_clients[url] = client
+    return client
+
+
 def ensure_profile(db: Session, user_id: str, email: Optional[str]) -> models.Profile:
     """Cari baris profiles; buat (tier 'free') bila belum ada. Sinkronkan email."""
     prof = db.query(models.Profile).filter(models.Profile.id == user_id).first()
@@ -54,15 +73,40 @@ def ensure_profile(db: Session, user_id: str, email: Optional[str]) -> models.Pr
 
 
 def _decode_token(token: str) -> dict:
-    secret = _jwt_secret()
-    if not secret:
-        raise HTTPException(status_code=500, detail="SUPABASE_JWT_SECRET belum diatur di server.")
+    """Verifikasi JWT Supabase secara offline.
+
+    Mendukung dua skema tanda tangan Supabase:
+      • HS256  — legacy shared secret (SUPABASE_JWT_SECRET).
+      • ES256/RS256 — kunci asimetris (default project baru), diverifikasi via JWKS
+        publik dari SUPABASE_URL (kunci di-cache, tidak di-fetch tiap request).
+    Algoritma dipilih otomatis dari header token.
+    """
     try:
-        return jwt.decode(token, secret, algorithms=["HS256"], audience=_jwt_aud())
+        alg = jwt.get_unverified_header(token).get("alg", "")
+    except jwt.InvalidTokenError:
+        raise HTTPException(status_code=401, detail="Token tidak valid.")
+
+    try:
+        if alg == "HS256":
+            secret = _jwt_secret()
+            if not secret:
+                raise HTTPException(status_code=500, detail="SUPABASE_JWT_SECRET belum diatur di server.")
+            return jwt.decode(token, secret, algorithms=["HS256"], audience=_jwt_aud())
+
+        if alg in ("ES256", "RS256"):
+            url = _supabase_url()
+            if not url:
+                raise HTTPException(status_code=500, detail="SUPABASE_URL belum diatur di server (butuh JWKS).")
+            key = _jwks_client(url).get_signing_key_from_jwt(token).key
+            return jwt.decode(token, key, algorithms=["ES256", "RS256"], audience=_jwt_aud())
+
+        raise HTTPException(status_code=401, detail=f"Algoritma token tidak didukung: {alg or 'kosong'}.")
     except jwt.ExpiredSignatureError:
         raise HTTPException(status_code=401, detail="Token kedaluwarsa, silakan login ulang.")
     except jwt.InvalidTokenError:
         raise HTTPException(status_code=401, detail="Token tidak valid.")
+    except jwt.PyJWKClientError:
+        raise HTTPException(status_code=401, detail="Gagal memuat kunci verifikasi (JWKS).")
 
 
 def _dev_user(db: Session) -> CurrentUser:

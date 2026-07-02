@@ -90,7 +90,8 @@ export default function EmetiqNav({ active }: { active?: NavKey | 'advisor' | 'a
           {/* Account (desktop) */}
           {!loading && (user ? (
             <div className="hidden md:flex" style={{ alignItems: 'center', gap: 8 }}>
-              {tier && <span style={tierBadge}>{tier}</span>}
+              {tier && <Link href="/profile" style={{ ...tierBadge, textDecoration: 'none' }} title="Profil">{tier}</Link>}
+              <Link href="/profile" style={{ ...ghostBtn, display: 'inline-flex', alignItems: 'center' }}>Profil</Link>
               <button type="button" onClick={handleLogout} style={ghostBtn}>Keluar</button>
             </div>
           ) : (
@@ -155,6 +156,7 @@ export default function EmetiqNav({ active }: { active?: NavKey | 'advisor' | 'a
                     <span style={{ fontSize: 13, color: MUTED, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{user.email}</span>
                     {tier && <span style={tierBadge}>{tier}</span>}
                   </div>
+                  <Link href="/profile" onClick={() => setOpen(false)} style={{ ...ghostBtn, textAlign: 'center' }}>Profil</Link>
                   <button type="button" onClick={handleLogout} style={{ ...ghostBtn, textAlign: 'center' }}>Keluar</button>
                 </>
               ) : (

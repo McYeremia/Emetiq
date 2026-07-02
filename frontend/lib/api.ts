@@ -175,6 +175,12 @@ export const api = {
     return res.json();
   },
 
+  async getMe(): Promise<{ id: string; email: string | null; tier: string }> {
+    const res = await apiFetch(`${API_BASE_URL}/me`);
+    if (!res.ok) throw new Error(`me ${res.status}`);
+    return res.json();
+  },
+
   async getPortfolio(): Promise<MultiPortfolioResponse> {
     const res = await apiFetch(`${API_BASE_URL}/trades/portfolio`);
     return res.json();

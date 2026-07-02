@@ -96,3 +96,27 @@ def test_dev_bypass(db, monkeypatch):
     monkeypatch.setenv("AUTH_DEV_TIER", "dev")
     u = auth.get_current_user(None, db)
     assert u.tier == "dev"
+
+
+def test_asymmetric_es256_token(db, monkeypatch):
+    """Token ES256 (kunci asimetris Supabase) diverifikasi via JWKS."""
+    from cryptography.hazmat.primitives.asymmetric import ec
+
+    priv = ec.generate_private_key(ec.SECP256R1())
+    payload = {"sub": "user-9", "email": "e@s.com", "aud": "authenticated",
+               "exp": datetime.now(timezone.utc) + timedelta(seconds=3600)}
+    token = jwt.encode(payload, priv, algorithm="ES256")
+
+    # Alihkan resolusi kunci JWKS ke kunci publik lokal (tanpa jaringan).
+    class _FakeKey:
+        key = priv.public_key()
+
+    class _FakeClient:
+        def get_signing_key_from_jwt(self, _token):
+            return _FakeKey()
+
+    monkeypatch.setenv("SUPABASE_URL", "https://demo.supabase.co")
+    monkeypatch.setattr(auth, "_jwks_client", lambda url: _FakeClient())
+
+    u = auth.get_current_user(f"Bearer {token}", db)
+    assert u.id == "user-9" and u.email == "e@s.com"
