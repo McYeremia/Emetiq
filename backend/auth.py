@@ -91,6 +91,13 @@ def get_current_user(
     return CurrentUser(id=uid, email=prof.email, tier=prof.tier)
 
 
+def require_dev(user: CurrentUser = Depends(get_current_user)) -> CurrentUser:
+    """Seperti get_current_user tapi hanya lolos untuk tier 'dev' (403 selain itu)."""
+    if (user.tier or "").lower() != "dev":
+        raise HTTPException(status_code=403, detail="Fitur ini khusus tier developer.")
+    return user
+
+
 def get_optional_user(
     authorization: Optional[str] = Header(default=None),
     db: Session = Depends(get_db),

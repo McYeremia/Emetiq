@@ -2,19 +2,20 @@ from typing import Optional, List, Dict
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from sqlalchemy import desc, or_
-from datetime import date
 from pydantic import BaseModel
 import models
 from auth import CurrentUser, get_current_user
 from database import get_db
+from services.trade_exec import INITIAL_MODAL, agent_of, execute_trade, TradeError
 
 router = APIRouter(prefix="/trades", tags=["trades"])
 
-INITIAL_MODAL = 15_000_000
-
 # Trade AI bersifat global (user_id NULL); trade USER milik pemiliknya. Helper di bawah
 # membatasi himpunan trade yang "terlihat" oleh seorang user: trade miliknya + trade AI.
-AI_TRADE_TYPES = ["AUTO_GEMINI", "AUTO_CLAUDE"]
+AI_TRADE_TYPES = ["AUTO_GEMINI", "AUTO_CLAUDE", "AUTO_AI"]
+
+# Semua bucket porto yang ditampilkan berdampingan.
+BUCKETS = ["USER", "GEMINI", "CLAUDE", "AI"]
 
 
 def _visible_trades(db: Session, user_id: str):
@@ -39,12 +40,10 @@ def get_portfolio(db: Session = Depends(get_db),
                   user: CurrentUser = Depends(get_current_user)):
     all_trades = _visible_trades(db, user.id).order_by(models.TradeLog.date).all()
 
-    raw_portfolios = {"USER": {}, "GEMINI": {}, "CLAUDE": {}}
+    raw_portfolios = {k: {} for k in BUCKETS}
 
     for t in all_trades:
-        if t.trade_type == "AUTO_GEMINI": p_key = "GEMINI"
-        elif t.trade_type == "AUTO_CLAUDE": p_key = "CLAUDE"
-        else: p_key = "USER"
+        p_key = agent_of(t.trade_type)
 
         ticker = t.stock.ticker
         if ticker not in raw_portfolios[p_key]:
@@ -63,7 +62,7 @@ def get_portfolio(db: Session = Depends(get_db),
             data["shares"] -= qty
 
     result = {}
-    for key in ["USER", "GEMINI", "CLAUDE"]:
+    for key in BUCKETS:
         summary_list = []
         invested = 0.0
         total_realized = 0.0
@@ -118,15 +117,13 @@ def get_portfolio_growth(db: Session = Depends(get_db),
     all_trades = _visible_trades(db, user.id).order_by(models.TradeLog.date).all()
     result = {}
 
-    for agent_key in ["USER", "GEMINI", "CLAUDE"]:
+    for agent_key in BUCKETS:
         positions: Dict[str, dict] = {}
         cash = float(INITIAL_MODAL)
         date_values: Dict[str, float] = {}
 
         for t in all_trades:
-            if t.trade_type == "AUTO_GEMINI": trade_agent = "GEMINI"
-            elif t.trade_type == "AUTO_CLAUDE": trade_agent = "CLAUDE"
-            else: trade_agent = "USER"
+            trade_agent = agent_of(t.trade_type)
 
             if trade_agent != agent_key:
                 continue
@@ -179,13 +176,11 @@ def get_trade_history(agent: str = "USER", db: Session = Depends(get_db),
     all_trades = _visible_trades(db, user.id).order_by(models.TradeLog.date, models.TradeLog.created_at).all()
 
     # Track positions per agent to calculate P&L on sells
-    positions: Dict[str, Dict[str, dict]] = {"USER": {}, "GEMINI": {}, "CLAUDE": {}}
+    positions: Dict[str, Dict[str, dict]] = {k: {} for k in BUCKETS}
     agent_result = []
 
     for t in all_trades:
-        if t.trade_type == "AUTO_GEMINI": trade_agent = "GEMINI"
-        elif t.trade_type == "AUTO_CLAUDE": trade_agent = "CLAUDE"
-        else: trade_agent = "USER"
+        trade_agent = agent_of(t.trade_type)
 
         ticker = t.stock.ticker
         qty = t.quantity * 100
@@ -238,9 +233,7 @@ def get_trade_detail(trade_id: int, db: Session = Depends(get_db),
     if trade.user_id is not None and trade.user_id != user.id:
         raise HTTPException(status_code=404, detail="Trade not found")
 
-    if trade.trade_type == "AUTO_GEMINI": agent = "GEMINI"
-    elif trade.trade_type == "AUTO_CLAUDE": agent = "CLAUDE"
-    else: agent = "USER"
+    agent = agent_of(trade.trade_type)
 
     stock = trade.stock
     ticker = stock.ticker
@@ -261,9 +254,7 @@ def get_trade_detail(trade_id: int, db: Session = Depends(get_db),
     pnl = pnl_pct = avg_buy_at_trade = None
 
     for t in prior_trades:
-        if t.trade_type == "AUTO_GEMINI": t_agent = "GEMINI"
-        elif t.trade_type == "AUTO_CLAUDE": t_agent = "CLAUDE"
-        else: t_agent = "USER"
+        t_agent = agent_of(t.trade_type)
         if t_agent != agent:
             continue
 
@@ -332,90 +323,21 @@ def get_trade_detail(trade_id: int, db: Session = Depends(get_db),
 @router.post("")
 def create_trade(req: TradeRequest, db: Session = Depends(get_db),
                  user: CurrentUser = Depends(get_current_user)):
-    stock = db.query(models.Stock).filter(models.Stock.ticker == req.ticker.upper()).first()
-    if not stock: raise HTTPException(status_code=404, detail="Stock not found")
-
-    price = req.price or 0
-    if price == 0:
-        latest = db.query(models.OHLCVDaily).filter(models.OHLCVDaily.stock_id == stock.id).order_by(desc(models.OHLCVDaily.date)).first()
-        price = latest.close if latest else 0
-
-    # Determine agent from trade_type
     trade_type_upper = req.trade_type.upper()
-    if "CLAUDE" in trade_type_upper:
-        agent_key = "CLAUDE"
-    elif "GEMINI" in trade_type_upper:
-        agent_key = "GEMINI"
-    else:
-        agent_key = "USER"
-
-    if req.action.upper() == "SELL":
-        # Replay trades to check holdings
-        all_prev = _visible_trades(db, user.id).order_by(models.TradeLog.date).all()
-        holdings: dict = {}
-        for t in all_prev:
-            t_type = t.trade_type.upper()
-            if "CLAUDE" in t_type:
-                t_agent = "CLAUDE"
-            elif "GEMINI" in t_type:
-                t_agent = "GEMINI"
-            else:
-                t_agent = "USER"
-            if t_agent != agent_key:
-                continue
-            tk = t.stock.ticker
-            if tk not in holdings:
-                holdings[tk] = {"shares": 0, "avg_price": 0.0}
-            qty = t.quantity * 100
-            if t.action == "BUY":
-                total = holdings[tk]["shares"] * holdings[tk]["avg_price"] + qty * t.price
-                holdings[tk]["shares"] += qty
-                holdings[tk]["avg_price"] = total / holdings[tk]["shares"] if holdings[tk]["shares"] > 0 else 0.0
-            else:
-                holdings[tk]["shares"] -= qty
-        held = holdings.get(req.ticker.upper(), {}).get("shares", 0)
-        needed = req.quantity * 100
-        if held < needed:
-            raise HTTPException(status_code=400, detail=f"Insufficient position: hold {held // 100} lots, need {req.quantity} lots.")
-
-    elif req.action.upper() == "BUY":
-        all_prev = _visible_trades(db, user.id).order_by(models.TradeLog.date).all()
-        holdings_buy: dict = {}
-        for t in all_prev:
-            t_type = t.trade_type.upper()
-            if "CLAUDE" in t_type:
-                t_agent = "CLAUDE"
-            elif "GEMINI" in t_type:
-                t_agent = "GEMINI"
-            else:
-                t_agent = "USER"
-            if t_agent != agent_key:
-                continue
-            tk = t.stock.ticker
-            if tk not in holdings_buy:
-                holdings_buy[tk] = {"shares": 0, "avg_price": 0.0, "realized": 0.0}
-            qty = t.quantity * 100
-            if t.action == "BUY":
-                total = holdings_buy[tk]["shares"] * holdings_buy[tk]["avg_price"] + qty * t.price
-                holdings_buy[tk]["shares"] += qty
-                holdings_buy[tk]["avg_price"] = total / holdings_buy[tk]["shares"] if holdings_buy[tk]["shares"] > 0 else 0.0
-            else:
-                holdings_buy[tk]["realized"] += (t.price - holdings_buy[tk]["avg_price"]) * qty
-                holdings_buy[tk]["shares"] -= qty
-        invested = sum(pos["shares"] * pos["avg_price"] for pos in holdings_buy.values() if pos["shares"] > 0)
-        realized = sum(pos["realized"] for pos in holdings_buy.values())
-        available_cash = INITIAL_MODAL - invested + realized
-        trade_cost = price * req.quantity * 100
-        if trade_cost > available_cash:
-            raise HTTPException(status_code=400, detail=f"Insufficient funds: need Rp {trade_cost:,.0f}, available Rp {available_cash:,.0f}.")
-
     # Trade AI (AUTO_*) tetap global (user_id NULL); trade manual menjadi milik user ini.
     owner_id = None if trade_type_upper in AI_TRADE_TYPES else user.id
-    new_trade = models.TradeLog(
-        stock_id=stock.id, action=req.action.upper(), date=date.today(),
-        price=price, quantity=req.quantity, trade_type=trade_type_upper,
-        strategy_id=req.strategy_id, notes=req.notes, user_id=owner_id
-    )
-    db.add(new_trade)
-    db.commit()
+    try:
+        execute_trade(
+            db,
+            ticker=req.ticker,
+            action=req.action,
+            lots=req.quantity,
+            trade_type=trade_type_upper,
+            price=req.price,
+            user_id=owner_id,
+            strategy_id=req.strategy_id,
+            notes=req.notes or "",
+        )
+    except TradeError as e:
+        raise HTTPException(status_code=e.status, detail=str(e))
     return {"status": "ok"}

@@ -1,6 +1,6 @@
 'use client';
 
-import { Suspense, useState } from 'react';
+import { Suspense, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import { supabase, supabaseConfigured } from '@/lib/supabase';
@@ -34,6 +34,7 @@ function RegisterForm() {
   const [err, setErr] = useState<string | null>(null);
   const [done, setDone] = useState(false);
   const [busy, setBusy] = useState(false);
+  useEffect(() => { document.title = 'Daftar — EMETIQ'; }, []);
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();

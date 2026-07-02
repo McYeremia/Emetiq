@@ -30,7 +30,7 @@ const ITEMS = [
 
 export type NavKey = typeof ITEMS[number]['key'];
 
-export default function EmetiqNav({ active }: { active?: NavKey | 'advisor' }) {
+export default function EmetiqNav({ active }: { active?: NavKey | 'advisor' | 'ai-porto' }) {
   const [open, setOpen] = useState(false);
   const { user, tier, loading, signOut } = useAuth();
   const router = useRouter();
@@ -73,6 +73,9 @@ export default function EmetiqNav({ active }: { active?: NavKey | 'advisor' }) {
           {ITEMS.map(it => (
             <Link key={it.key} href={it.href} style={navItem(active === it.key)}>{it.label}</Link>
           ))}
+          {tier === 'dev' && (
+            <Link href="/ai-porto" style={navItem(active === 'ai-porto')}>AI Porto</Link>
+          )}
         </div>
 
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
@@ -126,6 +129,15 @@ export default function EmetiqNav({ active }: { active?: NavKey | 'advisor' }) {
               </Link>
             );
           })}
+          {tier === 'dev' && (
+            <Link
+              href="/ai-porto"
+              onClick={() => setOpen(false)}
+              style={{ padding: '11px 13px', borderRadius: 11, textDecoration: 'none', fontSize: 15, fontWeight: active === 'ai-porto' ? 700 : 600, color: active === 'ai-porto' ? ACCENT : INK, background: active === 'ai-porto' ? `color-mix(in oklab, ${ACCENT}, white 88%)` : 'transparent' }}
+            >
+              AI Porto
+            </Link>
+          )}
           <Link
             href="/advisor"
             onClick={() => setOpen(false)}

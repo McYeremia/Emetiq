@@ -59,6 +59,42 @@ export interface MultiPortfolioResponse {
   USER: AgentPortfolio;
   GEMINI: AgentPortfolio;
   CLAUDE: AgentPortfolio;
+  AI: AgentPortfolio;
+}
+
+// ── AI Porto (dev-only) ──────────────────────────────────────────────────────
+export interface AiPortoHolding {
+  ticker: string;
+  lots: number;
+  shares: number;
+  avg_price: number;
+  current_price: number;
+  cost_basis: number;
+  unrealized_pnl: number;
+  unrealized_pct: number | null;
+}
+export interface AiPortoSnapshot {
+  cash: number;
+  invested: number;
+  unrealized: number;
+  realized: number;
+  total_value: number;
+  position_count: number;
+  holdings: AiPortoHolding[];
+}
+export interface AiPortoOrder {
+  ticker: string;
+  action: 'BUY' | 'SELL';
+  lots: number;
+  price?: number;
+  reason: string;
+}
+export interface AiPortoResponse {
+  reply: string;
+  strategy_note: string;
+  executed: AiPortoOrder[];
+  skipped: AiPortoOrder[];
+  snapshot: AiPortoSnapshot;
 }
 
 export interface TradeHistory {
@@ -221,12 +257,12 @@ export const api = {
     return res.json();
   },
 
-  async getPortfolioGrowth(): Promise<Record<'USER' | 'GEMINI' | 'CLAUDE', { date: string; value: number }[]>> {
+  async getPortfolioGrowth(): Promise<Record<'USER' | 'GEMINI' | 'CLAUDE' | 'AI', { date: string; value: number }[]>> {
     const res = await apiFetch(`${API_BASE_URL}/trades/growth`);
     return res.json();
   },
 
-  async getTradeHistory(agent: 'USER' | 'GEMINI' | 'CLAUDE'): Promise<TradeHistory[]> {
+  async getTradeHistory(agent: 'USER' | 'GEMINI' | 'CLAUDE' | 'AI'): Promise<TradeHistory[]> {
     const res = await apiFetch(`${API_BASE_URL}/trades/history?agent=${agent}`);
     return res.json();
   },
@@ -298,6 +334,21 @@ export const api = {
     if (!res.ok) {
       return { reply: 'Gagal menghubungi advisor. Periksa koneksi backend.', intent: 'error', data: null, quota: null, confidence: null };
     }
+    return res.json();
+  },
+
+  // ── AI Porto (khusus tier dev) ──────────────────────────────────────────────
+  async aiPortoChat(payload: { message: string; history?: AdvisorTurn[] }): Promise<AiPortoResponse> {
+    const res = await apiFetch(`${API_BASE_URL}/ai-porto/chat`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    return res.json();
+  },
+
+  async getAiPorto(): Promise<AiPortoSnapshot> {
+    const res = await apiFetch(`${API_BASE_URL}/ai-porto/portfolio`);
     return res.json();
   },
 

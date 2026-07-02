@@ -17,8 +17,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "IDXAnalyst — Analisis Saham IDX80",
-  description: "Platform analisis teknikal saham Indonesia — IDX80, candlestick chart, 16 indikator.",
+  title: "EMETIQ — Monitoring Saham",
+  description: "Platform monitoring saham Indonesia — watchlist, portofolio, screener, dan AI Advisor.",
 };
 
 export default function RootLayout({

@@ -54,6 +54,7 @@ from routers.broker import router as broker_router    # noqa: E402
 from routers.advisor import router as advisor_router  # noqa: E402
 from routers.watchlist import router as watchlist_router  # noqa: E402
 from routers.account import router as account_router    # noqa: E402
+from routers.ai_porto import router as ai_porto_router  # noqa: E402
 app.include_router(stocks_router)
 app.include_router(trades_router)
 app.include_router(backtest_router)
@@ -61,3 +62,4 @@ app.include_router(broker_router)
 app.include_router(advisor_router)
 app.include_router(watchlist_router)
 app.include_router(account_router)
+app.include_router(ai_porto_router)

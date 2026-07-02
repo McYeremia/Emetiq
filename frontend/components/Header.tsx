@@ -14,17 +14,18 @@ export default function Header() {
   const pathname = usePathname();
 
   // Pages migrated to the EMETIQ theme ship their own navigation, so the
-  // legacy dark app chrome is hidden there. Phased migration starts with '/'
-  // and '/dashboard'; add routes here as each page is reskinned.
-  if (pathname === '/' || pathname === '/dashboard' || pathname === '/overview' || pathname === '/screener' || pathname === '/portfolio' || pathname === '/advisor' || pathname.startsWith('/stocks/')) return null;
+  // legacy dark app chrome is hidden there. Auth pages (login/register/callback)
+  // are self-contained cards with their own EMETIQ branding — no navbar.
+  const HIDE_EXACT = ['/', '/dashboard', '/overview', '/screener', '/portfolio', '/advisor', '/ai-porto', '/login', '/register'];
+  if (HIDE_EXACT.includes(pathname) || pathname.startsWith('/stocks/') || pathname.startsWith('/auth')) return null;
 
   return (
     <header className="fixed top-0 w-full z-50 bg-[#0A0A0A] border-b-2 border-white/10">
       <div className="max-w-[1400px] mx-auto px-6 h-[60px] flex justify-between items-center">
         <Link href="/" className="flex items-center gap-3">
-          <div className="w-8 h-8 bg-[#3B82F6] flex items-center justify-center font-black text-[11px] text-white">IX</div>
+          <div className="w-8 h-8 bg-[#3B82F6] flex items-center justify-center font-black text-[11px] text-white">EM</div>
           <span className="text-base font-black tracking-tighter uppercase">
-            IDX<span className="text-[#3B82F6]">Analyst</span>
+            EMETIQ
           </span>
         </Link>
 

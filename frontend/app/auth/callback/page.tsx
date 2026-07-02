@@ -12,6 +12,8 @@ function CallbackInner() {
   const next = useSearchParams().get('next') || '/overview';
   const [err, setErr] = useState<string | null>(null);
 
+  useEffect(() => { document.title = 'Masuk — EMETIQ'; }, []);
+
   useEffect(() => {
     // supabase-js (detectSessionInUrl) menukar code/hash di URL menjadi sesi otomatis.
     // Kita tinggal menunggu sesi muncul lalu redirect.
