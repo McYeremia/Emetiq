@@ -16,7 +16,7 @@ export default function Header() {
   // Pages migrated to the EMETIQ theme ship their own navigation, so the
   // legacy dark app chrome is hidden there. Auth pages (login/register/callback)
   // are self-contained cards with their own EMETIQ branding — no navbar.
-  const HIDE_EXACT = ['/', '/dashboard', '/overview', '/screener', '/portfolio', '/profile', '/advisor', '/ai-porto', '/login', '/register'];
+  const HIDE_EXACT = ['/', '/dashboard', '/overview', '/screener', '/portfolio', '/profile', '/advisor', '/ai-porto', '/admin', '/login', '/register'];
   if (HIDE_EXACT.includes(pathname) || pathname.startsWith('/stocks/') || pathname.startsWith('/auth')) return null;
 
   return (
