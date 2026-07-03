@@ -181,6 +181,26 @@ export const api = {
     return res.json();
   },
 
+  // ── Admin (khusus tier dev) ─────────────────────────────────────────────────
+  async getUsers(): Promise<AdminUser[]> {
+    const res = await apiFetch(`${API_BASE_URL}/admin/users`);
+    if (!res.ok) throw new Error(`Gagal memuat daftar user (${res.status}).`);
+    return res.json();
+  },
+
+  async updateUserTier(id: string, tier: string): Promise<AdminUser> {
+    const res = await apiFetch(`${API_BASE_URL}/admin/users/${id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ tier }),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(typeof err?.detail === 'string' ? err.detail : 'Gagal mengubah tier.');
+    }
+    return res.json();
+  },
+
   async getPortfolio(): Promise<MultiPortfolioResponse> {
     const res = await apiFetch(`${API_BASE_URL}/trades/portfolio`);
     return res.json();
@@ -399,6 +419,13 @@ export const api = {
     return res.ok;
   },
 };
+
+export interface AdminUser {
+  id: string;
+  email: string | null;
+  tier: string;
+  created_at: string | null;
+}
 
 export interface AdvisorTurn {
   role: 'user' | 'assistant';

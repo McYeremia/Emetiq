@@ -1,7 +1,6 @@
 'use client';
 
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 import { useAuth } from './AuthProvider';
 
@@ -32,14 +31,7 @@ export type NavKey = typeof ITEMS[number]['key'];
 
 export default function EmetiqNav({ active }: { active?: NavKey | 'advisor' | 'ai-porto' }) {
   const [open, setOpen] = useState(false);
-  const { user, tier, loading, signOut } = useAuth();
-  const router = useRouter();
-
-  const handleLogout = async () => {
-    setOpen(false);
-    await signOut();
-    router.push('/');
-  };
+  const { user, tier, loading } = useAuth();
 
   const navItem = (isActive: boolean): React.CSSProperties => ({
     textDecoration: 'none',
@@ -92,7 +84,9 @@ export default function EmetiqNav({ active }: { active?: NavKey | 'advisor' | 'a
             <div className="hidden md:flex" style={{ alignItems: 'center', gap: 8 }}>
               {tier && <Link href="/profile" style={{ ...tierBadge, textDecoration: 'none' }} title="Profil">{tier}</Link>}
               <Link href="/profile" style={{ ...ghostBtn, display: 'inline-flex', alignItems: 'center' }}>Profil</Link>
-              <button type="button" onClick={handleLogout} style={ghostBtn}>Keluar</button>
+              {tier === 'dev' && (
+                <Link href="/admin" style={{ ...ghostBtn, display: 'inline-flex', alignItems: 'center', color: ACCENT, borderColor: `color-mix(in oklab, ${ACCENT}, white 55%)` }}>Admin mode</Link>
+              )}
             </div>
           ) : (
             <Link href="/login" className="hidden md:inline-flex" style={{ ...ghostBtn, alignItems: 'center' }}>Masuk</Link>
@@ -157,7 +151,9 @@ export default function EmetiqNav({ active }: { active?: NavKey | 'advisor' | 'a
                     {tier && <span style={tierBadge}>{tier}</span>}
                   </div>
                   <Link href="/profile" onClick={() => setOpen(false)} style={{ ...ghostBtn, textAlign: 'center' }}>Profil</Link>
-                  <button type="button" onClick={handleLogout} style={{ ...ghostBtn, textAlign: 'center' }}>Keluar</button>
+                  {tier === 'dev' && (
+                    <Link href="/admin" onClick={() => setOpen(false)} style={{ ...ghostBtn, textAlign: 'center', color: ACCENT, borderColor: `color-mix(in oklab, ${ACCENT}, white 55%)` }}>Admin mode</Link>
+                  )}
                 </>
               ) : (
                 <div style={{ display: 'flex', gap: 8 }}>

@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { api, AgentPortfolio, TradeHistory } from '@/lib/api';
 import { INITIAL_MODAL } from '@/lib/constants';
 import EmetiqNav from '@/components/EmetiqNav';
@@ -38,6 +39,12 @@ export default function ProfilePage() {
 function ProfileInner() {
   useEffect(() => { document.title = 'Profil — EMETIQ'; }, []);
   const { signOut } = useAuth();
+  const router = useRouter();
+
+  const handleLogout = async () => {
+    await signOut();
+    router.push('/');
+  };
 
   const [me, setMe] = useState<Me | null>(null);
   const [port, setPort] = useState<AgentPortfolio | null>(null);
@@ -121,7 +128,7 @@ function ProfileInner() {
           )}
           <div style={{ marginTop: 20, display: 'flex', gap: 10, flexWrap: 'wrap' }}>
             <Link href="/portfolio" style={{ textDecoration: 'none', color: '#fff', background: ACCENT, fontWeight: 700, fontSize: 13.5, padding: '9px 15px', borderRadius: 11 }}>Lihat Portofolio</Link>
-            <button type="button" onClick={signOut} style={{ color: INK, background: '#fff', border: `1px solid ${HAIR}`, fontWeight: 600, fontSize: 13.5, padding: '9px 15px', borderRadius: 11, cursor: 'pointer' }}>Keluar</button>
+            <button type="button" onClick={handleLogout} style={{ color: INK, background: '#fff', border: `1px solid ${HAIR}`, fontWeight: 600, fontSize: 13.5, padding: '9px 15px', borderRadius: 11, cursor: 'pointer' }}>Keluar</button>
           </div>
         </div>
 
