@@ -39,22 +39,6 @@ const BREAKOUT = [
   { ticker: 'INCO', price: '4.180', chg: '+3,2%', vol: '2,1×' },
 ];
 
-// Scrolling ticker tape under the navbar — illustrative EOD moves, not live.
-const TICKER = [
-  { t: 'BBCA', c: '+1,28%', up: true },
-  { t: 'GOTO', c: '+3,03%', up: true },
-  { t: 'TLKM', c: '-0,34%', up: false },
-  { t: 'BMRI', c: '+0,84%', up: true },
-  { t: 'PGAS', c: '+6,10%', up: true },
-  { t: 'ADRO', c: '+4,70%', up: true },
-  { t: 'ASII', c: '-0,52%', up: false },
-  { t: 'ANTM', c: '+2,15%', up: true },
-  { t: 'BBRI', c: '-0,18%', up: false },
-  { t: 'INCO', c: '+3,20%', up: true },
-  { t: 'UNVR', c: '+0,91%', up: true },
-  { t: 'MDKA', c: '+1,44%', up: true },
-];
-
 const MUTED = '#56564F';
 const HAIR = '#ECEBE6';
 
@@ -335,24 +319,6 @@ export default function LandingPage() {
           </div>
         </nav>
       </header>
-
-      {/* ── TICKER TAPE ─────────────────────────────────────── */}
-      <div
-        className="lp-ticker"
-        aria-hidden
-        style={{ borderBottom: `1px solid ${HAIR}`, background: 'rgba(252,252,251,.9)', overflow: 'hidden', maskImage: 'linear-gradient(90deg, transparent, #000 6%, #000 94%, transparent)', WebkitMaskImage: 'linear-gradient(90deg, transparent, #000 6%, #000 94%, transparent)' }}
-      >
-        <div className="lp-ticker-track">
-          {[...TICKER, ...TICKER].map((row, i) => (
-            <span key={i} className="lp-ticker-item">
-              <span style={{ fontWeight: 700, color: '#14140F' }}>{row.t}</span>
-              <span style={{ color: row.up ? '#138A50' : '#D23B3B' }}>
-                {row.up ? '▲' : '▼'} {row.c}
-              </span>
-            </span>
-          ))}
-        </div>
-      </div>
 
       {/* ── HERO ────────────────────────────────────────────── */}
       <section
@@ -1035,32 +1001,6 @@ export default function LandingPage() {
         @keyframes lpBob {
           0%, 100% { transform: translateY(0); }
           50% { transform: translateY(-5px); }
-        }
-        @keyframes lpTicker {
-          from { transform: translateX(0); }
-          to { transform: translateX(-50%); }
-        }
-        .lp-ticker-track {
-          display: inline-flex;
-          align-items: center;
-          gap: 36px;
-          white-space: nowrap;
-          padding: 9px 0;
-          font-family: ${MONO};
-          font-size: 12.5px;
-          animation: lpTicker 48s linear infinite;
-          will-change: transform;
-        }
-        .lp-ticker:hover .lp-ticker-track {
-          animation-play-state: paused;
-        }
-        .lp-ticker-item {
-          display: inline-flex;
-          align-items: center;
-          gap: 8px;
-        }
-        @media (prefers-reduced-motion: reduce) {
-          .lp-ticker-track { animation: none; }
         }
         .lp-card {
           transition: transform .2s ease, box-shadow .2s ease;

@@ -269,7 +269,7 @@ function PortfolioInner() {
             {sectionLabel('Kepemilikan Saham')}
             <div style={{ ...CARD, padding: 0, overflow: 'hidden' }}>
               <div className="overflow-x-auto">
-                <table className="min-w-full" style={{ borderCollapse: 'collapse' }}>
+                <table className="min-w-full holdings-table" style={{ borderCollapse: 'collapse' }}>
                   <thead>
                     <tr style={{ borderBottom: `1px solid ${HAIR}`, background: '#FBFBF9' }}>
                       <th style={TH}>Instrumen</th>
@@ -294,19 +294,19 @@ function PortfolioInner() {
                                 <span style={{ fontWeight: 700, fontSize: 15 }}>{item.ticker}</span>
                               </Link>
                             </td>
-                            <td style={TDR}>
-                              <span style={{ fontWeight: 600, display: 'block' }}>Rp {item.cost_basis.toLocaleString('id-ID')}</span>
-                              <span style={{ fontSize: 10.5, color: FAINT, display: 'block', marginTop: 2 }}>Rp {item.avg_price?.toLocaleString('id-ID')}</span>
+                            <td style={TDR} className="hold-cell">
+                              <span className="hold-main" style={{ fontWeight: 600, display: 'block', whiteSpace: 'nowrap' }}>Rp {item.cost_basis.toLocaleString('id-ID')}</span>
+                              <span style={{ fontSize: 10.5, color: FAINT, display: 'block', marginTop: 2, whiteSpace: 'nowrap' }}>Rp {item.avg_price?.toLocaleString('id-ID')}</span>
                             </td>
-                            <td style={TDR}>
-                              <span style={{ fontWeight: 600, display: 'block' }}>Rp {marketTotal.toLocaleString('id-ID')}</span>
-                              <span style={{ fontSize: 10.5, color: FAINT, display: 'block', marginTop: 2 }}>{lots} lot</span>
+                            <td style={TDR} className="hold-cell">
+                              <span className="hold-main" style={{ fontWeight: 600, display: 'block', whiteSpace: 'nowrap' }}>Rp {marketTotal.toLocaleString('id-ID')}</span>
+                              <span style={{ fontSize: 10.5, color: FAINT, display: 'block', marginTop: 2, whiteSpace: 'nowrap' }}>{lots} lot</span>
                             </td>
-                            <td style={TDR}>
-                              <span style={{ fontWeight: 700, color: up ? UP : DOWN, display: 'block' }}>
+                            <td style={TDR} className="hold-cell">
+                              <span className="hold-main" style={{ fontWeight: 700, color: up ? UP : DOWN, display: 'block', whiteSpace: 'nowrap' }}>
                                 {up ? '▲' : '▼'} Rp {Math.abs(item.unrealized_pnl).toLocaleString('id-ID')}
                               </span>
-                              <span style={{ fontSize: 10.5, color: up ? UP : DOWN, opacity: .8, display: 'block', marginTop: 2 }}>
+                              <span style={{ fontSize: 10.5, color: up ? UP : DOWN, opacity: .8, display: 'block', marginTop: 2, whiteSpace: 'nowrap' }}>
                                 {up ? '+' : ''}{pct.toFixed(2)}%
                               </span>
                             </td>
@@ -521,6 +521,8 @@ function PortfolioInner() {
           .porto-total-val { font-size: 22px; }
           .porto-pct { font-size: 17px; }
           .porto-pnl { font-size: 11px; }
+          .holdings-table th, .holdings-table td { padding-left: 11px; padding-right: 11px; }
+          .holdings-table .hold-main { font-size: 12px; }
         }
         @media (min-width: 641px) {
           .porto-total-val { font-size: 38px; }
