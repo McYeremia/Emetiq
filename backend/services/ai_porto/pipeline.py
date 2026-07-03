@@ -68,7 +68,7 @@ def _make_plan(instruction: str, state: Dict, regime: str, guard: Dict,
     }
     user = "DATA:\n" + _dumps(payload)
     raw = groq_client.chat_json(SYSTEM, user, model=advisor_config.REASONING_MODEL,
-                                effort=advisor_config.REASONING_EFFORT["synthesis"])
+                                effort=config.PLAN_EFFORT)
     try:
         return TradingPlan.model_validate(raw)
     except ValidationError:
@@ -78,7 +78,7 @@ def _make_plan(instruction: str, state: Dict, regime: str, guard: Dict,
         repair = user + "\n\nOutput sebelumnya TIDAK sesuai skema. Balas ULANG HANYA JSON valid."
         try:
             raw2 = groq_client.chat_json(SYSTEM, repair, model=advisor_config.REASONING_MODEL,
-                                         effort=advisor_config.REASONING_EFFORT["synthesis"])
+                                         effort=config.PLAN_EFFORT)
             return TradingPlan.model_validate(raw2)
         except (ValidationError, groq_client.GroqError):
             log.warning("TradingPlan gagal divalidasi — plan kosong.")

@@ -5,8 +5,18 @@ Rezim ditentukan dari return vs modal & drawdown dari puncak equity:
   AGGRESSIVE bila return >= AGG_RETURN  DAN  drawdown <  AGG_MAX_DD
   NORMAL     selain itu
 """
+import os
 
 MAX_ORDERS = 10  # batas order LLM yang dieksekusi per perintah
+
+# Reasoning effort untuk panggilan "buat rencana trade".
+# WAJIB rendah: payload AI Porto besar (holdings + belasan kandidat) dan output
+# terstruktur besar (array order). Diukur pada gpt-oss-120b: effort "high"
+# menghabiskan seluruh anggaran token utk reasoning lalu mengembalikan OUTPUT
+# KOSONG (json_validate_failed) -> "AI sedang sibuk"; "medium" ~40s (lambat);
+# "low" ~1.7s dengan rencana valid. Reasoning berat tak perlu di sini — scoring
+# kandidat & guardrail risiko semuanya sudah dihitung oleh kode.
+PLAN_EFFORT = os.getenv("AIPORTO_PLAN_EFFORT", "low")
 
 # Pemicu rezim (fraksi, bukan persen)
 AGG_RETURN = 0.08   # cuan >= +8%
