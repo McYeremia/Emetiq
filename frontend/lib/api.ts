@@ -325,11 +325,21 @@ export const api = {
     history?: AdvisorTurn[];
     form?: Record<string, unknown>;
   }): Promise<AdvisorResponse> {
-    const res = await apiFetch(`${API_BASE_URL}/advisor/chat`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
-    });
+    // Backend membatasi anggaran pipeline-nya sendiri (~55s + router); beri margin
+    // di sini supaya request tidak menggantung tanpa batas kalau backend/jaringan hang.
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 100_000);
+    let res: Response;
+    try {
+      res = await apiFetch(`${API_BASE_URL}/advisor/chat`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+        signal: controller.signal,
+      });
+    } finally {
+      clearTimeout(timeout);
+    }
     if (res.status === 429) {
       const err = await res.json().catch(() => ({}));
       return {
@@ -348,12 +358,19 @@ export const api = {
 
   // ── AI Porto (khusus tier dev) ──────────────────────────────────────────────
   async aiPortoChat(payload: { message: string; history?: AdvisorTurn[] }): Promise<AiPortoResponse> {
-    const res = await apiFetch(`${API_BASE_URL}/ai-porto/chat`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
-    });
-    return res.json();
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 100_000);
+    try {
+      const res = await apiFetch(`${API_BASE_URL}/ai-porto/chat`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+        signal: controller.signal,
+      });
+      return res.json();
+    } finally {
+      clearTimeout(timeout);
+    }
   },
 
   async getAiPorto(): Promise<AiPortoSnapshot> {

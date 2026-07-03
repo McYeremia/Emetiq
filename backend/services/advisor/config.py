@@ -28,9 +28,18 @@ TIER_LIMITS = {
 }
 
 # ── Tuning panggilan Groq ────────────────────────────────────────────────────
-REQUEST_TIMEOUT = float(os.getenv("ADVISOR_TIMEOUT", "30"))      # detik per panggilan
-MAX_RETRIES     = int(os.getenv("ADVISOR_MAX_RETRIES", "2"))     # retry saat 5xx/timeout
+# Diturunkan dari 30s/2 retry: worst-case 1 panggilan dulu bisa ~122s (json-mode +
+# 3x fallback teks @30s + backoff), dan 1 stage pipeline (initial+repair) sampai
+# ~244s — makanya user lihat "AI sedang sibuk" setelah menunggu lama. Nilai baru
+# menekan worst-case per panggilan ke ~41s agar gagal cepat, bukan menumpuk retry.
+REQUEST_TIMEOUT = float(os.getenv("ADVISOR_TIMEOUT", "20"))      # detik per panggilan
+MAX_RETRIES     = int(os.getenv("ADVISOR_MAX_RETRIES", "1"))     # retry saat 5xx/timeout
 RETRY_BACKOFF   = float(os.getenv("ADVISOR_RETRY_BACKOFF", "0.8"))  # detik, dikali eksponensial
+
+# Anggaran waktu total 1 pipeline (router + semua stage). Begitu terlampaui, stage
+# berikutnya dilewati (langsung fallback) alih-alih menambah panggilan Groq baru —
+# membatasi ekor terburuk (worst-case) tanpa mengubah perilaku jalur normal/cepat.
+PIPELINE_BUDGET_SECONDS = float(os.getenv("ADVISOR_PIPELINE_BUDGET", "55"))
 
 # ── Batas pipeline ───────────────────────────────────────────────────────────
 # Screening: hanya N kandidat teratas (lolos filter keras) yang dihitung indikator

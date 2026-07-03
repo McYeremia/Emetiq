@@ -5,31 +5,23 @@ Tiga builder: screen(), analyze(), portfolio(). Semua angka diambil dari DB nyat
 yang sudah pasti benar. Lihat spec bagian 4 ("Detail Pipeline").
 """
 from typing import Optional, List, Dict, Any
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import desc
 
 import models
-from services.indicators import calculate_indicators
+from services.indicators import calculate_indicators, calculate_indicators_from_df, get_ohlcv_df_bulk
 from services.advisor import config
 
 INITIAL_MODAL = 15_000_000  # samakan dengan routers/trades.py
 
+# Lookback saat menghitung indikator utk BANYAK saham sekaligus (screening/kandidat).
+# Nilai indikator terakhir (RSI/MA/MACD dst) praktis sama dgn histori penuh selama
+# jendela ini > window terpanjang (MA_200) — dipakai demi kecepatan (hindari fetch
+# 5 tahun histori x ratusan saham).
+SCREEN_INDICATOR_LOOKBACK_DAYS = 400
+
 
 # ── Helper kecil ─────────────────────────────────────────────────────────────
-
-def _latest_ohlcv(db: Session, stock_id: int):
-    return (
-        db.query(models.OHLCVDaily)
-        .filter(models.OHLCVDaily.stock_id == stock_id)
-        .order_by(desc(models.OHLCVDaily.date))
-        .first()
-    )
-
-
-def _latest_close(db: Session, stock_id: int) -> Optional[float]:
-    row = _latest_ohlcv(db, stock_id)
-    return float(row.close) if row and row.close is not None else None
-
 
 def rsi_band(rsi: Optional[float]) -> Optional[str]:
     if rsi is None:
@@ -92,9 +84,15 @@ def screen(
     needs_indicators = rsi is not None or trend is not None
     results: List[Dict[str, Any]] = []
 
+    # 1 query utk histori OHLCV semua survivor (bukan 1 query per saham) — hindari N+1
+    ohlcv_by_id = get_ohlcv_df_bulk(
+        db, [s.id for s in survivors], lookback_days=SCREEN_INDICATOR_LOOKBACK_DAYS
+    )
+
     for s in survivors:
-        last_close = _latest_close(db, s.id)
-        inds = calculate_indicators(db, s) if needs_indicators else {}
+        df = ohlcv_by_id.get(s.id)
+        last_close = float(df["close"].iloc[-1]) if df is not None and not df.empty else None
+        inds = calculate_indicators_from_df(df) if needs_indicators else {}
 
         if rsi is not None:
             if rsi_band(inds.get("RSI_14")) != rsi:
@@ -177,6 +175,7 @@ def portfolio(db: Session, user_id: str) -> Dict[str, Any]:
     """Snapshot holding milik satu user (di-scope berdasarkan user_id trade)."""
     trades = (
         db.query(models.TradeLog)
+        .options(joinedload(models.TradeLog.stock))
         .filter(models.TradeLog.user_id == user_id)
         .order_by(models.TradeLog.date)
         .all()
@@ -196,24 +195,32 @@ def portfolio(db: Session, user_id: str) -> Dict[str, Any]:
             realized += (t.price - pos["avg_price"]) * qty
             pos["shares"] -= qty
 
-    holdings: List[Dict[str, Any]] = []
+    active = {tk: p for tk, p in positions.items() if p["shares"] > 0}
+    # 1 query utk histori OHLCV semua posisi aktif (bukan 1 query per posisi)
+    ohlcv_by_id = get_ohlcv_df_bulk(db, [p["stock_id"] for p in active.values()])
+
+    prelim: List[Dict[str, Any]] = []
     invested = 0.0
     unrealized_total = 0.0
-    for ticker, pos in positions.items():
-        if pos["shares"] <= 0:
-            continue
-        stock = db.query(models.Stock).filter(models.Stock.ticker == ticker).first()
-        if not stock:
-            continue
-        last_close = _latest_close(db, stock.id) or pos["avg_price"]
+    for ticker, pos in active.items():
+        df = ohlcv_by_id.get(pos["stock_id"])
+        last_close = (float(df["close"].iloc[-1]) if df is not None and not df.empty else None) or pos["avg_price"]
         cost_basis = pos["shares"] * pos["avg_price"]
         unrealized = (last_close - pos["avg_price"]) * pos["shares"]
         invested += cost_basis
         unrealized_total += unrealized
+        prelim.append({"ticker": ticker, "pos": pos, "df": df, "last_close": last_close,
+                       "cost_basis": cost_basis, "unrealized": unrealized})
 
-        inds = calculate_indicators(db, stock)
+    prelim.sort(key=lambda h: h["cost_basis"], reverse=True)
+    prelim = prelim[: config.PORTFOLIO_MAX_POSITIONS]
+
+    holdings: List[Dict[str, Any]] = []
+    for h in prelim:
+        pos, last_close, cost_basis, unrealized = h["pos"], h["last_close"], h["cost_basis"], h["unrealized"]
+        inds = calculate_indicators_from_df(h["df"])
         holdings.append({
-            "ticker": ticker,
+            "ticker": h["ticker"],
             "lots": pos["shares"] / 100,
             "shares": pos["shares"],
             "avg_price": round(pos["avg_price"], 2),
@@ -225,9 +232,6 @@ def portfolio(db: Session, user_id: str) -> Dict[str, Any]:
             "rsi_band": rsi_band(inds.get("RSI_14")),
             "trend": trend_of(inds, last_close),
         })
-
-    holdings.sort(key=lambda h: h["cost_basis"], reverse=True)
-    holdings = holdings[: config.PORTFOLIO_MAX_POSITIONS]
 
     cash = INITIAL_MODAL - invested + realized
     total_value = INITIAL_MODAL + realized + unrealized_total

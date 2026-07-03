@@ -10,6 +10,7 @@ Keputusan besar ditentukan kode teruji; LLM memilih di dalam pagar & menjelaskan
 """
 import json
 import logging
+import time
 from typing import Any, Dict, List
 
 from pydantic import ValidationError
@@ -17,6 +18,7 @@ from sqlalchemy.orm import Session
 
 from services import trade_exec
 from services.advisor import config as advisor_config, groq_client
+from services.advisor.pipelines import new_deadline
 from services.ai_porto import config, data, risk
 from services.ai_porto.schemas import TradingPlan
 
@@ -52,7 +54,7 @@ def _slim_candidates(cands: List[Dict]) -> List[Dict]:
 
 
 def _make_plan(instruction: str, state: Dict, regime: str, guard: Dict,
-               cands: List[Dict], deployable: float) -> TradingPlan:
+               cands: List[Dict], deployable: float, deadline: float) -> TradingPlan:
     payload = {
         "instruksi": instruction,
         "rezim": regime,
@@ -70,6 +72,9 @@ def _make_plan(instruction: str, state: Dict, regime: str, guard: Dict,
     try:
         return TradingPlan.model_validate(raw)
     except ValidationError:
+        if time.monotonic() >= deadline:
+            log.warning("Repair TradingPlan dilewati — anggaran waktu pipeline habis.")
+            return TradingPlan()
         repair = user + "\n\nOutput sebelumnya TIDAK sesuai skema. Balas ULANG HANYA JSON valid."
         try:
             raw2 = groq_client.chat_json(SYSTEM, repair, model=advisor_config.REASONING_MODEL,
@@ -172,7 +177,7 @@ def run_manage(db: Session, instruction: str) -> Dict[str, Any]:
     deployable = guard["max_deploy_pct"] * state["total_value"] - state["invested"]
 
     # 3) Rencana LLM di dalam guardrail
-    plan = _make_plan(instruction, state, regime, guard, cands, deployable)
+    plan = _make_plan(instruction, state, regime, guard, cands, deployable, deadline=new_deadline())
 
     # 4) Enforcement + eksekusi
     executed, skipped = _enforce_execute(db, plan.orders, guard)

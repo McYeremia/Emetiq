@@ -6,6 +6,7 @@ oleh endpoint.
 """
 import json
 import logging
+import time
 from typing import Any, Dict, Optional
 
 from sqlalchemy.orm import Session
@@ -25,6 +26,12 @@ REASONING = config.REASONING_MODEL
 LIGHT = config.ROUTER_MODEL
 
 
+def new_deadline() -> float:
+    """Anggaran waktu (monotonic) utk 1 pipeline — dipakai `_stage_json` agar stage
+    berikutnya dilewati begitu waktu habis, bukan menambah panggilan Groq baru."""
+    return time.monotonic() + config.PIPELINE_BUDGET_SECONDS
+
+
 def _dumps(obj: Any) -> str:
     return json.dumps(obj, default=str, ensure_ascii=False)
 
@@ -33,13 +40,24 @@ def _clean(d: dict) -> dict:
     return {k: v for k, v in d.items() if v is not None}
 
 
-def _stage_json(model_cls, system: str, payload: Any, *, model: str, effort):
-    """Panggil Groq JSON, validasi ke skema; 1x repair; fallback ke default skema."""
+def _stage_json(model_cls, system: str, payload: Any, *, model: str, effort, deadline: Optional[float] = None):
+    """Panggil Groq JSON, validasi ke skema; 1x repair; fallback ke default skema.
+
+    Kalau `deadline` (anggaran waktu pipeline) sudah lewat, lewati panggilan sama
+    sekali dan langsung fallback — mencegah stage lanjutan menambah tunggu lama.
+    """
+    if deadline is not None and time.monotonic() >= deadline:
+        log.warning("Stage %s dilewati — anggaran waktu pipeline habis.", model_cls.__name__)
+        return model_cls()
+
     user = "DATA:\n" + (_dumps(payload) if not isinstance(payload, str) else payload)
     raw = groq_client.chat_json(system, user, model=model, effort=effort)
     try:
         return model_cls.model_validate(raw)
     except ValidationError:
+        if deadline is not None and time.monotonic() >= deadline:
+            log.warning("Repair %s dilewati — anggaran waktu pipeline habis.", model_cls.__name__)
+            return model_cls()
         repair = user + "\n\nOutput sebelumnya TIDAK sesuai skema. Balas ULANG, HANYA JSON valid sesuai skema."
         try:
             raw2 = groq_client.chat_json(system, repair, model=model, effort=effort)
@@ -51,7 +69,7 @@ def _stage_json(model_cls, system: str, payload: Any, *, model: str, effort):
 
 # ── Pipeline 1: Screening ────────────────────────────────────────────────────
 
-def run_screen(db: Session, params: RouterParams) -> Dict[str, Any]:
+def run_screen(db: Session, params: RouterParams, deadline: Optional[float] = None) -> Dict[str, Any]:
     filters = dict(pe_max=params.pe_max, pbv_max=params.pbv_max, div_min=params.div_min,
                    rsi=params.rsi, trend=params.trend, sector=params.sector)
     candidates = dp.screen(db, **filters)
@@ -67,12 +85,12 @@ def run_screen(db: Session, params: RouterParams) -> Dict[str, Any]:
     ranking = _stage_json(
         ScreenRanking, prompts.SCREEN_RANK_SYSTEM,
         {"kriteria": _clean(filters), "kandidat": candidates},
-        model=REASONING, effort=EFFORT["synthesis"],
+        model=REASONING, effort=EFFORT["synthesis"], deadline=deadline,
     )
     critiqued = _stage_json(
         ScreenRanking, prompts.SCREEN_CRITIQUE_SYSTEM,
         {"kriteria": _clean(filters), "pick": [i.model_dump() for i in ranking.items]},
-        model=LIGHT, effort=EFFORT["specialist"],
+        model=LIGHT, effort=EFFORT["specialist"], deadline=deadline,
     )
     items = critiqued.items or ranking.items
     items = [i for i in items if i.score > 0]
@@ -98,7 +116,7 @@ def run_screen(db: Session, params: RouterParams) -> Dict[str, Any]:
 
 # ── Pipeline 2: Analisa 1 saham ──────────────────────────────────────────────
 
-def run_analyze(db: Session, params: RouterParams) -> Dict[str, Any]:
+def run_analyze(db: Session, params: RouterParams, deadline: Optional[float] = None) -> Dict[str, Any]:
     if not params.ticker:
         return {
             "reply": "Saham mana yang ingin dianalisa? Sebutkan kodenya, misalnya BBRI.",
@@ -124,13 +142,13 @@ def run_analyze(db: Session, params: RouterParams) -> Dict[str, Any]:
         }
 
     spec = _stage_json(AnalyzeSpecialist, prompts.ANALYZE_SPECIALIST_SYSTEM, data,
-                       model=REASONING, effort=EFFORT["specialist"])
+                       model=REASONING, effort=EFFORT["specialist"], deadline=deadline)
     synth = _stage_json(AnalyzeSynthesis, prompts.ANALYZE_SYNTHESIS_SYSTEM,
                         {"data": data, "spesialis": spec.model_dump()},
-                        model=REASONING, effort=EFFORT["synthesis"])
+                        model=REASONING, effort=EFFORT["synthesis"], deadline=deadline)
     crit = _stage_json(Critique, prompts.ANALYZE_CRITIQUE_SYSTEM,
                        {"data": data, "keputusan": synth.model_dump()},
-                       model=REASONING, effort=EFFORT["critique"])
+                       model=REASONING, effort=EFFORT["critique"], deadline=deadline)
 
     card = {
         "intent": "analyze",
@@ -153,7 +171,7 @@ def run_analyze(db: Session, params: RouterParams) -> Dict[str, Any]:
 
 # ── Pipeline 3: Saran portofolio ─────────────────────────────────────────────
 
-def run_portfolio(db: Session, user_id: str) -> Dict[str, Any]:
+def run_portfolio(db: Session, user_id: str, deadline: Optional[float] = None) -> Dict[str, Any]:
     port = dp.portfolio(db, user_id)
     if port["position_count"] == 0:
         return {
@@ -163,13 +181,13 @@ def run_portfolio(db: Session, user_id: str) -> Dict[str, Any]:
         }
 
     synth = _stage_json(PortfolioSynthesis, prompts.PORTFOLIO_SYNTHESIS_SYSTEM, port,
-                        model=REASONING, effort=EFFORT["synthesis"])
+                        model=REASONING, effort=EFFORT["synthesis"], deadline=deadline)
     crit = _stage_json(
         Critique, prompts.PORTFOLIO_CRITIQUE_SYSTEM,
         {"portofolio": {"cash": port["cash"], "total_value": port["total_value"],
                         "position_count": port["position_count"]},
          "saran": synth.model_dump()},
-        model=REASONING, effort=EFFORT["critique"],
+        model=REASONING, effort=EFFORT["critique"], deadline=deadline,
     )
 
     reply = synth.overview or "Berikut tinjauan portofoliomu."
@@ -193,10 +211,11 @@ def run_portfolio(db: Session, user_id: str) -> Dict[str, Any]:
 
 def run(db: Session, route_out: RouterOutput, user_id: str) -> Dict[str, Any]:
     """Jalankan pipeline sesuai intent. (clarify/chitchat ditangani di endpoint.)"""
+    deadline = new_deadline()
     if route_out.intent == "screen":
-        return run_screen(db, route_out.params)
+        return run_screen(db, route_out.params, deadline=deadline)
     if route_out.intent == "analyze":
-        return run_analyze(db, route_out.params)
+        return run_analyze(db, route_out.params, deadline=deadline)
     if route_out.intent == "portfolio":
-        return run_portfolio(db, user_id)
+        return run_portfolio(db, user_id, deadline=deadline)
     raise ValueError(f"Intent bukan pipeline: {route_out.intent}")

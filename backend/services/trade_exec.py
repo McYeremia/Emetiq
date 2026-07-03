@@ -13,7 +13,7 @@ from typing import Dict, Optional
 from datetime import date
 
 from sqlalchemy import desc
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 
 import models
 
@@ -50,7 +50,7 @@ def agent_of(trade_type: str) -> str:
 
 def _agent_trades(db: Session, agent_key: str, user_id: Optional[str]):
     """Query trade milik satu bucket, urut kronologis."""
-    q = db.query(models.TradeLog)
+    q = db.query(models.TradeLog).options(joinedload(models.TradeLog.stock))
     if agent_key == "USER":
         q = q.filter(models.TradeLog.user_id == user_id)
     else:

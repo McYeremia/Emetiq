@@ -3,10 +3,10 @@
 Semua deterministik (kode), tidak memanggil LLM. Ini lapisan yang menjamin porto
 tetap disiplin apa pun kualitas keluaran model.
 """
+import bisect
 from typing import Any, Dict, List
 
-from sqlalchemy import desc
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 
 import models
 from services.trade_exec import INITIAL_MODAL
@@ -15,24 +15,42 @@ from services.ai_porto import config
 AI_TRADE_TYPE = "AUTO_AI"
 
 
-def _close_on_or_before(db: Session, stock_id: int, on_date):
-    row = (
+def _closes_by_stock(db: Session, stock_ids: List[int]) -> Dict[int, tuple]:
+    """1 query utk semua stock_id -> (list tanggal terurut, list close sejajar).
+
+    Dipakai `bisect` di `peak_equity` utk mencari "close pada/sebelum tanggal X"
+    tanpa query per posisi per trade (dulu O(trade x posisi) round-trip DB).
+    """
+    if not stock_ids:
+        return {}
+    rows = (
         db.query(models.OHLCVDaily)
-        .filter(models.OHLCVDaily.stock_id == stock_id, models.OHLCVDaily.date <= on_date)
-        .order_by(desc(models.OHLCVDaily.date))
-        .first()
+        .filter(models.OHLCVDaily.stock_id.in_(stock_ids))
+        .order_by(models.OHLCVDaily.stock_id, models.OHLCVDaily.date)
+        .all()
     )
-    return float(row.close) if row and row.close is not None else None
+    out: Dict[int, tuple] = {}
+    dates: Dict[int, list] = {}
+    closes: Dict[int, list] = {}
+    for r in rows:
+        dates.setdefault(r.stock_id, []).append(r.date)
+        closes.setdefault(r.stock_id, []).append(float(r.close) if r.close is not None else None)
+    for sid in dates:
+        out[sid] = (dates[sid], closes[sid])
+    return out
 
 
 def peak_equity(db: Session, current_total: float) -> float:
     """Puncak equity historis bucket AI (approx, di titik-titik trade) vs nilai sekarang."""
     trades = (
         db.query(models.TradeLog)
+        .options(joinedload(models.TradeLog.stock))
         .filter(models.TradeLog.trade_type == AI_TRADE_TYPE)
         .order_by(models.TradeLog.date, models.TradeLog.id)
         .all()
     )
+    price_series = _closes_by_stock(db, [t.stock_id for t in trades])
+
     cash = float(INITIAL_MODAL)
     positions: Dict[str, dict] = {}
     peak = float(INITIAL_MODAL)
@@ -53,8 +71,10 @@ def peak_equity(db: Session, current_total: float) -> float:
         holdings_value = 0.0
         for p in positions.values():
             if p["shares"] > 0:
-                px = _close_on_or_before(db, p["stock_id"], t.date) or p["avg"]
-                holdings_value += p["shares"] * px
+                dates, closes = price_series.get(p["stock_id"], ([], []))
+                idx = bisect.bisect_right(dates, t.date) - 1
+                px = closes[idx] if idx >= 0 and closes[idx] is not None else None
+                holdings_value += p["shares"] * (px or p["avg"])
         peak = max(peak, cash + holdings_value)
 
     return max(peak, current_total)
