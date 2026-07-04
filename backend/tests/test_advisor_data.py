@@ -98,6 +98,28 @@ def test_analyze_not_found(db):
     assert a["found"] is False
 
 
+def test_analyze_rounds_messy_numbers(db):
+    st = _add_stock(db, "MESS", "Messy", "Tech",
+                    pe=12.345678, pbv=3.987654, div=1.111111, mcap=1_000_000_000_000)
+    _add_series(db, st, start=200, step=3)
+    db.commit()
+    a = dp.analyze(db, "MESS")
+    assert a["fundamentals"]["pe"] == 12.35
+    assert a["fundamentals"]["pbv"] == 3.99
+    assert a["fundamentals"]["dividend_yield"] == 1.11
+    rsi = a["indicators"]["RSI_14"]          # indikator terhitung juga rapi
+    assert rsi == round(rsi, 2)
+
+
+def test_screen_rounds_fundamentals(db):
+    st = _add_stock(db, "MSY2", "Msy2", "Tech",
+                    pe=8.123456, pbv=1.5, div=6.5, mcap=2_000_000_000_000)
+    _add_series(db, st, start=300, step=2)
+    db.commit()
+    row = next(r for r in dp.screen(db, sector="Tech") if r["ticker"] == "MSY2")
+    assert row["pe"] == 8.12
+
+
 # ── Portofolio ───────────────────────────────────────────────────────────────
 
 def test_portfolio_aggregation(db):

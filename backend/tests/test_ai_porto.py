@@ -1,5 +1,5 @@
 """Tes AI Porto v2: execute_trade bersama, risiko adaptif, gating dev, pipeline (Groq mock)."""
-from datetime import date
+from datetime import date, timedelta
 
 import pytest
 from fastapi.testclient import TestClient
@@ -89,6 +89,19 @@ def test_auto_exit_orders_tp_cl():
     orders = risk.auto_exit_orders(state, config.REGIMES["NORMAL"])
     tickers = {o["ticker"] for o in orders}
     assert tickers == {"AAA", "BBB"}
+
+
+def test_scored_candidates_rounds_rsi(db):
+    stock = models.Stock(ticker="MSY", name="Msy", sector="Finance", market_cap=9_000_000_000_000)
+    db.add(stock); db.flush()
+    for i in range(40):                      # seri zigzag -> RSI pecahan (bukan 100.0 bulat)
+        p = 500 + i * 2 + (37 if i % 2 == 0 else 0)
+        db.add(models.OHLCVDaily(stock_id=stock.id, date=date(2026, 1, 1) + timedelta(days=i),
+                                 open=p, high=p, low=p, close=p, volume=1000))
+    db.commit()
+    msy = next(c for c in data.scored_candidates(db) if c["ticker"] == "MSY")
+    assert msy["rsi"] is not None
+    assert msy["rsi"] == round(msy["rsi"], 2)
 
 
 def test_score_candidate_ranks_strong_higher():

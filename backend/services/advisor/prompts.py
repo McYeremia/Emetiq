@@ -11,6 +11,16 @@ CITE_RULE = (
     "Semua jawaban dalam Bahasa Indonesia. Balas HANYA JSON valid sesuai skema, tanpa teks lain."
 )
 
+# Gaya bahasa untuk SEMUA teks yang dibaca user (alasan, sintesis, narasi, catatan
+# strategi). Tujuan: mudah dicerna investor awam, angka rapi.
+STYLE_RULE = (
+    "GAYA BAHASA: Tulis untuk investor awam. Setiap kali memakai istilah teknis "
+    "(RSI, PE, PBV, MACD, cut loss, support/resistance, dsb.), beri penjelasan singkat "
+    "SEKALI dalam kurung — mis. 'RSI 28,4 (jenuh jual — harga berpeluang memantul)', "
+    "'PE 9,1 (relatif murah)'. Bulatkan angka maksimal 2 desimal. Ringkas, langsung ke "
+    "inti, hindari kalimat bertele-tele."
+)
+
 # ── Router ───────────────────────────────────────────────────────────────────
 
 ROUTER_SYSTEM = (
@@ -33,7 +43,7 @@ ROUTER_SYSTEM = (
 SCREEN_RANK_SYSTEM = (
     "Kamu analis saham IDX. Diberi KRITERIA user dan daftar KANDIDAT (sudah lolos filter "
     "keras dari sistem, lengkap dengan angka nyata). Urutkan kandidat dari paling cocok ke "
-    "paling kurang, beri skor 0-100 dan alasan singkat yang mengutip angka.\n" + CITE_RULE + "\n"
+    "paling kurang, beri skor 0-100 dan alasan singkat yang mengutip angka.\n" + CITE_RULE + "\n" + STYLE_RULE + "\n"
     "Skema: {\"items\": [{\"ticker\": \"...\", \"score\": 0-100, \"reason\": \"...\", "
     "\"key_numbers\": {\"pe\": .., \"rsi\": ..}}]}"
 )
@@ -56,7 +66,7 @@ ANALYZE_SPECIALIST_SYSTEM = (
 ANALYZE_SYNTHESIS_SYSTEM = (
     "Kamu kepala strategi. Diberi DATA saham + verdict spesialis. Putuskan BELI/TAHAN/JUAL "
     "dan, bila relevan, sarankan entry, take profit (TP), dan cut loss (CL) berbasis angka "
-    "nyata (mis. support/resistance, ATR, MA). Reasoning harus mengutip angka.\n" + CITE_RULE + "\n"
+    "nyata (mis. support/resistance, ATR, MA). Reasoning harus mengutip angka.\n" + CITE_RULE + "\n" + STYLE_RULE + "\n"
     "Skema: {\"decision\": \"BELI|TAHAN|JUAL\", \"entry\": angka|null, \"take_profit\": angka|null, "
     "\"cut_loss\": angka|null, \"reasoning\": \"...\"}"
 )
@@ -79,7 +89,7 @@ PORTFOLIO_POSITION_SYSTEM = (
 PORTFOLIO_SYNTHESIS_SYSTEM = (
     "Kamu penasihat portofolio. Diberi seluruh holding + kas + aksi per posisi. Beri pandangan "
     "tingkat portofolio: konsentrasi/eksposur, posisi yang dipangkas/ditambah/ditahan, dan saran "
-    "alokasi kas. Kutip angka (mis. bobot posisi %, kas tersedia).\n" + CITE_RULE + "\n"
+    "alokasi kas. Kutip angka (mis. bobot posisi %, kas tersedia).\n" + CITE_RULE + "\n" + STYLE_RULE + "\n"
     "Skema: {\"overview\": \"...\", \"actions\": [{\"ticker\": \"...\", \"action\": \"TRIM|ADD|HOLD\", "
     "\"reason\": \"...\", \"key_numbers\": {..}}], \"cash_advice\": \"...\"}"
 )
@@ -95,5 +105,6 @@ PORTFOLIO_CRITIQUE_SYSTEM = (
 NARRATOR_SYSTEM = (
     "Kamu menulis jawaban akhir untuk user dalam Bahasa Indonesia yang ringkas, jelas, dan "
     "ramah, berdasarkan DATA terstruktur hasil analisa. Jangan menambah angka baru di luar "
-    "DATA. Jangan beri disclaimer (sudah ditangani UI). Tulis sebagai teks biasa, bukan JSON."
+    "DATA. Jangan beri disclaimer (sudah ditangani UI). Tulis sebagai teks biasa, bukan JSON.\n"
+    + STYLE_RULE
 )

@@ -11,6 +11,7 @@ from sqlalchemy import desc
 import models
 from services.indicators import calculate_indicators, calculate_indicators_from_df, get_ohlcv_df_bulk
 from services.advisor import config
+from services.advisor.formatting import round_numbers
 
 INITIAL_MODAL = 15_000_000  # samakan dengan routers/trades.py
 
@@ -116,7 +117,8 @@ def screen(
         if len(results) >= limit:
             break
 
-    return results
+    # Bulatkan semua angka (indikator & fundamental) sebelum dipakai LLM/UI.
+    return round_numbers(results)
 
 
 # ── Pipeline 2: Analisa 1 saham ──────────────────────────────────────────────
@@ -147,7 +149,8 @@ def analyze(db: Session, ticker: str) -> Dict[str, Any]:
     high_20 = max(window) if window else None
     low_20 = min(window) if window else None
 
-    return {
+    # Bulatkan semua angka (indikator & fundamental) sebelum dipakai LLM/UI.
+    return round_numbers({
         "found": True,
         "ticker": ticker,
         "name": stock.name,
@@ -166,7 +169,7 @@ def analyze(db: Session, ticker: str) -> Dict[str, Any]:
         "indicators": inds,
         "rsi_band": rsi_band(inds.get("RSI_14")),
         "trend": trend_of(inds, last_close),
-    }
+    })
 
 
 # ── Pipeline 3: Portofolio ───────────────────────────────────────────────────

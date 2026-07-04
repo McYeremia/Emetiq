@@ -150,14 +150,17 @@ def run_analyze(db: Session, params: RouterParams, deadline: Optional[float] = N
                        {"data": data, "keputusan": synth.model_dump()},
                        model=REASONING, effort=EFFORT["critique"], deadline=deadline)
 
+    def _price(x):  # harga saham -> rupiah utuh (buang ekor desimal LLM)
+        return round(x) if x is not None else None
+
     card = {
         "intent": "analyze",
         "ticker": data["ticker"],
         "decision": synth.decision,
         "last_price": data["last_price"],
-        "entry": synth.entry,
-        "take_profit": synth.take_profit,
-        "cut_loss": synth.cut_loss,
+        "entry": _price(synth.entry),
+        "take_profit": _price(synth.take_profit),
+        "cut_loss": _price(synth.cut_loss),
         "confidence": crit.confidence,
         "warnings": crit.warnings,
         "signals": {

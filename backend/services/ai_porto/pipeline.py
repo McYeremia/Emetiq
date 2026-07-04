@@ -18,6 +18,7 @@ from sqlalchemy.orm import Session
 
 from services import trade_exec
 from services.advisor import config as advisor_config, groq_client
+from services.advisor.prompts import STYLE_RULE
 from services.advisor.pipelines import new_deadline
 from services.ai_porto import config, data, risk
 from services.ai_porto.schemas import TradingPlan
@@ -37,7 +38,8 @@ SYSTEM = (
     "Gunakan HANYA ticker dari KANDIDAT atau HOLDINGS. Satuan LOT (1 lot = 100 lembar). "
     "Balas HANYA satu objek JSON: "
     '{"orders":[{"action":"BUY|SELL","ticker":"KODE","lots":<int>0>,"reason":"..."}],'
-    '"strategy_note":"ringkas strategimu"}. Jangan mengarang harga/ticker.'
+    '"strategy_note":"ringkas strategimu"}. Jangan mengarang harga/ticker.\n'
+    + STYLE_RULE
 )
 
 

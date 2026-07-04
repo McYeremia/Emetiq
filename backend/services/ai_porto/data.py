@@ -11,6 +11,7 @@ import models
 from services import trade_exec
 from services.indicators import calculate_indicators_from_df, get_ohlcv_df_bulk
 from services.advisor import data_provider as dp
+from services.advisor.formatting import round_numbers
 from services.ai_porto import scoring
 
 AGENT = "AI"
@@ -179,7 +180,9 @@ def scored_candidates(db: Session, limit: int = DEFAULT_CANDIDATES) -> List[Dict
         out.append(c)
 
     out.sort(key=lambda x: x["score"], reverse=True)
-    return out[:limit]
+    # Bulatkan angka (rsi & fundamental) sebelum dipakai LLM/UI — skor dihitung
+    # di atas presisi penuh, jadi urutan tak berubah.
+    return round_numbers(out[:limit])
 
 
 def candidates(db: Session, limit: int = DEFAULT_CANDIDATES) -> Dict[str, Any]:

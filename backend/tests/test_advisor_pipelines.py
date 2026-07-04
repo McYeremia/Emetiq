@@ -100,6 +100,19 @@ def test_run_analyze_full(db, monkeypatch):
     assert "murah" in out["reply"]
 
 
+def test_run_analyze_rounds_price_targets(db, monkeypatch):
+    _mock(monkeypatch, {
+        "tim spesialis":    {"technical": "x", "fundamental": "y", "ml_risk": "z", "score": 70},
+        "kepala strategi":  {"decision": "BELI", "entry": 4512.3456, "take_profit": 5001.9876,
+                             "cut_loss": 4299.4499, "reasoning": "ok"},
+        "devil's advocate": {"confidence": 0.5, "notes": "", "warnings": []},
+    })
+    card = pipelines.run_analyze(db, RouterParams(ticker="BBRI"))["data"]
+    assert card["entry"] == 4512          # harga saham dibulatkan ke rupiah utuh
+    assert card["take_profit"] == 5002
+    assert card["cut_loss"] == 4299
+
+
 # ── Portofolio ───────────────────────────────────────────────────────────────
 
 def test_run_portfolio_empty(db):
