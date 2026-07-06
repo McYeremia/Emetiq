@@ -80,6 +80,7 @@ function AiPortoInner() {
   const [snapshot, setSnapshot] = useState<AiPortoSnapshot | null>(null);
   const [regime, setRegime] = useState<string | null>(null);
   const [history, setHistory] = useState<TradeHistory[]>([]);
+  const [histOpen, setHistOpen] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
 
   const refreshHistory = () => { api.getTradeHistory('AI').then(setHistory).catch(() => {}); };
@@ -213,15 +214,24 @@ function AiPortoInner() {
             <p style={{ fontSize: 12.5, color: FAINT }}>Belum ada posisi. Perintahkan AI untuk mulai.</p>
           )}
 
-          <h3 style={{ fontFamily: MONO, fontSize: 10.5, fontWeight: 700, letterSpacing: '.12em', textTransform: 'uppercase', color: FAINT, marginTop: 18, marginBottom: 8 }}>
-            Histori Jual/Beli
-          </h3>
-          {history.length > 0 ? (
-            <div className="aip-scroll" style={{ display: 'flex', flexDirection: 'column', maxHeight: 320, overflowY: 'auto', margin: '0 -4px', paddingRight: 4 }}>
-              {history.map(t => <HistoryRow key={t.id} t={t} />)}
-            </div>
-          ) : (
-            <p style={{ fontSize: 12.5, color: FAINT }}>Belum ada transaksi.</p>
+          <button
+            onClick={() => setHistOpen(o => !o)}
+            aria-expanded={histOpen}
+            style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, background: 'transparent', border: 'none', cursor: 'pointer', padding: 0, marginTop: 18, marginBottom: histOpen ? 8 : 0 }}
+          >
+            <h3 style={{ fontFamily: MONO, fontSize: 10.5, fontWeight: 700, letterSpacing: '.12em', textTransform: 'uppercase', color: FAINT }}>
+              Histori Jual/Beli{history.length > 0 ? ` (${history.length})` : ''}
+            </h3>
+            <span style={{ fontSize: 11, color: FAINT, transform: histOpen ? 'rotate(90deg)' : 'none', transition: 'transform .15s ease' }}>▸</span>
+          </button>
+          {histOpen && (
+            history.length > 0 ? (
+              <div className="aip-scroll" style={{ display: 'flex', flexDirection: 'column', maxHeight: 320, overflowY: 'auto', margin: '0 -4px', paddingRight: 4 }}>
+                {history.map(t => <HistoryRow key={t.id} t={t} />)}
+              </div>
+            ) : (
+              <p style={{ fontSize: 12.5, color: FAINT }}>Belum ada transaksi.</p>
+            )
           )}
         </aside>
       </div>
