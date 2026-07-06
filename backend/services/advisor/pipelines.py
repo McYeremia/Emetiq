@@ -40,6 +40,16 @@ def _clean(d: dict) -> dict:
     return {k: v for k, v in d.items() if v is not None}
 
 
+def _clamp_count(requested, default: int) -> int:
+    """Jumlah saham yang dikembalikan: pakai permintaan user bila ada, jatuh ke default,
+    lalu dibatasi 1..SCREEN_MAX_COUNT agar hasil tetap ringkas."""
+    try:
+        n = int(requested) if requested else default
+    except (TypeError, ValueError):
+        n = default
+    return max(1, min(n, config.SCREEN_MAX_COUNT))
+
+
 def _rank_reply(items: list) -> str:
     """Narasi tegas: sebut pemenang lebih dulu, lalu peringkat sisanya (bila ada)."""
     best = items[0]
@@ -82,21 +92,27 @@ def _stage_json(model_cls, system: str, payload: Any, *, model: str, effort, dea
 
 def run_screen(db: Session, params: RouterParams, deadline: Optional[float] = None) -> Dict[str, Any]:
     filters = dict(pe_max=params.pe_max, pbv_max=params.pbv_max, div_min=params.div_min,
-                   rsi=params.rsi, trend=params.trend, sector=params.sector)
+                   rsi=params.rsi, trend=params.trend, sector=params.sector,
+                   price_max=params.price_max, price_min=params.price_min)
     candidates = dp.screen(db, **filters)
 
     if not candidates:
         return {
             "reply": "Tidak ada saham yang cocok dengan kriteria itu. Coba longgarkan — "
-                     "misalnya naikkan PE maks, turunkan dividen min, atau lepas filter sektor.",
+                     "misalnya naikkan PE maks, naikkan batas harga, turunkan dividen min, "
+                     "atau lepas filter sektor.",
             "data": {"intent": "screen", "candidates": []},
             "confidence": None,
         }
 
+    count = _clamp_count(params.count, config.SCREEN_DEFAULT_COUNT)
+    # Hanya kirim pool kecil ke LLM & minta ia mengembalikan yang terbaik saja — bukan
+    # menilai 40 saham (yang membuat keluaran meledak & JSON terpotong / kena rate limit).
+    pool = candidates[: config.SCREEN_RANK_POOL]
     ranking = _stage_json(
         ScreenRanking, prompts.SCREEN_RANK_SYSTEM,
-        {"kriteria": _clean(filters), "kandidat": candidates},
-        model=REASONING, effort=EFFORT["synthesis"], deadline=deadline,
+        {"kriteria": _clean(filters), "jumlah_diminta": count, "kandidat": pool},
+        model=REASONING, effort=EFFORT["rank"], deadline=deadline,
     )
     critiqued = _stage_json(
         ScreenRanking, prompts.SCREEN_CRITIQUE_SYSTEM,
@@ -106,8 +122,6 @@ def run_screen(db: Session, params: RouterParams, deadline: Optional[float] = No
     items = critiqued.items or ranking.items
     items = [i for i in items if i.score > 0]
     items.sort(key=lambda x: x.score, reverse=True)
-
-    count = params.count or config.SCREEN_DEFAULT_COUNT
 
     if not items:
         # LLM gagal me-rank — tetap tampilkan sebagian kandidat mentah agar tidak buntu
@@ -142,11 +156,11 @@ def run_rank(db: Session, params: RouterParams, context: Optional[AdvisorContext
             "confidence": None,
         }
 
-    count = params.count or 1
+    count = _clamp_count(params.count, 1)
     ranking = _stage_json(
         ScreenRanking, prompts.RANK_SELECT_SYSTEM,
-        {"jumlah_diminta": count, "kandidat": candidates},
-        model=REASONING, effort=EFFORT["synthesis"], deadline=deadline,
+        {"jumlah_diminta": count, "kandidat": candidates[: config.SCREEN_RANK_POOL]},
+        model=REASONING, effort=EFFORT["rank"], deadline=deadline,
     )
     items = [i for i in ranking.items if i.score > 0]
     items.sort(key=lambda x: x.score, reverse=True)

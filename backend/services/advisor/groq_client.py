@@ -50,6 +50,7 @@ def _create(messages: List[dict], model: str, *, json_mode: bool, effort, temper
         messages=messages,
         temperature=temperature,
         timeout=config.REQUEST_TIMEOUT,
+        max_completion_tokens=config.MAX_COMPLETION_TOKENS,
     )
     if json_mode:
         kwargs["response_format"] = {"type": "json_object"}

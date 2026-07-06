@@ -47,9 +47,12 @@ ROUTER_SYSTEM = (
     "- chitchat  : sapaan/obrolan umum di luar kemampuan di atas.\n\n"
     "params (isi yang relevan saja): ticker (UPPERCASE), pe_max, pbv_max, div_min (angka), "
     "rsi ('oversold'|'overbought'|'neutral'), trend ('up'|'down'), sector, "
+    "price_max, price_min (HARGA SAHAM saat ini dalam rupiah — 'harga di bawah 2000' -> price_max=2000, "
+    "'harga di atas 500' -> price_min=500; ini harga saham, BUKAN PE/PBV), "
     "count (BILANGAN BULAT: berapa banyak saham yang user minta — mis. 'kasih 3 saham' -> count=3, "
-    "'saham terbaik' tanpa angka -> jangan isi count). PENTING: count adalah JUMLAH saham, "
-    "BUKAN nilai filter; jangan bingungkan dengan pe_max/div_min.\n"
+    "'berikan 5 saham' -> count=5, 'saham terbaik' tanpa angka -> jangan isi count). PENTING: "
+    "count adalah JUMLAH saham; price_max/price_min adalah HARGA; jangan campur aduk keduanya "
+    "atau dengan pe_max/div_min.\n"
     "missing: daftar nama parameter yang sebaiknya ditanyakan bila intent=clarify.\n\n"
     "Balas HANYA JSON: {\"intent\": \"...\", \"params\": {...}, \"missing\": [...]}."
 )
@@ -57,9 +60,10 @@ ROUTER_SYSTEM = (
 # ── Pipeline 1: Screening ────────────────────────────────────────────────────
 
 SCREEN_RANK_SYSTEM = (
-    "Kamu analis saham IDX. Diberi KRITERIA user dan daftar KANDIDAT (sudah lolos filter "
-    "keras dari sistem, lengkap dengan angka nyata). Urutkan kandidat dari paling cocok ke "
-    "paling kurang, beri skor 0-100 dan alasan yang mengutip angka.\n"
+    "Kamu analis saham IDX. Diberi KRITERIA user, JUMLAH yang diminta, dan daftar KANDIDAT "
+    "(sudah lolos filter keras dari sistem, lengkap dengan angka nyata). Pilih HANYA sebanyak "
+    "'jumlah_diminta' saham TERBAIK, urutkan dari paling unggul, beri skor 0-100 dan alasan "
+    "yang mengutip angka. JANGAN mengembalikan semua kandidat — cukup yang terbaik saja.\n"
     + CITE_RULE + "\n" + STYLE_RULE + "\n" + REASON_DEPTH_RULE + "\n"
     "Skema: {\"items\": [{\"ticker\": \"...\", \"score\": 0-100, \"reason\": \"...\", "
     "\"key_numbers\": {\"pe\": .., \"rsi\": ..}}]}"

@@ -58,6 +58,14 @@ def test_route_extracts_count(monkeypatch):
     assert out.params.count == 3
 
 
+def test_route_extracts_price_and_count(monkeypatch):
+    _mock_groq(monkeypatch, {"intent": "screen", "params": {"price_max": 2000, "count": 5}})
+    out = router.route("carikan 5 saham bagus dengan harga di bawah 2000")
+    assert out.intent == "screen"
+    assert out.params.price_max == 2000
+    assert out.params.count == 5
+
+
 def test_route_rank_intent(monkeypatch):
     _mock_groq(monkeypatch, {"intent": "rank", "params": {"count": 1}})
     ctx = AdvisorContext(candidates=[{"ticker": "BBRI"}, {"ticker": "TLKM"}])

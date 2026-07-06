@@ -16,7 +16,15 @@ REASONING_EFFORT = {
     "specialist": "low",
     "synthesis":  "high",
     "critique":   "high",
+    # Ranking screening/rank: "medium" cukup (hanya menalar di atas angka yang sudah
+    # pasti) dan menekan jumlah token keluaran agar JSON tak terpotong / kena rate limit.
+    "rank":       "medium",
 }
+
+# Batas token keluaran per panggilan. gpt-oss (reasoning) menghitung token nalar ke
+# dalam keluaran; tanpa batas eksplisit, keluaran ranking panjang bisa terpotong di
+# ~3072 token -> JSON tak lengkap -> `json_validate_failed`. Beri plafon aman.
+MAX_COMPLETION_TOKENS = int(os.getenv("ADVISOR_MAX_COMPLETION_TOKENS", "8192"))
 
 # ── Kuota harian per tier (reset tengah malam). None = unlimited. ────────────
 TIER_LIMITS = {
@@ -48,6 +56,13 @@ SCREEN_MAX_CANDIDATES = int(os.getenv("ADVISOR_SCREEN_MAX", "40"))
 # Berapa banyak saham yang DITAMPILKAN ke user bila ia tidak menyebut jumlah.
 # (Ranking tetap memakai pool lebar di atas; ini hanya batas hasil akhir.)
 SCREEN_DEFAULT_COUNT = int(os.getenv("ADVISOR_SCREEN_DEFAULT_COUNT", "5"))
+# Batas ATAS jumlah saham yang diberikan, berapa pun yang diminta user — jaga hasil tetap
+# ringkas & fokus (mis. minta 10 -> tetap 5 terbaik).
+SCREEN_MAX_COUNT = int(os.getenv("ADVISOR_SCREEN_MAX_COUNT", "5"))
+# Berapa banyak kandidat (teratas per kapitalisasi) yang benar-benar dikirim ke LLM
+# untuk di-ranking. Jauh lebih kecil dari SCREEN_MAX_CANDIDATES agar keluaran ringkas
+# (LLM hanya perlu memilih beberapa terbaik, bukan menilai 40 saham satu per satu).
+SCREEN_RANK_POOL = int(os.getenv("ADVISOR_SCREEN_RANK_POOL", "15"))
 # Batas berapa saham (urut market cap desc) yang dihitung indikatornya saat screening,
 # agar latency terjaga walau filter fundamental longgar.
 SCREEN_WORKING_SET = int(os.getenv("ADVISOR_SCREEN_WORKING_SET", "250"))

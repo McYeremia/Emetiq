@@ -57,6 +57,8 @@ def screen(
     rsi: Optional[str] = None,
     trend: Optional[str] = None,
     sector: Optional[str] = None,
+    price_max: Optional[float] = None,
+    price_min: Optional[float] = None,
     limit: Optional[int] = None,
 ) -> List[Dict[str, Any]]:
     """Saring saham deterministik. Filter fundamental dulu (murah), baru indikator."""
@@ -94,6 +96,11 @@ def screen(
         df = ohlcv_by_id.get(s.id)
         last_close = float(df["close"].iloc[-1]) if df is not None and not df.empty else None
         inds = calculate_indicators_from_df(df) if needs_indicators else {}
+
+        if price_max is not None and (last_close is None or last_close > price_max):
+            continue
+        if price_min is not None and (last_close is None or last_close < price_min):
+            continue
 
         if rsi is not None:
             if rsi_band(inds.get("RSI_14")) != rsi:

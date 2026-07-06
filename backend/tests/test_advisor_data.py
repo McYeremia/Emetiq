@@ -81,6 +81,17 @@ def test_screen_empty_when_impossible(db):
     assert dp.screen(db, pe_max=1) == []    # tak ada yang PE<=1
 
 
+def test_screen_price_max_filter(db):
+    # harga kini: BBRI 4590, TLKM 4410, GOTO 159
+    res = dp.screen(db, price_max=1000)
+    assert {r["ticker"] for r in res} == {"GOTO"}
+
+
+def test_screen_price_min_filter(db):
+    res = dp.screen(db, price_min=4500)
+    assert {r["ticker"] for r in res} == {"BBRI"}   # hanya BBRI >= 4500
+
+
 # ── Analisa 1 saham ──────────────────────────────────────────────────────────
 
 def test_analyze_found_numbers(db):

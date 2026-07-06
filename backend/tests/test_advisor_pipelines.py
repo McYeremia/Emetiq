@@ -74,6 +74,16 @@ def test_run_screen_ranks_candidates(db, monkeypatch):
     assert "BBRI" in out["reply"]
 
 
+def test_run_screen_caps_count_at_max(db, monkeypatch):
+    # user minta 10, tapi hasil dibatasi SCREEN_MAX_COUNT (=5)
+    six = {"items": [
+        {"ticker": f"S{i}", "score": 90 - i, "reason": "ok", "key_numbers": {}} for i in range(6)
+    ]}
+    _mock(monkeypatch, {"Urutkan kandidat": six, "pemeriksa cepat": six})
+    out = pipelines.run_screen(db, RouterParams(pe_max=100, count=10))
+    assert len(out["data"]["candidates"]) == 5          # dibatasi maksimal 5
+
+
 def test_run_screen_honors_count(db, monkeypatch):
     # 2 kandidat ter-rank, tapi user minta 1 -> hanya 1 yang dikembalikan
     two = {"items": [

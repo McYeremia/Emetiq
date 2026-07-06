@@ -67,6 +67,8 @@ class RouterParams(BaseModel):
     rsi: Optional[str] = None
     trend: Optional[str] = None
     sector: Optional[str] = None
+    price_max: Optional[float] = None  # harga saham saat ini maksimal ("di bawah 2000")
+    price_min: Optional[float] = None  # harga saham saat ini minimal ("di atas 500")
     count: Optional[int] = None       # berapa banyak saham yang diminta user ("3 saham")
 
 
