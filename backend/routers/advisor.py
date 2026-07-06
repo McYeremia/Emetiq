@@ -37,7 +37,7 @@ def chat(req: ChatRequest, db: Session = Depends(get_db),
          user: CurrentUser = Depends(get_current_user)):
     # 1) Router intent
     try:
-        route_out = intent_router.route(req.message, req.history, req.form)
+        route_out = intent_router.route(req.message, req.history, req.form, req.context)
     except groq_client.GroqConfigError:
         return ChatResponse(reply=CONFIG_REPLY, intent="chitchat", quota=quota.peek(db, user))
     except groq_client.GroqError:
@@ -48,6 +48,14 @@ def chat(req: ChatRequest, db: Session = Depends(get_db),
         return ChatResponse(reply=_clarify_reply(route_out), intent="clarify", quota=quota.peek(db, user))
     if route_out.intent == "chitchat":
         return ChatResponse(reply=CHITCHAT_REPLY, intent="chitchat", quota=quota.peek(db, user))
+
+    # "rank" tanpa daftar kandidat = tak ada yang bisa dipilih -> clarify, jangan potong kuota.
+    if route_out.intent == "rank" and not (req.context and req.context.candidates):
+        return ChatResponse(
+            reply=("Belum ada daftar saham untuk dibandingkan. Cari dulu (mis. \"cari saham "
+                   "PE<15 dividen>3%\"), atau sebutkan beberapa kode yang ingin diadu."),
+            intent="clarify", quota=quota.peek(db, user),
+        )
 
     # 3) Pipeline — cek kuota dulu (belum dipotong)
     try:
@@ -60,7 +68,7 @@ def chat(req: ChatRequest, db: Session = Depends(get_db),
 
     # 4) Jalankan pipeline. Gagal -> pesan ramah, kuota TIDAK dipotong.
     try:
-        result = pipelines.run(db, route_out, user_id=user.id)
+        result = pipelines.run(db, route_out, user_id=user.id, context=req.context)
     except groq_client.GroqConfigError:
         return ChatResponse(reply=CONFIG_REPLY, intent=route_out.intent, quota=quota.peek(db, user))
     except groq_client.GroqError:

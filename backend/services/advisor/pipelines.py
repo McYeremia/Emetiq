@@ -14,7 +14,7 @@ from pydantic import ValidationError
 
 from services.advisor import config, prompts, groq_client, data_provider as dp
 from services.advisor.schemas import (
-    RouterOutput, RouterParams,
+    RouterOutput, RouterParams, AdvisorContext,
     ScreenRanking, AnalyzeSpecialist, AnalyzeSynthesis, Critique,
     PortfolioSynthesis,
 )
@@ -38,6 +38,17 @@ def _dumps(obj: Any) -> str:
 
 def _clean(d: dict) -> dict:
     return {k: v for k, v in d.items() if v is not None}
+
+
+def _rank_reply(items: list) -> str:
+    """Narasi tegas: sebut pemenang lebih dulu, lalu peringkat sisanya (bila ada)."""
+    best = items[0]
+    lines = [f"Pilihan teratas: {best.ticker} (skor {round(best.score)}) — {best.reason}"]
+    if len(items) > 1:
+        lines.append("Peringkat berikutnya:")
+        lines += [f"{n}. {i.ticker} (skor {round(i.score)}) — {i.reason}"
+                  for n, i in enumerate(items[1:], start=2)]
+    return "\n".join(lines)
 
 
 def _stage_json(model_cls, system: str, payload: Any, *, model: str, effort, deadline: Optional[float] = None):
@@ -96,20 +107,65 @@ def run_screen(db: Session, params: RouterParams, deadline: Optional[float] = No
     items = [i for i in items if i.score > 0]
     items.sort(key=lambda x: x.score, reverse=True)
 
+    count = params.count or config.SCREEN_DEFAULT_COUNT
+
     if not items:
-        # LLM gagal me-rank — tetap tampilkan kandidat mentah agar tidak buntu
+        # LLM gagal me-rank — tetap tampilkan sebagian kandidat mentah agar tidak buntu
+        shown = candidates[:count]
         return {
-            "reply": f"Ditemukan {len(candidates)} saham yang lolos kriteria.",
-            "data": {"intent": "screen", "candidates": candidates},
+            "reply": f"Ditemukan {len(candidates)} saham yang lolos kriteria. Menampilkan {len(shown)} teratas (per kapitalisasi).",
+            "data": {"intent": "screen", "candidates": shown, "top_pick": None},
             "confidence": None,
         }
 
-    top = items[:5]
-    lines = [f"Menemukan {len(items)} saham sesuai kriteria. Teratas:"]
-    lines += [f"• {i.ticker} (skor {round(i.score)}) — {i.reason}" for i in top]
+    top = items[:count]
     return {
-        "reply": "\n".join(lines),
-        "data": {"intent": "screen", "candidates": [i.model_dump() for i in items]},
+        "reply": _rank_reply(top),
+        "data": {"intent": "screen", "candidates": [i.model_dump() for i in top],
+                 "top_pick": top[0].ticker},
+        "confidence": None,
+    }
+
+
+# ── Pipeline rank: pilih terbaik dari daftar giliran sebelumnya ──────────────
+
+def run_rank(db: Session, params: RouterParams, context: Optional[AdvisorContext] = None,
+             deadline: Optional[float] = None) -> Dict[str, Any]:
+    """Pilih saham terbaik dari kandidat yang sudah ada di layar (giliran sebelumnya).
+    Tak butuh ticker — menjawab tegas 'mana yang paling oke' tanpa menyuruh user memilih."""
+    candidates = list(context.candidates) if context and context.candidates else []
+    if not candidates:
+        return {
+            "reply": "Belum ada daftar saham untuk dibandingkan. Cari dulu (mis. \"cari saham "
+                     "PE<15 dividen>3%\"), atau sebutkan beberapa kode yang ingin diadu.",
+            "data": {"intent": "clarify"},
+            "confidence": None,
+        }
+
+    count = params.count or 1
+    ranking = _stage_json(
+        ScreenRanking, prompts.RANK_SELECT_SYSTEM,
+        {"jumlah_diminta": count, "kandidat": candidates},
+        model=REASONING, effort=EFFORT["synthesis"], deadline=deadline,
+    )
+    items = [i for i in ranking.items if i.score > 0]
+    items.sort(key=lambda x: x.score, reverse=True)
+
+    if not items:
+        # LLM gagal me-rank — jangan buntu, kembalikan kandidat pertama apa adanya
+        first = candidates[:count]
+        return {
+            "reply": "Belum bisa memutuskan pemenang dari daftar itu — coba sebutkan kriteria "
+                     "yang paling kamu utamakan (mis. paling murah, dividen tertinggi, tren terkuat).",
+            "data": {"intent": "screen", "candidates": first, "top_pick": None},
+            "confidence": None,
+        }
+
+    top = items[:count]
+    return {
+        "reply": _rank_reply(top),
+        "data": {"intent": "screen", "candidates": [i.model_dump() for i in top],
+                 "top_pick": top[0].ticker},
         "confidence": None,
     }
 
@@ -212,11 +268,14 @@ def run_portfolio(db: Session, user_id: str, deadline: Optional[float] = None) -
 
 # ── Dispatcher ───────────────────────────────────────────────────────────────
 
-def run(db: Session, route_out: RouterOutput, user_id: str) -> Dict[str, Any]:
+def run(db: Session, route_out: RouterOutput, user_id: str,
+        context: Optional[AdvisorContext] = None) -> Dict[str, Any]:
     """Jalankan pipeline sesuai intent. (clarify/chitchat ditangani di endpoint.)"""
     deadline = new_deadline()
     if route_out.intent == "screen":
         return run_screen(db, route_out.params, deadline=deadline)
+    if route_out.intent == "rank":
+        return run_rank(db, route_out.params, context, deadline=deadline)
     if route_out.intent == "analyze":
         return run_analyze(db, route_out.params, deadline=deadline)
     if route_out.intent == "portfolio":

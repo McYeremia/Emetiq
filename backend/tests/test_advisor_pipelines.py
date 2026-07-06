@@ -9,7 +9,7 @@ from sqlalchemy.pool import StaticPool
 from database import Base
 import models
 from services.advisor import pipelines, groq_client
-from services.advisor.schemas import RouterParams
+from services.advisor.schemas import RouterParams, AdvisorContext
 
 
 # ── Fixture DB ───────────────────────────────────────────────────────────────
@@ -70,7 +70,47 @@ def test_run_screen_ranks_candidates(db, monkeypatch):
     })
     out = pipelines.run_screen(db, RouterParams(pe_max=10))
     assert out["data"]["candidates"][0]["ticker"] == "BBRI"
+    assert out["data"]["top_pick"] == "BBRI"           # pemenang eksplisit
     assert "BBRI" in out["reply"]
+
+
+def test_run_screen_honors_count(db, monkeypatch):
+    # 2 kandidat ter-rank, tapi user minta 1 -> hanya 1 yang dikembalikan
+    two = {"items": [
+        {"ticker": "BBRI", "score": 82, "reason": "PE 9 murah", "key_numbers": {"pe": 9}},
+        {"ticker": "TLKM", "score": 40, "reason": "PE 18 mahal", "key_numbers": {"pe": 18}},
+    ]}
+    _mock(monkeypatch, {"Urutkan kandidat": two, "pemeriksa cepat": two})
+    out = pipelines.run_screen(db, RouterParams(pe_max=100, count=1))
+    assert len(out["data"]["candidates"]) == 1
+    assert out["data"]["candidates"][0]["ticker"] == "BBRI"
+    assert out["data"]["top_pick"] == "BBRI"
+
+
+# ── Rank (pilih terbaik dari daftar) ─────────────────────────────────────────
+
+def test_run_rank_picks_from_context(db, monkeypatch):
+    _mock(monkeypatch, {
+        "juri pemilih": {"items": [
+            {"ticker": "TLKM", "score": 90, "reason": "dividen tertinggi", "key_numbers": {"div": 5}},
+            {"ticker": "BBRI", "score": 60, "reason": "solid", "key_numbers": {"div": 4}},
+        ]},
+    })
+    ctx = AdvisorContext(candidates=[{"ticker": "BBRI"}, {"ticker": "TLKM"}])
+    out = pipelines.run_rank(db, RouterParams(count=1), ctx)
+    assert len(out["data"]["candidates"]) == 1
+    assert out["data"]["candidates"][0]["ticker"] == "TLKM"
+    assert out["data"]["top_pick"] == "TLKM"
+    assert "TLKM" in out["reply"]
+
+
+def test_run_rank_empty_context_skips_llm(db, monkeypatch):
+    def boom(*a, **k):
+        raise AssertionError("LLM tidak boleh dipanggil tanpa kandidat")
+    monkeypatch.setattr(groq_client, "chat_json", boom)
+    out = pipelines.run_rank(db, RouterParams(), None)
+    assert out["data"]["intent"] == "clarify"
+    assert "belum ada daftar" in out["reply"].lower()
 
 
 # ── Analisa ──────────────────────────────────────────────────────────────────

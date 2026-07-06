@@ -285,14 +285,16 @@ function PortfolioInner() {
                       current.assets.map((item: PortfolioItem, i) => {
                         const lots = item.shares / 100;
                         const marketTotal = (item.current_price ?? 0) * item.shares;
+                        const priceUp = (item.current_price ?? 0) >= (item.avg_price ?? 0);
                         const up = item.unrealized_pnl >= 0;
                         const pct = item.cost_basis > 0 ? (item.unrealized_pnl / item.cost_basis) * 100 : 0;
                         return (
                           <tr key={item.ticker} className="emx-listrow" style={{ borderBottom: i < current.assets.length - 1 ? '1px solid #F2F1EC' : 'none' }}>
                             <td style={TD}>
                               <Link href={`/stocks/${item.ticker}`} style={{ textDecoration: 'none', color: INK }} className="emx-link">
-                                <span style={{ fontWeight: 700, fontSize: 15 }}>{item.ticker}</span>
+                                <span style={{ fontWeight: 700, fontSize: 15, display: 'block' }}>{item.ticker}</span>
                               </Link>
+                              <span style={{ fontSize: 10.5, color: FAINT, display: 'block', marginTop: 2, whiteSpace: 'nowrap' }}>{lots} lot</span>
                             </td>
                             <td style={TDR} className="hold-cell">
                               <span className="hold-main" style={{ fontWeight: 600, display: 'block', whiteSpace: 'nowrap' }}>Rp {item.cost_basis.toLocaleString('id-ID')}</span>
@@ -300,7 +302,7 @@ function PortfolioInner() {
                             </td>
                             <td style={TDR} className="hold-cell">
                               <span className="hold-main" style={{ fontWeight: 600, display: 'block', whiteSpace: 'nowrap' }}>Rp {marketTotal.toLocaleString('id-ID')}</span>
-                              <span style={{ fontSize: 10.5, color: FAINT, display: 'block', marginTop: 2, whiteSpace: 'nowrap' }}>{lots} lot</span>
+                              <span style={{ fontSize: 10.5, color: priceUp ? UP : DOWN, display: 'block', marginTop: 2, whiteSpace: 'nowrap' }}>Rp {(item.current_price ?? 0).toLocaleString('id-ID')}</span>
                             </td>
                             <td style={TDR} className="hold-cell">
                               <span className="hold-main" style={{ fontWeight: 700, color: up ? UP : DOWN, display: 'block', whiteSpace: 'nowrap' }}>

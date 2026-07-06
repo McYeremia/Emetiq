@@ -9,7 +9,7 @@ from typing import List, Optional
 
 from services.advisor import config, prompts, groq_client
 from services.advisor.schemas import (
-    RouterOutput, RouterParams, ChatTurn, ScreenForm, VALID_INTENTS,
+    RouterOutput, RouterParams, ChatTurn, ScreenForm, AdvisorContext, VALID_INTENTS,
 )
 
 log = logging.getLogger("advisor.router")
@@ -20,10 +20,18 @@ def _history_text(history: List[ChatTurn], n: int) -> str:
     return "\n".join(f"{t.role}: {t.content}" for t in turns)
 
 
-def _build_user_message(message: str, history: List[ChatTurn], form: Optional[ScreenForm]) -> str:
+def _build_user_message(message: str, history: List[ChatTurn], form: Optional[ScreenForm],
+                        context: Optional[AdvisorContext]) -> str:
     parts: List[str] = []
     if history:
         parts.append("RINGKASAN PERCAKAPAN:\n" + _history_text(history, config.HISTORY_TURNS))
+    if context and context.candidates:
+        tickers = [str(c.get("ticker")) for c in context.candidates if c.get("ticker")]
+        if tickers:
+            parts.append(
+                "KONTEKS KANDIDAT (daftar saham dari giliran sebelumnya, siap dipilih): "
+                + ", ".join(tickers)
+            )
     if form:
         provided = {k: v for k, v in form.model_dump().items() if v is not None}
         if provided:
@@ -60,9 +68,10 @@ def _merge_form(out: RouterOutput, form: ScreenForm) -> RouterOutput:
     return out
 
 
-def route(message: str, history: Optional[List[ChatTurn]] = None, form: Optional[ScreenForm] = None) -> RouterOutput:
+def route(message: str, history: Optional[List[ChatTurn]] = None, form: Optional[ScreenForm] = None,
+          context: Optional[AdvisorContext] = None) -> RouterOutput:
     history = history or []
-    user_msg = _build_user_message(message, history, form)
+    user_msg = _build_user_message(message, history, form, context)
     raw = groq_client.chat_json(
         prompts.ROUTER_SYSTEM, user_msg,
         model=config.ROUTER_MODEL,

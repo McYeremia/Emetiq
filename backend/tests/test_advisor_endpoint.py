@@ -51,6 +51,7 @@ def _install_groq(monkeypatch, router_payload):
         "tim spesialis":   {"technical": "uptrend", "fundamental": "PE 9 murah", "ml_risk": "n/a", "score": 70},
         "kepala strategi": {"decision": "BELI", "entry": 4500, "take_profit": 5000, "cut_loss": 4300, "reasoning": "Tren naik, PE 9 murah."},
         "devil's advocate": {"confidence": 0.66, "notes": "ok", "warnings": []},
+        "juri pemilih":    {"items": [{"ticker": "BBRI", "score": 88, "reason": "PE 9 termurah", "key_numbers": {"pe": 9}}]},
     }
     def fake(system, user, **k):
         for marker, p in payloads.items():
@@ -94,6 +95,30 @@ def test_analyze_consumes_quota(client, monkeypatch):
     assert body["data"]["decision"] == "BELI"
     assert body["confidence"] == 0.66
     assert body["quota"]["used"] == 1          # pipeline sukses -> kuota dipotong
+
+
+def test_rank_empty_context_is_clarify_no_quota(client, monkeypatch):
+    _user(monkeypatch, "basic")
+    _install_groq(monkeypatch, {"intent": "rank", "params": {"count": 1}})
+    r = client.post("/advisor/chat", json={"message": "mana yang paling oke?"})
+    assert r.status_code == 200
+    body = r.json()
+    assert body["intent"] == "clarify"                 # tanpa daftar -> clarify
+    assert body["quota"]["used"] == 0                  # tak memotong kuota
+
+
+def test_rank_with_context_consumes_quota(client, monkeypatch):
+    _user(monkeypatch, "dev")
+    _install_groq(monkeypatch, {"intent": "rank", "params": {"count": 1}})
+    r = client.post("/advisor/chat", json={
+        "message": "dari tadi mana paling oke?",
+        "context": {"candidates": [{"ticker": "BBRI"}, {"ticker": "TLKM"}]},
+    })
+    assert r.status_code == 200
+    body = r.json()
+    assert body["intent"] == "rank"
+    assert body["data"]["top_pick"] == "BBRI"
+    assert body["quota"]["used"] == 1                  # pipeline sukses -> kuota dipotong
 
 
 def test_quota_exhausted_429(client, session_factory, monkeypatch):

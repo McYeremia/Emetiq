@@ -6,9 +6,9 @@ terjamin sebelum dikirim ke frontend.
 from typing import Any, Dict, List, Optional
 from pydantic import BaseModel, Field
 
-Intent = str  # "screen" | "analyze" | "portfolio" | "clarify" | "chitchat"
-VALID_INTENTS = {"screen", "analyze", "portfolio", "clarify", "chitchat"}
-PIPELINE_INTENTS = {"screen", "analyze", "portfolio"}  # yang memotong kuota
+Intent = str  # "screen" | "analyze" | "portfolio" | "rank" | "clarify" | "chitchat"
+VALID_INTENTS = {"screen", "analyze", "portfolio", "rank", "clarify", "chitchat"}
+PIPELINE_INTENTS = {"screen", "analyze", "portfolio", "rank"}  # yang memotong kuota
 
 
 # ── API request/response ─────────────────────────────────────────────────────
@@ -29,10 +29,18 @@ class ScreenForm(BaseModel):
     sector: Optional[str] = None
 
 
+class AdvisorContext(BaseModel):
+    """Konteks yang dibawa dari giliran sebelumnya (mis. daftar kandidat hasil screening
+    terakhir) agar follow-up seperti 'dari tadi mana paling oke?' bisa memilih tanpa
+    minta ticker lagi."""
+    candidates: List[Dict[str, Any]] = Field(default_factory=list)
+
+
 class ChatRequest(BaseModel):
     message: str
     history: List[ChatTurn] = Field(default_factory=list)
     form: Optional[ScreenForm] = None
+    context: Optional[AdvisorContext] = None
 
 
 class QuotaInfo(BaseModel):
@@ -59,6 +67,7 @@ class RouterParams(BaseModel):
     rsi: Optional[str] = None
     trend: Optional[str] = None
     sector: Optional[str] = None
+    count: Optional[int] = None       # berapa banyak saham yang diminta user ("3 saham")
 
 
 class RouterOutput(BaseModel):

@@ -344,6 +344,7 @@ export const api = {
     message: string;
     history?: AdvisorTurn[];
     form?: Record<string, unknown>;
+    context?: { candidates: Array<Record<string, unknown>> };
   }): Promise<AdvisorResponse> {
     // Backend membatasi anggaran pipeline-nya sendiri (~55s + router); beri margin
     // di sini supaya request tidak menggantung tanpa batas kalau backend/jaringan hang.

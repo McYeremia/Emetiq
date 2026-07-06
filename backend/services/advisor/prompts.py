@@ -30,10 +30,16 @@ ROUTER_SYSTEM = (
     "- screen    : user ingin mencari/menyaring saham berdasarkan kriteria (PE, PBV, dividen, RSI, tren, sektor).\n"
     "- analyze   : user bertanya tentang SATU saham tertentu (ada/maksud 1 ticker).\n"
     "- portfolio : user minta evaluasi/saran atas portofolio/holding miliknya.\n"
+    "- rank      : user minta MEMILIH yang terbaik dari daftar saham yang BARU SAJA diberikan "
+    "(mis. 'dari tadi mana paling oke?', 'yang mana paling bagus?', 'pilih satu'). Pakai ini "
+    "bila ada KONTEXT KANDIDAT dari giliran sebelumnya dan user menunjuk ke daftar itu.\n"
     "- clarify   : maksud belum jelas / parameter penting hilang; perlu bertanya balik.\n"
-    "- chitchat  : sapaan/obrolan umum di luar 3 kemampuan di atas.\n\n"
+    "- chitchat  : sapaan/obrolan umum di luar kemampuan di atas.\n\n"
     "params (isi yang relevan saja): ticker (UPPERCASE), pe_max, pbv_max, div_min (angka), "
-    "rsi ('oversold'|'overbought'|'neutral'), trend ('up'|'down'), sector.\n"
+    "rsi ('oversold'|'overbought'|'neutral'), trend ('up'|'down'), sector, "
+    "count (BILANGAN BULAT: berapa banyak saham yang user minta — mis. 'kasih 3 saham' -> count=3, "
+    "'saham terbaik' tanpa angka -> jangan isi count). PENTING: count adalah JUMLAH saham, "
+    "BUKAN nilai filter; jangan bingungkan dengan pe_max/div_min.\n"
     "missing: daftar nama parameter yang sebaiknya ditanyakan bila intent=clarify.\n\n"
     "Balas HANYA JSON: {\"intent\": \"...\", \"params\": {...}, \"missing\": [...]}."
 )
@@ -52,6 +58,18 @@ SCREEN_CRITIQUE_SYSTEM = (
     "Kamu pemeriksa cepat. Diberi KRITERIA dan daftar pick beserta angkanya. Buang atau "
     "turunkan skor pick yang JELAS melanggar kriteria keras. Jangan menambah pick baru.\n" + CITE_RULE + "\n"
     "Skema sama: {\"items\": [{\"ticker\": \"...\", \"score\": 0-100, \"reason\": \"...\", \"key_numbers\": {..}}]}"
+)
+
+# ── Pipeline rank: pilih terbaik dari daftar yang sudah ada ───────────────────
+
+RANK_SELECT_SYSTEM = (
+    "Kamu juri pemilih saham yang tegas. Diberi DAFTAR kandidat (sudah lolos filter, dengan "
+    "angka nyata) dan JUMLAH yang diminta user. Pilih yang TERBAIK sebanyak jumlah itu, urutkan "
+    "dari paling unggul, beri skor 0-100 dan alasan tegas yang mengutip angka kenapa ia menang. "
+    "JANGAN menambah saham di luar daftar. Bersikaplah memutuskan — jangan menyuruh user menganalisa sendiri.\n"
+    + CITE_RULE + "\n" + STYLE_RULE + "\n"
+    "Skema: {\"items\": [{\"ticker\": \"...\", \"score\": 0-100, \"reason\": \"...\", "
+    "\"key_numbers\": {\"pe\": .., \"rsi\": ..}}]}"
 )
 
 # ── Pipeline 2: Analisa 1 saham ──────────────────────────────────────────────

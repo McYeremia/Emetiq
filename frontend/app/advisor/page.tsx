@@ -133,8 +133,17 @@ function AdvisorInner() {
       .slice(-8)
       .map(m => ({ role: m.role, content: m.content }));
 
+    // Bawa daftar kandidat dari screening/rank terakhir agar follow-up seperti
+    // "dari tadi mana paling oke?" bisa memilih tanpa minta ticker lagi.
+    const lastList = [...messages].reverse().find(
+      m => m.role === 'assistant' && Array.isArray(m.resp?.data?.candidates) && m.resp!.data.candidates.length > 0
+    );
+    const context = lastList
+      ? { candidates: (lastList.resp!.data.candidates as Array<Record<string, unknown>>).slice(0, 40) }
+      : undefined;
+
     try {
-      const resp = await api.advisorChat({ message, history });
+      const resp = await api.advisorChat({ message, history, context });
       const withReply: Msg[] = [...next, { role: 'assistant', content: resp.reply, resp }];
       setMessages(withReply);
       persist(withReply);
@@ -296,21 +305,26 @@ function renderText(t: string): React.ReactNode {
 }
 
 function StructuredData({ intent, data, confidence }: { intent?: string; data: any; confidence: number | null }) {
-  if (intent === 'screen' && Array.isArray(data?.candidates) && data.candidates.length > 0) {
+  if ((intent === 'screen' || intent === 'rank') && Array.isArray(data?.candidates) && data.candidates.length > 0) {
+    const topPick: string | undefined = data?.top_pick;
     return (
       <div style={{ ...CARD, padding: 0, overflow: 'hidden' }}>
-        {data.candidates.slice(0, 8).map((c: any, i: number) => (
-          <Link key={c.ticker} href={`/stocks/${c.ticker}`} className="emx-row" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, padding: '12px 16px', textDecoration: 'none', color: INK, borderBottom: i < Math.min(8, data.candidates.length) - 1 ? '1px solid #F2F1EC' : 'none' }}>
-            <div style={{ minWidth: 0 }}>
-              <div className="flex items-center gap-2">
-                <span style={{ fontWeight: 700, fontSize: 14 }}>{c.ticker}</span>
-                {typeof c.score === 'number' && <span style={{ fontFamily: MONO, fontSize: 10, fontWeight: 700, color: ACCENT, background: `color-mix(in oklab, ${ACCENT}, white 88%)`, padding: '1px 7px', borderRadius: 999 }}>{Math.round(c.score)}</span>}
+        {data.candidates.map((c: any, i: number) => {
+          const isTop = topPick ? c.ticker === topPick : i === 0;
+          return (
+            <Link key={c.ticker} href={`/stocks/${c.ticker}`} className="emx-row" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, padding: '12px 16px', textDecoration: 'none', color: INK, borderBottom: i < data.candidates.length - 1 ? '1px solid #F2F1EC' : 'none', background: isTop ? `color-mix(in oklab, ${ACCENT}, white 95%)` : 'transparent' }}>
+              <div style={{ minWidth: 0 }}>
+                <div className="flex items-center gap-2">
+                  <span style={{ fontWeight: 700, fontSize: 14 }}>{c.ticker}</span>
+                  {isTop && <span style={{ fontFamily: SANS, fontSize: 9.5, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '.05em', color: ACCENT, background: `color-mix(in oklab, ${ACCENT}, white 86%)`, border: `1px solid color-mix(in oklab, ${ACCENT}, white 74%)`, padding: '1px 7px', borderRadius: 999 }}>Pilihan teratas</span>}
+                  {typeof c.score === 'number' && <span style={{ fontFamily: MONO, fontSize: 10, fontWeight: 700, color: ACCENT, background: `color-mix(in oklab, ${ACCENT}, white 88%)`, padding: '1px 7px', borderRadius: 999 }}>{Math.round(c.score)}</span>}
+                </div>
+                {c.reason && <p style={{ fontSize: 12, color: MUTED, marginTop: 3 }} className="line-clamp-2">{c.reason}</p>}
               </div>
-              {c.reason && <p style={{ fontSize: 12, color: MUTED, marginTop: 3 }} className="line-clamp-2">{c.reason}</p>}
-            </div>
-            <span style={{ flex: 'none', fontFamily: MONO, fontSize: 11, color: ACCENT, fontWeight: 700 }}>Analisa ›</span>
-          </Link>
-        ))}
+              <span style={{ flex: 'none', fontFamily: MONO, fontSize: 11, color: ACCENT, fontWeight: 700 }}>Analisa ›</span>
+            </Link>
+          );
+        })}
       </div>
     );
   }

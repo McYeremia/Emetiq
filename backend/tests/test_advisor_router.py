@@ -2,7 +2,7 @@
 import pytest
 
 from services.advisor import router, groq_client
-from services.advisor.schemas import ScreenForm
+from services.advisor.schemas import ScreenForm, AdvisorContext
 
 
 def _mock_groq(monkeypatch, payload):
@@ -49,3 +49,18 @@ def test_route_form_ticker_uppercased(monkeypatch):
     _mock_groq(monkeypatch, {"intent": "analyze", "params": {}})
     out = router.route("analisa", form=ScreenForm(ticker="tlkm"))
     assert out.params.ticker == "TLKM"
+
+
+def test_route_extracts_count(monkeypatch):
+    _mock_groq(monkeypatch, {"intent": "screen", "params": {"pe_max": 15, "count": 3}})
+    out = router.route("kasih 3 saham PE di bawah 15")
+    assert out.intent == "screen"
+    assert out.params.count == 3
+
+
+def test_route_rank_intent(monkeypatch):
+    _mock_groq(monkeypatch, {"intent": "rank", "params": {"count": 1}})
+    ctx = AdvisorContext(candidates=[{"ticker": "BBRI"}, {"ticker": "TLKM"}])
+    out = router.route("dari tadi mana yang paling oke?", context=ctx)
+    assert out.intent == "rank"
+    assert out.params.count == 1

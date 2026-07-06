@@ -45,6 +45,9 @@ PIPELINE_BUDGET_SECONDS = float(os.getenv("ADVISOR_PIPELINE_BUDGET", "55"))
 # Screening: hanya N kandidat teratas (lolos filter keras) yang dihitung indikator
 # penuh & diberi ke LLM untuk ranking — hemat CPU & token.
 SCREEN_MAX_CANDIDATES = int(os.getenv("ADVISOR_SCREEN_MAX", "40"))
+# Berapa banyak saham yang DITAMPILKAN ke user bila ia tidak menyebut jumlah.
+# (Ranking tetap memakai pool lebar di atas; ini hanya batas hasil akhir.)
+SCREEN_DEFAULT_COUNT = int(os.getenv("ADVISOR_SCREEN_DEFAULT_COUNT", "5"))
 # Batas berapa saham (urut market cap desc) yang dihitung indikatornya saat screening,
 # agar latency terjaga walau filter fundamental longgar.
 SCREEN_WORKING_SET = int(os.getenv("ADVISOR_SCREEN_WORKING_SET", "250"))
