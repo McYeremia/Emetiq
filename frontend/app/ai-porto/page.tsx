@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 import EmetiqNav from '@/components/EmetiqNav';
 import RequireAuth from '@/components/RequireAuth';
 import { useAuth } from '@/components/AuthProvider';
-import { api, AiPortoResponse, AiPortoSnapshot } from '@/lib/api';
+import { api, AiPortoResponse, AiPortoSnapshot, TradeHistory } from '@/lib/api';
 
 // ── EMETIQ theme tokens ────────────────────────────────────────
 const ACCENT = '#F26A1B';
@@ -79,10 +79,14 @@ function AiPortoInner() {
   const [loading, setLoading] = useState(false);
   const [snapshot, setSnapshot] = useState<AiPortoSnapshot | null>(null);
   const [regime, setRegime] = useState<string | null>(null);
+  const [history, setHistory] = useState<TradeHistory[]>([]);
   const scrollRef = useRef<HTMLDivElement>(null);
+
+  const refreshHistory = () => { api.getTradeHistory('AI').then(setHistory).catch(() => {}); };
 
   useEffect(() => {
     api.getAiPorto().then(setSnapshot).catch(() => {});
+    refreshHistory();
   }, []);
 
   useEffect(() => {
@@ -101,6 +105,8 @@ function AiPortoInner() {
       setMessages([...next, { role: 'assistant', content: resp.reply, resp }]);
       if (resp.snapshot) setSnapshot(resp.snapshot);
       if (resp.regime) setRegime(resp.regime);
+      // AI mungkin baru mengeksekusi trade — segarkan histori jual/beli.
+      if ((resp.executed?.length ?? 0) > 0 || (resp.auto_exits?.length ?? 0) > 0) refreshHistory();
     } catch {
       setMessages([...next, { role: 'assistant', content: 'Gagal menghubungi AI Porto. Periksa koneksi backend.' }]);
     } finally {
@@ -206,6 +212,17 @@ function AiPortoInner() {
           ) : (
             <p style={{ fontSize: 12.5, color: FAINT }}>Belum ada posisi. Perintahkan AI untuk mulai.</p>
           )}
+
+          <h3 style={{ fontFamily: MONO, fontSize: 10.5, fontWeight: 700, letterSpacing: '.12em', textTransform: 'uppercase', color: FAINT, marginTop: 18, marginBottom: 8 }}>
+            Histori Jual/Beli
+          </h3>
+          {history.length > 0 ? (
+            <div className="aip-scroll" style={{ display: 'flex', flexDirection: 'column', maxHeight: 320, overflowY: 'auto', margin: '0 -4px', paddingRight: 4 }}>
+              {history.map(t => <HistoryRow key={t.id} t={t} />)}
+            </div>
+          ) : (
+            <p style={{ fontSize: 12.5, color: FAINT }}>Belum ada transaksi.</p>
+          )}
         </aside>
       </div>
 
@@ -220,6 +237,34 @@ function AiPortoInner() {
         }
       `}</style>
     </main>
+  );
+}
+
+function HistoryRow({ t }: { t: TradeHistory }) {
+  const col = t.action === 'BUY' ? UP : DOWN;
+  const dateLabel = (() => {
+    const d = new Date(t.date);
+    return isNaN(d.getTime()) ? t.date : d.toLocaleDateString('id-ID', { day: 'numeric', month: 'short' });
+  })();
+  return (
+    <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 8, padding: '9px 4px', borderTop: `1px solid #F2F1EC` }}>
+      <div style={{ minWidth: 0 }}>
+        <div className="flex items-center gap-2">
+          <span style={{ fontFamily: MONO, fontSize: 9.5, fontWeight: 700, color: col, background: `color-mix(in oklab, ${col}, white 86%)`, padding: '1px 6px', borderRadius: 999 }}>{t.action === 'BUY' ? 'BELI' : 'JUAL'}</span>
+          <span style={{ fontWeight: 700, fontSize: 13 }}>{t.ticker}</span>
+          <span style={{ fontSize: 11, color: MUTED }}>{t.quantity} lot</span>
+        </div>
+        <div style={{ fontSize: 11, color: FAINT, marginTop: 2 }}>{dateLabel} · @ {rp(t.price)}</div>
+      </div>
+      <div style={{ textAlign: 'right', flex: 'none' }}>
+        <div style={{ fontFamily: MONO, fontSize: 11.5, color: INK }}>{rp(t.total_value)}</div>
+        {t.pnl != null && (
+          <div style={{ fontSize: 11, fontWeight: 700, color: t.pnl >= 0 ? UP : DOWN, marginTop: 2 }}>
+            {t.pnl >= 0 ? '+' : ''}{rp(t.pnl)}{t.pnl_pct != null ? ` (${t.pnl_pct >= 0 ? '+' : ''}${t.pnl_pct.toFixed(1)}%)` : ''}
+          </div>
+        )}
+      </div>
+    </div>
   );
 }
 
