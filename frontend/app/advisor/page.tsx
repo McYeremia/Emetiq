@@ -319,9 +319,9 @@ function StructuredData({ intent, data, confidence }: { intent?: string; data: a
                   {isTop && <span style={{ fontFamily: SANS, fontSize: 9.5, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '.05em', color: ACCENT, background: `color-mix(in oklab, ${ACCENT}, white 86%)`, border: `1px solid color-mix(in oklab, ${ACCENT}, white 74%)`, padding: '1px 7px', borderRadius: 999 }}>Pilihan teratas</span>}
                   {typeof c.score === 'number' && <span style={{ fontFamily: MONO, fontSize: 10, fontWeight: 700, color: ACCENT, background: `color-mix(in oklab, ${ACCENT}, white 88%)`, padding: '1px 7px', borderRadius: 999 }}>{Math.round(c.score)}</span>}
                 </div>
-                {c.reason && <p style={{ fontSize: 12, color: MUTED, marginTop: 3 }} className="line-clamp-2">{c.reason}</p>}
+                {c.reason && <p style={{ fontSize: 12.5, color: isTop ? INK : MUTED, marginTop: 4, lineHeight: 1.5 }}>{c.reason}</p>}
               </div>
-              <span style={{ flex: 'none', fontFamily: MONO, fontSize: 11, color: ACCENT, fontWeight: 700 }}>Analisa ›</span>
+              <span style={{ flex: 'none', fontFamily: MONO, fontSize: 11, color: ACCENT, fontWeight: 700 }}>Lihat chart ›</span>
             </Link>
           );
         })}

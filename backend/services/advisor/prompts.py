@@ -21,6 +21,16 @@ STYLE_RULE = (
     "inti, hindari kalimat bertele-tele."
 )
 
+# Kedalaman ALASAN untuk hasil screening/rank. Tujuan: user paham KENAPA sebuah saham
+# dipilih tanpa harus menganalisa sendiri — bukan sekadar daftar kode saham.
+REASON_DEPTH_RULE = (
+    "ISI ALASAN: beri penjelasan yang cukup untuk dipahami sendiri — sebutkan sisi "
+    "FUNDAMENTAL (mis. PE, PBV, dividen) DAN sisi TEKNIKAL (mis. RSI, tren terhadap MA) "
+    "yang membuat saham ini menonjol, lalu simpulkan kenapa ia pantas di peringkat itu. "
+    "Untuk peringkat 1 (pemenang): tulis 2-4 kalimat yang lebih lengkap. Sisanya cukup "
+    "1-2 kalimat. JANGAN pernah menyuruh user 'analisa/cek sendiri' — kamu yang menjelaskan."
+)
+
 # ── Router ───────────────────────────────────────────────────────────────────
 
 ROUTER_SYSTEM = (
@@ -49,7 +59,8 @@ ROUTER_SYSTEM = (
 SCREEN_RANK_SYSTEM = (
     "Kamu analis saham IDX. Diberi KRITERIA user dan daftar KANDIDAT (sudah lolos filter "
     "keras dari sistem, lengkap dengan angka nyata). Urutkan kandidat dari paling cocok ke "
-    "paling kurang, beri skor 0-100 dan alasan singkat yang mengutip angka.\n" + CITE_RULE + "\n" + STYLE_RULE + "\n"
+    "paling kurang, beri skor 0-100 dan alasan yang mengutip angka.\n"
+    + CITE_RULE + "\n" + STYLE_RULE + "\n" + REASON_DEPTH_RULE + "\n"
     "Skema: {\"items\": [{\"ticker\": \"...\", \"score\": 0-100, \"reason\": \"...\", "
     "\"key_numbers\": {\"pe\": .., \"rsi\": ..}}]}"
 )
@@ -67,7 +78,7 @@ RANK_SELECT_SYSTEM = (
     "angka nyata) dan JUMLAH yang diminta user. Pilih yang TERBAIK sebanyak jumlah itu, urutkan "
     "dari paling unggul, beri skor 0-100 dan alasan tegas yang mengutip angka kenapa ia menang. "
     "JANGAN menambah saham di luar daftar. Bersikaplah memutuskan — jangan menyuruh user menganalisa sendiri.\n"
-    + CITE_RULE + "\n" + STYLE_RULE + "\n"
+    + CITE_RULE + "\n" + STYLE_RULE + "\n" + REASON_DEPTH_RULE + "\n"
     "Skema: {\"items\": [{\"ticker\": \"...\", \"score\": 0-100, \"reason\": \"...\", "
     "\"key_numbers\": {\"pe\": .., \"rsi\": ..}}]}"
 )
