@@ -10,21 +10,26 @@ import os
 ROUTER_MODEL    = os.getenv("ADVISOR_ROUTER_MODEL", "openai/gpt-oss-20b")
 REASONING_MODEL = os.getenv("ADVISOR_REASONING_MODEL", "openai/gpt-oss-120b")
 
-# ── Reasoning effort per stage (hemat token: HIGH hanya saat benar-benar perlu) ──
+# ── Reasoning effort per stage ───────────────────────────────────────────────
+# Effort tinggi = banyak token nalar. Di Groq free tier (8k TPM), token nalar itu
+# ikut dihitung ke keluaran DAN ke kuota per menit, jadi "high" gampang menembus
+# limit -> 413 "request too large". Turunkan ke medium/low: cukup untuk menalar di
+# atas angka yang sudah pasti, hemat token, dan JSON tak terpotong.
 REASONING_EFFORT = {
     "router":     "low",
     "specialist": "low",
-    "synthesis":  "high",
-    "critique":   "high",
-    # Ranking screening/rank: "medium" cukup (hanya menalar di atas angka yang sudah
-    # pasti) dan menekan jumlah token keluaran agar JSON tak terpotong / kena rate limit.
-    "rank":       "medium",
+    "synthesis":  "medium",
+    "critique":   "medium",
+    "rank":       "low",
 }
 
-# Batas token keluaran per panggilan. gpt-oss (reasoning) menghitung token nalar ke
-# dalam keluaran; tanpa batas eksplisit, keluaran ranking panjang bisa terpotong di
-# ~3072 token -> JSON tak lengkap -> `json_validate_failed`. Beri plafon aman.
-MAX_COMPLETION_TOKENS = int(os.getenv("ADVISOR_MAX_COMPLETION_TOKENS", "8192"))
+# Batas token keluaran per panggilan. PENTING: Groq me-reserve `max_completion_tokens`
+# ke kuota tokens-per-minute (TPM) SETIAP request. Free tier gpt-oss = 8000 TPM, jadi
+# nilai >= 8000 (dulu 8192) membuat SETIAP panggilan reasoning kena 413
+# `rate_limit_exceeded` ("Request too large ... TPM: Limit 8000, Requested >8000")
+# sebelum 1 token input pun dihitung -> user lihat "AI sedang sibuk" terus.
+# 4096 memberi headroom ~3900 token untuk prompt input di bawah plafon 8000.
+MAX_COMPLETION_TOKENS = int(os.getenv("ADVISOR_MAX_COMPLETION_TOKENS", "4096"))
 
 # ── Kuota harian per tier (reset tengah malam). None = unlimited. ────────────
 TIER_LIMITS = {
