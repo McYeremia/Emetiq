@@ -1,0 +1,71 @@
+{
+  "draw": 0,
+  "recordsTotal": 4,
+  "recordsFiltered": 4,
+  "data": [
+    {
+      "StockCode": "AADI",
+      "StockName": "Adaro Andalan Indonesia Tbk.",
+      "Date": "2026-07-09T00:00:00",
+      "Previous": 8100.0,
+      "OpenPrice": 8125.0,
+      "High": 8150.0,
+      "Low": 8075.0,
+      "Close": 8075.0,
+      "Volume": 7141400.0,
+      "Value": 57851205000.0,
+      "Frequency": 2454.0,
+      "ListedShares": 7786891760.0,
+      "ForeignSell": 4115000.0,
+      "ForeignBuy": 1292400.0
+    },
+    {
+      "StockCode": "BBCA",
+      "StockName": "Bank Central Asia Tbk.",
+      "Date": "2026-07-09T00:00:00",
+      "Previous": 6175.0,
+      "OpenPrice": 6100.0,
+      "High": 6200.0,
+      "Low": 6050.0,
+      "Close": 6200.0,
+      "Volume": 181155800.0,
+      "Value": 1113911327500.0,
+      "Frequency": 27856.0,
+      "ListedShares": 122042299500.0,
+      "ForeignSell": 144284600.0,
+      "ForeignBuy": 149876900.0
+    },
+    {
+      "StockCode": "ABBA",
+      "StockName": "Mahaka Media Tbk.",
+      "Date": "2026-07-09T00:00:00",
+      "Previous": 30.0,
+      "OpenPrice": 0.0,
+      "High": 0.0,
+      "Low": 0.0,
+      "Close": 30.0,
+      "Volume": 0.0,
+      "Value": 0.0,
+      "Frequency": 0.0,
+      "ListedShares": 3935892857.0,
+      "ForeignSell": 0.0,
+      "ForeignBuy": 0.0
+    },
+    {
+      "StockCode": "ABDA",
+      "StockName": "Asuransi Bina Dana Arta Tbk.",
+      "Date": "2026-07-09T00:00:00",
+      "Previous": 3400.0,
+      "OpenPrice": 0.0,
+      "High": 3430.0,
+      "Low": 3400.0,
+      "Close": 3430.0,
+      "Volume": 600.0,
+      "Value": 2055000.0,
+      "Frequency": 4.0,
+      "ListedShares": 620806680.0,
+      "ForeignSell": 0.0,
+      "ForeignBuy": 0.0
+    }
+  ]
+}
