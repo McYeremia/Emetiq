@@ -117,3 +117,63 @@ def test_fetch_stock_summary_sends_target_date(mocker):
     fetch_stock_summary(TARGET)
 
     assert "date=2026-07-09" in get_json.call_args.args[1]
+
+
+def test_new_session_retries_failing_homepage_get(mocker):
+    """_new_session retries homepage GET if it fails."""
+    session_class = mocker.patch("services.bigmoney.idx_client.cffi_requests.Session")
+    session_instance = mocker.Mock()
+    session_class.return_value = session_instance
+
+    # First two GETs fail with network error, third succeeds
+    session_instance.get.side_effect = [
+        ConnectionError("timeout"),
+        ConnectionError("timeout"),
+        _Resp(200),  # successful response
+    ]
+
+    result = idx_client._new_session()
+
+    assert result is session_instance
+    assert session_instance.get.call_count == 3
+
+
+def test_new_session_exhausts_retries_on_network_error(mocker):
+    """_new_session raises IdxFetchError after 3 failed attempts."""
+    session_class = mocker.patch("services.bigmoney.idx_client.cffi_requests.Session")
+    session_instance = mocker.Mock()
+    session_class.return_value = session_instance
+    session_instance.get.side_effect = ConnectionError("timeout")
+
+    with pytest.raises(IdxFetchError, match="jaringan"):
+        idx_client._new_session()
+
+    assert session_instance.get.call_count == 3
+
+
+def test_new_session_no_retry_on_client_error(mocker):
+    """_new_session raises immediately on 4xx (no retry)."""
+    session_class = mocker.patch("services.bigmoney.idx_client.cffi_requests.Session")
+    session_instance = mocker.Mock()
+    session_class.return_value = session_instance
+    session_instance.get.return_value = _Resp(403)
+
+    with pytest.raises(IdxFetchError, match="403"):
+        idx_client._new_session()
+
+    assert session_instance.get.call_count == 1
+
+
+def test_client_error_classified_by_type_not_message(mocker):
+    """Exception type (not message text) determines whether errors are retried.
+
+    4xx responses raise _NonRetryable without retry, regardless of message wording.
+    """
+    session = mocker.Mock()
+    session.get.return_value = _Resp(400)
+
+    with pytest.raises(idx_client._NonRetryable):
+        idx_client._get_json(session, "http://x")
+
+    # Verify no retries occurred
+    assert session.get.call_count == 1
