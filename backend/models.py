@@ -220,3 +220,44 @@ class BrokerFlow(Base):
     volume      = Column(BigInteger, default=0)    # total volume dalam lot
     frequency   = Column(Integer, default=0)       # jumlah transaksi
     scraped_at  = Column(DateTime, server_default=func.now())
+
+
+class BigMoneyStockDaily(Base):
+    """Snapshot harian per saham dari IDX GetStockSummary + metrik turunan.
+
+    `ticker` sengaja bukan ForeignKey: IDX memuat saham yang belum ada di tabel
+    `stocks`, dan agregat pasar (penyebut relative foreign flow) harus dihitung
+    dari seluruh pasar agar tidak bias.
+
+    Kolom turunan bernilai NULL bila pembaginya nol — bukan 0 — supaya fungsi
+    agregat SQL mengabaikannya. Sekitar 13,7% baris IDX punya volume = 0.
+    """
+    __tablename__ = "bigmoney_stock_daily"
+    __table_args__ = (UniqueConstraint("ticker", "date", name="uq_bmsd_ticker_date"),)
+
+    id            = Column(Integer, primary_key=True, index=True)
+    ticker        = Column(String(10), nullable=False, index=True)
+    date          = Column(Date, nullable=False, index=True)
+
+    # mentah dari IDX GetStockSummary
+    prev_close    = Column(Float)
+    open_price    = Column(Float)
+    high          = Column(Float)
+    low           = Column(Float)
+    close         = Column(Float)
+    volume        = Column(BigInteger, default=0)   # lembar, bukan lot
+    value         = Column(BigInteger, default=0)   # Rupiah
+    frequency     = Column(Integer, default=0)
+    listed_shares = Column(BigInteger)
+    foreign_buy   = Column(BigInteger, default=0)   # lembar
+    foreign_sell  = Column(BigInteger, default=0)   # lembar
+
+    # turunan, dihitung saat ingest
+    foreign_net           = Column(BigInteger)  # lembar
+    vwap                  = Column(Float)
+    foreign_net_value     = Column(BigInteger)  # Rupiah — ESTIMASI (foreign_net * VWAP pasar)
+    avg_ticket            = Column(Float)       # value/frequency — proxy aktivitas institusi
+    foreign_participation = Column(Float)
+    change_pct            = Column(Float)
+
+    scraped_at    = Column(DateTime, server_default=func.now())

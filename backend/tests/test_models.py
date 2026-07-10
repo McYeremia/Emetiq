@@ -9,3 +9,4 @@ def test_all_tables_created():
     assert "stocks" in tables
     assert "ohlcv_daily" in tables
     assert "indicators_cache" in tables
+    assert "bigmoney_stock_daily" in tables
