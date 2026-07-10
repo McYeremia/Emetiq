@@ -188,3 +188,92 @@ def test_ingest_rolls_back_on_commit_failure(db, mocker, raw_rows):
         ingest_stock_summary(TARGET, db)
 
     assert rollback_spy.call_count == 1
+
+
+def test_weekdays_back_skips_weekend():
+    """2026-07-10 Jumat; mundur 3 hari kerja → Rab 8, Kam 9, Jum 10."""
+    from scripts.bigmoney_backfill import weekdays_back
+
+    assert weekdays_back(date(2026, 7, 10), 3) == [
+        date(2026, 7, 8), date(2026, 7, 9), date(2026, 7, 10),
+    ]
+
+
+def test_weekdays_back_starting_on_saturday():
+    """Sabtu 2026-07-11 bukan hari kerja; hasil mundur ke Jumat dan sebelumnya."""
+    from scripts.bigmoney_backfill import weekdays_back
+
+    assert weekdays_back(date(2026, 7, 11), 2) == [date(2026, 7, 9), date(2026, 7, 10)]
+
+
+def test_weekdays_back_returns_ascending_order():
+    from scripts.bigmoney_backfill import weekdays_back
+
+    days = weekdays_back(date(2026, 7, 10), 10)
+    assert days == [
+        date(2026, 6, 29), date(2026, 6, 30),
+        date(2026, 7, 1), date(2026, 7, 2), date(2026, 7, 3),
+        date(2026, 7, 6), date(2026, 7, 7), date(2026, 7, 8),
+        date(2026, 7, 9), date(2026, 7, 10),
+    ]
+    assert len(days) == 10
+
+
+def test_run_backfill_continues_on_failing_date(mocker):
+    """Satu tanggal gagal (ValueError) tidak menghentikan backfill; loop lanjut."""
+    from scripts.bigmoney_backfill import run_backfill
+
+    # Daftarkan model agar SessionLocal bisa bekerja kalau tidak di-mock sepenuhnya
+    mocker.patch("scripts.bigmoney_backfill.Base.metadata.create_all")
+    mocker.patch("scripts.bigmoney_backfill.time.sleep")
+
+    # Tiga tanggal: yang tengah gagal dengan ValueError
+    dates = [date(2026, 7, 8), date(2026, 7, 9), date(2026, 7, 10)]
+    mock_session = mocker.MagicMock()
+    mocker.patch("scripts.bigmoney_backfill.SessionLocal", return_value=mock_session)
+    mocker.patch("scripts.bigmoney_backfill._already_ingested", return_value=False)
+    mocker.patch("scripts.bigmoney_backfill.weekdays_back", return_value=dates)
+
+    # ingest_stock_summary: pertama ok, tengah ValueError, ketiga ok
+    def ingest_side_effect(target, db):
+        if target == date(2026, 7, 9):
+            raise ValueError("bad float")
+        return IngestResult(date=target, trading_day=True, inserted=1, updated=0, skipped=0)
+
+    mock_ingest = mocker.patch(
+        "scripts.bigmoney_backfill.ingest_stock_summary",
+        side_effect=ingest_side_effect
+    )
+
+    # Jalankan backfill
+    exit_code = run_backfill(3, date(2026, 7, 10), force=False)
+
+    # Validasi:
+    # - exit code 1 (karena ada kegagalan)
+    assert exit_code == 1
+    # - ingest_stock_summary dipanggil 3 kali (semua tanggal, termasuk yang gagal)
+    assert mock_ingest.call_count == 3
+    # - rollback dipanggil untuk tanggal yang gagal (dan kemungkinan transaksi baca lainnya)
+    assert mock_session.rollback.call_count >= 1
+    # - close dipanggil untuk cleanup
+    mock_session.close.assert_called_once()
+
+
+def test_run_backfill_with_zero_days_returns_cleanly(mocker):
+    """--days 0 tidak menyentuh DB dan langsung return 0."""
+    from scripts.bigmoney_backfill import run_backfill
+
+    mocker.patch("scripts.bigmoney_backfill.Base.metadata.create_all")
+    mock_ingest = mocker.patch("scripts.bigmoney_backfill.ingest_stock_summary")
+    mock_session = mocker.MagicMock()
+    mocker.patch("scripts.bigmoney_backfill.SessionLocal", return_value=mock_session)
+
+    exit_code = run_backfill(0, date(2026, 7, 10), force=False)
+
+    # Validasi:
+    # - exit code 0 (berhasil, tak ada yang diproses)
+    assert exit_code == 0
+    # - ingest_stock_summary tidak dipanggil sama sekali
+    mock_ingest.assert_not_called()
+    # - session ditutup
+    mock_session.close.assert_called_once()
