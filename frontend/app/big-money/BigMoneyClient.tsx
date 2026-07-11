@@ -22,48 +22,97 @@ const FAINT = '#9A9A92';
 const HAIR = '#ECEBE6';
 const UP = '#138A50';
 const DOWN = '#D23B3B';
+const UP_BG = '#E7F6EE';
+const DOWN_BG = '#FBE9E9';
 const AMBER = '#B7791F';
+const AMBER_BG = '#FBF3E3';
 const SANS = "'Plus Jakarta Sans', system-ui, sans-serif";
 const MONO = "'IBM Plex Mono', monospace";
 
 const CARD: React.CSSProperties = {
   background: '#fff',
   border: `1px solid ${HAIR}`,
-  borderRadius: 16,
+  borderRadius: 18,
   boxShadow: '0 18px 44px -28px rgba(20,20,15,.24)',
 };
 
-/** Rupiah dalam skala yang bisa dibaca manusia. Angka asing berorde miliar-triliun;
- *  menampilkannya utuh membuat mata harus menghitung digit. */
+const EYEBROW: React.CSSProperties = {
+  fontFamily: MONO, fontSize: 11, fontWeight: 600, letterSpacing: '.16em',
+  textTransform: 'uppercase', color: ACCENT, marginBottom: 6,
+};
+
+// ── Pembaca angka ──────────────────────────────────────────────
+
+/** "Jumat, 10 Juli 2026" — bukan "2026-07-10". Laporan dibaca manusia. */
+function tanggalPanjang(iso: string): string {
+  const [y, m, d] = iso.split('-').map(Number);
+  return new Date(y, m - 1, d).toLocaleDateString('id-ID', {
+    weekday: 'long', day: 'numeric', month: 'long', year: 'numeric',
+  });
+}
+
 function rupiah(value: number | null): string {
   if (value === null || value === undefined) return '—';
   const abs = Math.abs(value);
-  const sign = value < 0 ? '−' : '+';
-  if (abs >= 1_000_000_000_000) return `${sign}Rp ${(abs / 1_000_000_000_000).toFixed(2)} T`;
-  if (abs >= 1_000_000_000) return `${sign}Rp ${(abs / 1_000_000_000).toFixed(1)} M`;
-  if (abs >= 1_000_000) return `${sign}Rp ${(abs / 1_000_000).toFixed(0)} jt`;
-  return `${sign}Rp ${abs.toLocaleString('id-ID')}`;
+  const tanda = value < 0 ? '−' : '+';
+  if (abs >= 1_000_000_000_000) return `${tanda}Rp ${(abs / 1_000_000_000_000).toFixed(2)} T`;
+  if (abs >= 1_000_000_000) return `${tanda}Rp ${(abs / 1_000_000_000).toFixed(1)} M`;
+  if (abs >= 1_000_000) return `${tanda}Rp ${(abs / 1_000_000).toFixed(0)} jt`;
+  return `${tanda}Rp ${abs.toLocaleString('id-ID')}`;
 }
 
-function convictionColor(c: string) {
-  if (c === 'STRONG') return UP;
-  if (c === 'WATCH') return AMBER;
+/** Rezim dalam bahasa manusia. "VOLATILE/BULL" tak berarti apa-apa bagi pembaca. */
+function bacaRezim(r: BigMoneyRegime): { kalimat: string; nada: string; latar: string } {
+  const gejolak = r.volatility_regime === 'VOLATILE' ? 'Pasar sedang bergejolak' : 'Pasar relatif tenang';
+  const tren =
+    r.trend_regime === 'BULL' ? 'dengan tren naik'
+    : r.trend_regime === 'BEAR' ? 'dengan tren turun'
+    : 'dan bergerak datar';
+
+  const nada = r.trend_regime === 'BEAR' ? DOWN : r.trend_regime === 'BULL' ? UP : MUTED;
+  const latar = r.trend_regime === 'BEAR' ? DOWN_BG : r.trend_regime === 'BULL' ? UP_BG : '#F4F3EF';
+
+  return { kalimat: `${gejolak} ${tren}.`, nada, latar };
+}
+
+/** Satu kalimat: ke mana uang besar bergerak hari ini. */
+function bacaAliran(r: BigMoneyRegime): string {
+  const net = r.total_foreign_net_value ?? 0;
+  if (net === 0) return 'Aliran dana asing hari ini seimbang.';
+  const arah = net > 0 ? 'masuk ke' : 'keluar dari';
+  return `Investor asing ${net > 0 ? 'membeli' : 'menjual'} bersih ${rupiah(Math.abs(net)).replace('+', '')} — dana ${arah} pasar Indonesia.`;
+}
+
+const KONVIKSI: Record<string, { label: string; warna: string; latar: string }> = {
+  STRONG: { label: 'Kuat', warna: UP, latar: UP_BG },
+  WATCH: { label: 'Pantau', warna: AMBER, latar: AMBER_BG },
+  WEAK: { label: 'Lemah', warna: MUTED, latar: '#F4F3EF' },
+};
+
+const FASE: Record<string, string> = {
+  AKUMULASI: 'Akumulasi',
+  MARKUP: 'Markup',
+  DISTRIBUSI: 'Distribusi',
+  MARKDOWN: 'Markdown',
+  NETRAL: 'Netral',
+};
+
+function warnaFase(fase: string) {
+  if (fase === 'AKUMULASI' || fase === 'MARKUP') return UP;
+  if (fase === 'DISTRIBUSI' || fase === 'MARKDOWN') return DOWN;
   return MUTED;
 }
 
-function phaseColor(p: string) {
-  if (p === 'AKUMULASI' || p === 'MARKUP') return UP;
-  if (p === 'DISTRIBUSI' || p === 'MARKDOWN') return DOWN;
-  return MUTED;
-}
-
-const SIGNAL_LABELS: Array<[keyof NonNullable<BigMoneyPick['subscores']>, string]> = [
-  ['relative_foreign_flow', 'Aliran asing'],
-  ['foreign_persistence', 'Konsistensi'],
-  ['big_ticket', 'Tiket besar'],
-  ['cost_basis', 'Harga masuk'],
-  ['volume_price', 'Volume/harga'],
+/** Nama sinyal dalam bahasa manusia, dengan penjelasan singkat di tooltip. */
+const SINYAL: Array<[keyof NonNullable<BigMoneyPick['subscores']>, string, string]> = [
+  ['relative_foreign_flow', 'Aliran asing', 'Seberapa besar dana asing masuk ke saham ini dibanding saham lain hari ini'],
+  ['foreign_persistence', 'Konsistensi', 'Berapa hari dari 5 hari terakhir asing tercatat beli bersih'],
+  ['big_ticket', 'Tiket besar', 'Nilai rata-rata per transaksi dibanding kebiasaan saham ini — tanda institusi masuk'],
+  ['cost_basis', 'Harga masuk', 'Posisi harga sekarang terhadap harga rata-rata saat asing mengakumulasi'],
+  ['volume_price', 'Volume vs harga', 'Volume besar tapi harga diam — ciri akumulasi senyap'],
 ];
+
+// ── Halaman ────────────────────────────────────────────────────
 
 export default function BigMoneyClient() {
   return (
@@ -74,9 +123,7 @@ export default function BigMoneyClient() {
 }
 
 function BigMoneyInner() {
-  useEffect(() => {
-    document.title = 'Big Money — EMETIQ';
-  }, []);
+  useEffect(() => { document.title = 'Big Money — EMETIQ'; }, []);
 
   const { tier } = useAuth();
   const [regime, setRegime] = useState<BigMoneyRegime | null>(null);
@@ -91,159 +138,343 @@ function BigMoneyInner() {
 
   useEffect(() => {
     if (!isDev) return;
-
-    Promise.all([
-      api.getBigMoneyRegime(),
-      api.getBigMoneyTopAccumulation(),
-      api.getBigMoneyReport(),
-    ])
-      .then(([r, t, rep]) => {
-        setRegime(r);
-        setTop(t);
-        setReport(rep);
-      })
+    Promise.all([api.getBigMoneyRegime(), api.getBigMoneyTopAccumulation(), api.getBigMoneyReport()])
+      .then(([r, t, rep]) => { setRegime(r); setTop(t); setReport(rep); })
       .finally(() => setLoaded(true));
   }, [isDev]);
 
-  // Backend menolak non-dev dengan 403; katakan apa adanya alih-alih menampilkan halaman kosong.
-  if (tier && tier !== 'dev') {
-    return (
-      <div style={{ minHeight: '100vh', background: BG, fontFamily: SANS }}>
-        <EmetiqNav />
-        <main style={{ maxWidth: 720, margin: '0 auto', padding: '64px 20px', textAlign: 'center' }}>
-          <p style={{ color: MUTED, fontSize: 15 }}>
-            Big Money masih dalam pengembangan dan terbatas untuk tier <strong>dev</strong>.
-          </p>
-        </main>
-      </div>
-    );
-  }
-
-  const sectors = regime ? Object.entries(regime.sector_rotation).sort((a, b) => b[1] - a[1]) : [];
-  const inflow = sectors.filter(([, v]) => v > 0).slice(0, 3);
-  const outflow = sectors.filter(([, v]) => v < 0).slice(-3).reverse();
+  const sektor = regime ? Object.entries(regime.sector_rotation).sort((a, b) => b[1] - a[1]) : [];
+  const masuk = sektor.filter(([, v]) => v > 0).slice(0, 4);
+  const keluar = sektor.filter(([, v]) => v < 0).slice(-4).reverse();
 
   return (
-    <div style={{ minHeight: '100vh', background: BG, color: INK, fontFamily: SANS }}>
-      <EmetiqNav />
+    <main style={{ minHeight: '100vh', background: BG, color: INK, fontFamily: SANS, WebkitFontSmoothing: 'antialiased' }}>
+      {/* Fonts — React 19 hoists these into <head> */}
+      <link rel="preconnect" href="https://fonts.googleapis.com" />
+      <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="" />
+      <link
+        href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500;600&display=swap"
+        rel="stylesheet"
+      />
 
-      <main style={{ maxWidth: 1000, margin: '0 auto', padding: '28px 20px 80px' }}>
-        <header style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap', marginBottom: 6 }}>
-          <h1 style={{ fontSize: 26, fontWeight: 800, letterSpacing: '-.01em' }}>Big Money</h1>
-          <span style={{
-            fontSize: 11, fontWeight: 700, letterSpacing: '.06em', color: '#fff',
-            background: ACCENT, padding: '3px 9px', borderRadius: 999,
-          }}>
-            DEV
-          </span>
-          {regime && (
-            <span style={{ fontFamily: MONO, fontSize: 12.5, color: FAINT }}>{regime.date}</span>
-          )}
-        </header>
-        <p style={{ color: MUTED, fontSize: 14.5, marginBottom: 24 }}>
-          Ke mana dana besar mengalir hari ini, dan atas dasar bukti apa.
-        </p>
+      <EmetiqNav active="big-money" />
 
-        {loading && (
-          <p style={{ fontFamily: MONO, fontSize: 12, color: ACCENT, letterSpacing: '.2em' }}>MEMUAT…</p>
+      <div style={{ maxWidth: 1200, margin: '0 auto', padding: '28px 24px 80px' }}>
+        {/* Judul */}
+        <div className="mb-6">
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+            <h1 style={{ fontSize: 26, fontWeight: 800, letterSpacing: '-.02em' }}>Big Money</h1>
+            <span style={{
+              fontFamily: MONO, fontSize: 10.5, fontWeight: 600, letterSpacing: '.1em',
+              color: '#fff', background: ACCENT, padding: '3px 8px', borderRadius: 999,
+            }}>DEV</span>
+          </div>
+          <p style={{ marginTop: 4, fontSize: 14.5, color: MUTED }}>
+            Ke mana dana besar mengalir hari ini, dan atas dasar bukti apa.
+          </p>
+        </div>
+
+        {!isDev && tier && (
+          <div style={{ ...CARD, padding: 24 }}>
+            <p style={{ fontSize: 14.5, color: MUTED }}>
+              Big Money masih dalam pengembangan dan terbatas untuk tier <strong>dev</strong>.
+            </p>
+          </div>
         )}
 
-        {!loading && !regime && (
+        {loading && (
+          <p style={{ fontFamily: MONO, fontSize: 11.5, letterSpacing: '.24em', color: ACCENT }} className="animate-pulse">
+            MEMUAT…
+          </p>
+        )}
+
+        {isDev && loaded && !regime && (
           <div style={{ ...CARD, padding: 24 }}>
-            <p style={{ color: MUTED, fontSize: 14.5 }}>
+            <p style={{ fontSize: 14.5, color: MUTED }}>
               Belum ada hari yang di-skor. Jalankan <code style={{ fontFamily: MONO }}>scripts/bigmoney_score.py</code> di backend.
             </p>
           </div>
         )}
 
-        {!loading && regime && (
+        {isDev && loaded && regime && (
           <>
-            {/* 1 — Rezim pasar */}
-            <section style={{ ...CARD, padding: 20, marginBottom: 18 }}>
-              <h2 style={{ fontSize: 12, fontWeight: 700, letterSpacing: '.12em', color: FAINT, marginBottom: 14 }}>
-                REZIM PASAR
-              </h2>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 16 }}>
-                <Metric label="Volatilitas" value={regime.volatility_regime}
-                        color={regime.volatility_regime === 'VOLATILE' ? AMBER : UP} />
-                <Metric label="Tren" value={regime.trend_regime}
-                        color={regime.trend_regime === 'BEAR' ? DOWN : regime.trend_regime === 'BULL' ? UP : MUTED} />
-                <Metric label="Net asing pasar" value={rupiah(regime.total_foreign_net_value)}
-                        color={(regime.total_foreign_net_value ?? 0) < 0 ? DOWN : UP} />
-                <Metric label="Saham naik"
-                        value={regime.breadth !== null ? `${(regime.breadth * 100).toFixed(0)}%` : '—'}
-                        color={INK} />
+            {/* ── Ringkasan pasar ─────────────────────────────────────── */}
+            <div style={{ ...CARD, padding: 24, marginBottom: 24 }}>
+              <div className="flex flex-wrap items-start justify-between gap-3 mb-5">
+                <div>
+                  <p style={EYEBROW}>Kondisi Pasar</p>
+                  <h2 style={{ fontSize: 19, fontWeight: 700, letterSpacing: '-.01em', lineHeight: 1.4 }}>
+                    {bacaRezim(regime).kalimat}
+                  </h2>
+                  <p style={{ marginTop: 6, fontSize: 14.5, color: MUTED, maxWidth: 620, lineHeight: 1.6 }}>
+                    {bacaAliran(regime)}
+                  </p>
+                </div>
+                <span style={{
+                  fontSize: 12.5, fontWeight: 600, color: bacaRezim(regime).nada,
+                  background: bacaRezim(regime).latar, padding: '6px 12px', borderRadius: 999, flex: 'none',
+                }}>
+                  {tanggalPanjang(regime.date)}
+                </span>
               </div>
 
-              {(inflow.length > 0 || outflow.length > 0) && (
-                <div style={{ display: 'flex', gap: 28, flexWrap: 'wrap', marginTop: 20, paddingTop: 16, borderTop: `1px solid ${HAIR}` }}>
-                  <SectorList title="Dituju asing" rows={inflow} color={UP} />
-                  <SectorList title="Ditinggalkan asing" rows={outflow} color={DOWN} />
+              <div className="bm-metrics" style={{ display: 'grid', gap: 18 }}>
+                <Metrik
+                  label="Aliran asing hari ini"
+                  nilai={rupiah(regime.total_foreign_net_value)}
+                  warna={(regime.total_foreign_net_value ?? 0) < 0 ? DOWN : UP}
+                  catatan={(regime.total_foreign_net_value ?? 0) < 0 ? 'dana keluar dari pasar' : 'dana masuk ke pasar'}
+                />
+                <Metrik
+                  label="Saham yang naik"
+                  nilai={regime.breadth !== null ? `${Math.round(regime.breadth * 100)}%` : '—'}
+                  warna={(regime.breadth ?? 0) >= 0.5 ? UP : DOWN}
+                  catatan="dari saham yang bergerak"
+                />
+                <Metrik
+                  label="Gerak pasar"
+                  nilai={regime.market_return_pct !== null ? `${regime.market_return_pct >= 0 ? '+' : ''}${regime.market_return_pct.toFixed(2)}%` : '—'}
+                  warna={(regime.market_return_pct ?? 0) >= 0 ? UP : DOWN}
+                  catatan="tertimbang nilai transaksi"
+                />
+                <Metrik
+                  label="Ayunan harga"
+                  nilai={regime.volatility_regime === 'VOLATILE' ? 'Bergejolak' : 'Tenang'}
+                  warna={regime.volatility_regime === 'VOLATILE' ? AMBER : UP}
+                  catatan={regime.market_volatility_20d !== null ? `stdev ${regime.market_volatility_20d.toFixed(2)}% (20 hari)` : ''}
+                />
+              </div>
+            </div>
+
+            {/* ── Laporan + sektor ─────────────────────────────────────── */}
+            <div className="bm-grid" style={{ display: 'grid', gap: 24, marginBottom: 24 }}>
+              <div style={{ ...CARD, padding: 24 }}>
+                <p style={EYEBROW}>Laporan Harian</p>
+                {report ? (
+                  <>
+                    <h2 style={{ fontSize: 20, fontWeight: 700, lineHeight: 1.35, letterSpacing: '-.01em', marginBottom: 12 }}>
+                      {report.headline}
+                    </h2>
+                    <div style={{ fontSize: 14.5, color: MUTED, lineHeight: 1.75, whiteSpace: 'pre-wrap' }}>
+                      {report.narrative}
+                    </div>
+                    <p style={{ fontFamily: MONO, fontSize: 10.5, color: FAINT, marginTop: 16 }}>
+                      ditulis {report.model} · {tanggalPanjang(report.date)}
+                    </p>
+                  </>
+                ) : (
+                  <p style={{ fontSize: 14.5, color: MUTED, lineHeight: 1.7 }}>
+                    Belum ada laporan untuk hari ini. Angka di bawah tetap terbaca tanpa laporan.
+                  </p>
+                )}
+              </div>
+
+              <div style={{ ...CARD, padding: 24 }}>
+                <p style={EYEBROW}>Rotasi Sektor</p>
+                <p style={{ fontSize: 13, color: FAINT, marginBottom: 16, lineHeight: 1.55 }}>
+                  Sektor mana yang dituju dan ditinggalkan dana asing hari ini.
+                </p>
+
+                <DaftarSektor judul="Dituju" rows={masuk} warna={UP} />
+                {masuk.length > 0 && keluar.length > 0 && (
+                  <div style={{ height: 1, background: HAIR, margin: '16px 0' }} />
+                )}
+                <DaftarSektor judul="Ditinggalkan" rows={keluar} warna={DOWN} />
+              </div>
+            </div>
+
+            {/* ── Top akumulasi ────────────────────────────────────────── */}
+            <div style={{ ...CARD, padding: '24px 0 8px' }}>
+              <div style={{ padding: '0 24px' }}>
+                <p style={EYEBROW}>Top Akumulasi</p>
+                <p style={{ fontSize: 13.5, color: MUTED, marginBottom: 16, lineHeight: 1.6, maxWidth: 680 }}>
+                  Peringkat <strong>relatif</strong> terhadap saham lain hari ini
+                  {(regime.total_foreign_net_value ?? 0) < 0 && (
+                    <> — saat asing menjual pasar, ini berarti <em>paling sedikit ditinggalkan</em>, bukan diborong</>
+                  )}
+                  . Klik baris untuk melihat buktinya.
+                </p>
+              </div>
+
+              {(top?.data.length ?? 0) === 0 ? (
+                <p style={{ padding: '0 24px 20px', fontSize: 14.5, color: MUTED }}>
+                  Tak ada saham yang lolos ambang hari ini.
+                </p>
+              ) : (
+                <div className="bm-rows">
+                  {top?.data.map(pick => (
+                    <BarisSaham
+                      key={pick.ticker}
+                      pick={pick}
+                      open={expanded === pick.ticker}
+                      onToggle={() => setExpanded(expanded === pick.ticker ? null : pick.ticker)}
+                    />
+                  ))}
                 </div>
               )}
-            </section>
+            </div>
 
-            {/* 2 — Laporan Gemini */}
-            <section style={{ ...CARD, padding: 20, marginBottom: 18 }}>
-              <h2 style={{ fontSize: 12, fontWeight: 700, letterSpacing: '.12em', color: FAINT, marginBottom: 14 }}>
-                LAPORAN HARIAN
-              </h2>
-              {report ? (
-                <>
-                  <h3 style={{ fontSize: 18, fontWeight: 700, lineHeight: 1.35, marginBottom: 10 }}>{report.headline}</h3>
-                  <p style={{ whiteSpace: 'pre-wrap', color: MUTED, fontSize: 14.5, lineHeight: 1.7 }}>{report.narrative}</p>
-                  <p style={{ fontFamily: MONO, fontSize: 11, color: FAINT, marginTop: 14 }}>
-                    ditulis {report.model} · {report.date}
-                  </p>
-                </>
-              ) : (
-                <p style={{ color: MUTED, fontSize: 14.5 }}>
-                  Belum ada laporan. Set <code style={{ fontFamily: MONO }}>GEMINI_API_KEY</code> lalu jalankan{' '}
-                  <code style={{ fontFamily: MONO }}>scripts/bigmoney_report.py</code>. Angka di bawah tetap terbaca tanpa laporan.
-                </p>
-              )}
-            </section>
+            <TautanTelegram />
 
-            {/* 3 — Top akumulasi */}
-            <section style={{ ...CARD, padding: 20 }}>
-              <h2 style={{ fontSize: 12, fontWeight: 700, letterSpacing: '.12em', color: FAINT, marginBottom: 4 }}>
-                TOP AKUMULASI
-              </h2>
-              <p style={{ fontSize: 12.5, color: FAINT, marginBottom: 16 }}>
-                Peringkat relatif terhadap saham lain hari itu. Klik baris untuk melihat rincian skornya.
-              </p>
-
-              {(top?.data.length ?? 0) === 0 && (
-                <p style={{ color: MUTED, fontSize: 14.5 }}>Tak ada saham yang lolos ambang hari ini.</p>
-              )}
-
-              <div style={{ display: 'flex', flexDirection: 'column' }}>
-                {top?.data.map(pick => (
-                  <PickRow
-                    key={pick.ticker}
-                    pick={pick}
-                    open={expanded === pick.ticker}
-                    onToggle={() => setExpanded(expanded === pick.ticker ? null : pick.ticker)}
-                  />
-                ))}
-              </div>
-            </section>
-
-            <TelegramLink />
-
-            <p style={{ fontSize: 12, color: FAINT, lineHeight: 1.65, marginTop: 20 }}>
+            <p style={{ fontSize: 12, color: FAINT, lineHeight: 1.7, marginTop: 20, maxWidth: 760 }}>
               {top?.disclaimer || regime.disclaimer}
             </p>
           </>
         )}
-      </main>
+      </div>
+
+      <style jsx global>{`
+        .bm-metrics {
+          grid-template-columns: repeat(4, 1fr);
+        }
+        .bm-grid {
+          grid-template-columns: 1.6fr 1fr;
+        }
+        @media (max-width: 900px) {
+          .bm-metrics { grid-template-columns: repeat(2, 1fr) !important; }
+          .bm-grid { grid-template-columns: 1fr !important; }
+        }
+        .bm-rows > div {
+          border-top: 1px solid #F2F1EC;
+        }
+        .bm-row {
+          transition: background .14s ease;
+        }
+        .bm-row:hover {
+          background: #FBFBF9;
+        }
+        ::selection {
+          background: color-mix(in oklab, ${ACCENT}, white 70%);
+        }
+      `}</style>
+    </main>
+  );
+}
+
+// ── Komponen ───────────────────────────────────────────────────
+
+function Metrik({ label, nilai, warna, catatan }: { label: string; nilai: string; warna: string; catatan?: string }) {
+  return (
+    <div>
+      <div style={{ fontSize: 12, color: FAINT, marginBottom: 5 }}>{label}</div>
+      <div style={{ fontFamily: MONO, fontSize: 17, fontWeight: 600, color: warna, letterSpacing: '-.01em' }}>{nilai}</div>
+      {catatan && <div style={{ fontSize: 11.5, color: FAINT, marginTop: 3 }}>{catatan}</div>}
     </div>
   );
 }
 
-/** Penautan Telegram. Kode sekali pakai, bukan email: bukti kepemilikannya adalah
- *  sesi login ini. Kode tampil sekali dan kedaluwarsa — tidak disimpan di klien. */
-function TelegramLink() {
+function DaftarSektor({ judul, rows, warna }: { judul: string; rows: [string, number][]; warna: string }) {
+  if (rows.length === 0) return null;
+  return (
+    <div>
+      <div style={{ fontSize: 11.5, color: FAINT, marginBottom: 8, fontWeight: 600 }}>{judul}</div>
+      {rows.map(([sektor, nilai]) => (
+        <div key={sektor} style={{ display: 'flex', justifyContent: 'space-between', gap: 14, padding: '5px 0', fontSize: 13.5 }}>
+          <span>{sektor}</span>
+          <span style={{ fontFamily: MONO, fontSize: 12.5, fontWeight: 600, color: warna, flex: 'none' }}>
+            {rupiah(nilai)}
+          </span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function BarisSaham({ pick, open, onToggle }: { pick: BigMoneyPick; open: boolean; onToggle: () => void }) {
+  const konviksi = KONVIKSI[pick.conviction] ?? KONVIKSI.WEAK;
+  const naik = (pick.change_pct ?? 0) >= 0;
+
+  return (
+    <div>
+      <button
+        onClick={onToggle}
+        className="bm-row"
+        style={{
+          width: '100%', display: 'flex', alignItems: 'center', gap: 14, padding: '13px 24px',
+          background: 'none', border: 'none', cursor: 'pointer', textAlign: 'left', fontFamily: SANS,
+        }}
+      >
+        <span style={{ fontFamily: MONO, fontSize: 12, color: FAINT, width: 18, flex: 'none' }}>{pick.rank}</span>
+
+        <span style={{ display: 'flex', flexDirection: 'column', gap: 3, flex: 1, minWidth: 0 }}>
+          <span style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+            <span style={{ fontWeight: 700, fontSize: 14.5 }}>{pick.ticker}</span>
+            <span style={{ fontSize: 11, fontWeight: 600, color: warnaFase(pick.phase) }}>
+              {FASE[pick.phase] ?? pick.phase}
+            </span>
+            {pick.flags?.pump_dump_risk && (
+              <span style={{ fontSize: 10.5, fontWeight: 700, color: '#fff', background: DOWN, padding: '2px 7px', borderRadius: 999 }}>
+                RISIKO PUMP
+              </span>
+            )}
+            {pick.flags?.divergence && (
+              <span style={{ fontSize: 10.5, fontWeight: 600, color: AMBER, background: AMBER_BG, padding: '2px 7px', borderRadius: 999 }}>
+                divergensi
+              </span>
+            )}
+          </span>
+          <span style={{ fontSize: 12, color: FAINT }}>
+            asing {rupiah(pick.foreign_net_value)} · beli bersih {pick.days_confirmed ?? 0} hari beruntun
+          </span>
+        </span>
+
+        {pick.close !== null && (
+          <span className="hidden sm:flex" style={{ alignItems: 'center', gap: 8, flex: 'none' }}>
+            <span style={{ fontFamily: MONO, fontSize: 13, fontWeight: 600 }}>
+              {pick.close.toLocaleString('id-ID')}
+            </span>
+            {pick.change_pct !== null && (
+              <span style={{
+                fontFamily: MONO, fontSize: 11, fontWeight: 600, color: naik ? UP : DOWN,
+                background: naik ? UP_BG : DOWN_BG, padding: '2px 7px', borderRadius: 6,
+                minWidth: 64, textAlign: 'right',
+              }}>
+                {naik ? '▲' : '▼'} {Math.abs(pick.change_pct).toFixed(2)}%
+              </span>
+            )}
+          </span>
+        )}
+
+        <span style={{ textAlign: 'right', flex: 'none', width: 74 }}>
+          <span style={{ display: 'block', fontFamily: MONO, fontSize: 15, fontWeight: 700 }}>
+            {pick.composite?.toFixed(0) ?? '—'}
+          </span>
+          <span style={{
+            fontSize: 10.5, fontWeight: 600, color: konviksi.warna, background: konviksi.latar,
+            padding: '1px 7px', borderRadius: 999,
+          }}>
+            {konviksi.label}
+          </span>
+        </span>
+      </button>
+
+      {open && pick.subscores && (
+        <div style={{ padding: '2px 24px 18px 56px', display: 'flex', flexDirection: 'column', gap: 8 }}>
+          {SINYAL.map(([key, label, penjelasan]) => {
+            const skor = pick.subscores![key] ?? 0;
+            return (
+              <div key={key} style={{ display: 'flex', alignItems: 'center', gap: 12 }} title={penjelasan}>
+                <span style={{ fontSize: 12.5, color: MUTED, width: 118, flex: 'none' }}>{label}</span>
+                <span style={{ flex: 1, height: 6, background: '#F2F1EC', borderRadius: 999, overflow: 'hidden', maxWidth: 300 }}>
+                  <span style={{ display: 'block', width: `${skor}%`, height: '100%', background: ACCENT, borderRadius: 999 }} />
+                </span>
+                <span style={{ fontFamily: MONO, fontSize: 11.5, color: FAINT, width: 24, textAlign: 'right', flex: 'none' }}>
+                  {skor.toFixed(0)}
+                </span>
+              </div>
+            );
+          })}
+          <p style={{ fontSize: 11.5, color: FAINT, marginTop: 4, lineHeight: 1.6 }}>
+            Nilai 0–100 adalah peringkat terhadap saham lain pada hari yang sama, bukan nilai mutlak.
+          </p>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** Penautan Telegram. Kode sekali pakai, bukan email: bukti kepemilikannya sesi login ini. */
+function TautanTelegram() {
   const [code, setCode] = useState<TelegramLinkCode | null>(null);
   const [busy, setBusy] = useState(false);
   const [failed, setFailed] = useState(false);
@@ -252,26 +483,23 @@ function TelegramLink() {
     setBusy(true);
     setFailed(false);
     const issued = await api.issueTelegramCode();
-    if (issued) setCode(issued);
-    else setFailed(true);
+    if (issued) setCode(issued); else setFailed(true);
     setBusy(false);
   };
 
   return (
-    <section style={{ ...CARD, padding: 20, marginTop: 18 }}>
-      <h2 style={{ fontSize: 12, fontWeight: 700, letterSpacing: '.12em', color: FAINT, marginBottom: 6 }}>
-        NOTIFIKASI TELEGRAM
-      </h2>
-      <p style={{ fontSize: 13.5, color: MUTED, marginBottom: 14, lineHeight: 1.6 }}>
-        Terima laporan harian ini otomatis tiap sore lewat bot Telegram EMETIQ.
+    <div style={{ ...CARD, padding: 24, marginTop: 24 }}>
+      <p style={EYEBROW}>Notifikasi Telegram</p>
+      <p style={{ fontSize: 14, color: MUTED, marginBottom: 14, lineHeight: 1.6 }}>
+        Terima laporan ini otomatis tiap sore lewat bot Telegram EMETIQ.
       </p>
 
       {code ? (
-        <div>
+        <>
           <div style={{
-            fontFamily: MONO, fontSize: 22, fontWeight: 700, letterSpacing: '.12em',
-            color: ACCENT, background: `color-mix(in oklab, ${ACCENT}, white 92%)`,
-            padding: '12px 16px', borderRadius: 12, display: 'inline-block',
+            fontFamily: MONO, fontSize: 21, fontWeight: 700, letterSpacing: '.14em', color: ACCENT,
+            background: `color-mix(in oklab, ${ACCENT}, white 92%)`, padding: '12px 18px',
+            borderRadius: 12, display: 'inline-block',
           }}>
             {code.code}
           </div>
@@ -279,14 +507,14 @@ function TelegramLink() {
             Kirim <code style={{ fontFamily: MONO, color: INK }}>/start {code.code}</code> ke bot Telegram EMETIQ.
             Kode hangus setelah dipakai dan kedaluwarsa dalam {code.expires_in_minutes} menit.
           </p>
-        </div>
+        </>
       ) : (
         <button
           onClick={request}
           disabled={busy}
           style={{
             background: '#fff', border: `1px solid ${HAIR}`, color: INK, fontFamily: SANS,
-            fontWeight: 600, fontSize: 13.5, padding: '9px 15px', borderRadius: 10,
+            fontWeight: 600, fontSize: 13.5, padding: '9px 16px', borderRadius: 11,
             cursor: busy ? 'default' : 'pointer', opacity: busy ? 0.6 : 1,
           }}
         >
@@ -294,105 +522,7 @@ function TelegramLink() {
         </button>
       )}
 
-      {failed && (
-        <p style={{ fontSize: 13, color: DOWN, marginTop: 10 }}>
-          Gagal membuat kode. Coba lagi.
-        </p>
-      )}
-    </section>
-  );
-}
-
-function Metric({ label, value, color }: { label: string; value: string; color: string }) {
-  return (
-    <div>
-      <div style={{ fontSize: 11.5, color: FAINT, marginBottom: 4 }}>{label}</div>
-      <div style={{ fontSize: 16, fontWeight: 700, color, fontFamily: MONO }}>{value}</div>
-    </div>
-  );
-}
-
-function SectorList({ title, rows, color }: { title: string; rows: [string, number][]; color: string }) {
-  if (rows.length === 0) return null;
-  return (
-    <div style={{ minWidth: 190 }}>
-      <div style={{ fontSize: 11.5, color: FAINT, marginBottom: 8 }}>{title}</div>
-      {rows.map(([sector, value]) => (
-        <div key={sector} style={{ display: 'flex', justifyContent: 'space-between', gap: 16, fontSize: 13.5, padding: '3px 0' }}>
-          <span style={{ color: INK }}>{sector}</span>
-          <span style={{ fontFamily: MONO, color, fontSize: 12.5 }}>{rupiah(value)}</span>
-        </div>
-      ))}
-    </div>
-  );
-}
-
-function PickRow({ pick, open, onToggle }: { pick: BigMoneyPick; open: boolean; onToggle: () => void }) {
-  const risky = pick.flags?.pump_dump_risk;
-  const diverging = pick.flags?.divergence;
-
-  return (
-    <div style={{ borderTop: `1px solid ${HAIR}` }}>
-      <button
-        onClick={onToggle}
-        style={{
-          width: '100%', display: 'flex', alignItems: 'center', gap: 12, padding: '13px 2px',
-          background: 'none', border: 'none', cursor: 'pointer', textAlign: 'left', fontFamily: SANS,
-        }}
-      >
-        <span style={{ fontFamily: MONO, fontSize: 12, color: FAINT, width: 20 }}>{pick.rank}</span>
-
-        <span style={{ display: 'flex', flexDirection: 'column', gap: 2, flex: 1, minWidth: 0 }}>
-          <span style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-            <span style={{ fontWeight: 700, fontSize: 15 }}>{pick.ticker}</span>
-            <span style={{ fontSize: 11, fontWeight: 700, color: phaseColor(pick.phase) }}>{pick.phase}</span>
-            {risky && (
-              <span style={{ fontSize: 10.5, fontWeight: 700, color: '#fff', background: DOWN, padding: '2px 7px', borderRadius: 999 }}>
-                RISIKO PUMP
-              </span>
-            )}
-            {diverging && (
-              <span style={{ fontSize: 10.5, fontWeight: 700, color: AMBER }}>DIVERGENSI</span>
-            )}
-          </span>
-          <span style={{ fontSize: 12, color: FAINT }}>
-            asing {rupiah(pick.foreign_net_value)} · {pick.days_confirmed ?? 0} hari beruntun
-          </span>
-        </span>
-
-        <span style={{ textAlign: 'right' }}>
-          <span style={{ display: 'block', fontFamily: MONO, fontSize: 15, fontWeight: 700 }}>
-            {pick.composite?.toFixed(0) ?? '—'}
-          </span>
-          <span style={{ fontSize: 11, fontWeight: 700, color: convictionColor(pick.conviction) }}>
-            {pick.conviction}
-          </span>
-        </span>
-      </button>
-
-      {open && pick.subscores && (
-        <div style={{ padding: '4px 2px 16px 32px', display: 'flex', flexDirection: 'column', gap: 7 }}>
-          {SIGNAL_LABELS.map(([key, label]) => {
-            const score = pick.subscores![key] ?? 0;
-            return (
-              <div key={key} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                <span style={{ fontSize: 12, color: MUTED, width: 100 }}>{label}</span>
-                <span style={{ flex: 1, height: 5, background: HAIR, borderRadius: 999, overflow: 'hidden', maxWidth: 260 }}>
-                  <span style={{ display: 'block', width: `${score}%`, height: '100%', background: ACCENT }} />
-                </span>
-                <span style={{ fontFamily: MONO, fontSize: 11.5, color: FAINT, width: 26, textAlign: 'right' }}>
-                  {score.toFixed(0)}
-                </span>
-              </div>
-            );
-          })}
-          {pick.close !== null && (
-            <p style={{ fontSize: 12, color: FAINT, marginTop: 4 }}>
-              Harga {pick.close.toLocaleString('id-ID')} · {pick.change_pct?.toFixed(2) ?? '—'}% hari ini
-            </p>
-          )}
-        </div>
-      )}
+      {failed && <p style={{ fontSize: 13, color: DOWN, marginTop: 10 }}>Gagal membuat kode. Coba lagi.</p>}
     </div>
   );
 }
