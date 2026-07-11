@@ -28,8 +28,11 @@ def stages(mocker):
             return_value=EngineResult(date=TARGET, trading_day=True, scored=273, strong=3, watch=88),
         ),
         "report": mocker.patch(
-            "services.bigmoney.pipeline.generate_report",
-            return_value=mocker.Mock(headline="Asing keluar dari Finance"),
+            "services.bigmoney.pipeline.run_report",
+            return_value=mocker.Mock(
+                headline="Asing keluar dari Finance",
+                context={"broadcast": {"worthy": True, "reason": "3 saham STRONG"}},
+            ),
         ),
         "configured": mocker.patch("services.bigmoney.pipeline.is_configured", return_value=True),
         "broadcast": mocker.patch("services.bigmoney.pipeline.broadcast_report", return_value=2),
@@ -103,6 +106,20 @@ def test_pipeline_survives_telegram_failure(stages):
 
     assert result.scored == 273
     assert result.broadcast_sent == 0
+
+
+def test_pipeline_does_not_broadcast_on_a_quiet_day(stages, mocker):
+    """Supervisor menilai hari ini membosankan: laporan tetap disimpan, Telegram diam."""
+    stages["report"].return_value = mocker.Mock(
+        headline="Pasar sepi",
+        context={"broadcast": {"worthy": False, "reason": "hari tenang"}},
+    )
+
+    result = run_daily_pipeline(TARGET, db=object())
+
+    assert result.headline == "Pasar sepi"
+    assert result.broadcast_sent == 0
+    stages["broadcast"].assert_not_called()
 
 
 def test_pipeline_does_not_broadcast_without_report(stages):

@@ -14,10 +14,10 @@ from datetime import date
 
 from sqlalchemy.orm import Session
 
+from services.bigmoney.agents.supervisor import run_report
 from services.bigmoney.engine import compute_scores
 from services.bigmoney.ingest import ingest_stock_summary
 from services.bigmoney.llm import LlmError, is_configured
-from services.bigmoney.report_generator import generate_report
 from services.bigmoney.telegram import broadcast_report
 
 logger = logging.getLogger("bigmoney.pipeline")
@@ -73,7 +73,7 @@ def run_daily_pipeline(target: date, db: Session, with_report: bool = True) -> P
         return PipelineResult(**base, report_skipped=True)
 
     try:
-        report = generate_report(target, db)
+        report = run_report(target, db)
     except LlmError as exc:
         # Skor sudah ter-commit oleh compute_scores; kegagalan LLM tak boleh menghapusnya.
         logger.error("%s laporan GAGAL: %s", target, exc)
@@ -81,6 +81,13 @@ def run_daily_pipeline(target: date, db: Session, with_report: bool = True) -> P
 
     headline = report.headline if report else None
     logger.info("%s laporan: %s", target, headline)
+
+    # Supervisor memutuskan hari ini layak dikabarkan atau tidak. Hari yang membosankan
+    # tetap tersimpan dan tetap terbaca di halaman — cuma tak mengganggu siapa pun.
+    broadcast = ((report.context or {}).get("broadcast") if report else None) or {}
+    if broadcast.get("worthy") is False:
+        logger.info("%s tak di-broadcast: %s", target, broadcast.get("reason"))
+        return PipelineResult(**base, headline=headline)
 
     # Telegram adalah lapisan pemberitahuan, bukan data. Kegagalannya dicatat, tak
     # pernah dilempar: laporan yang tak terkirim jauh lebih ringan daripada pipeline
