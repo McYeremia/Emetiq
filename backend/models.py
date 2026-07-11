@@ -1,5 +1,5 @@
 import datetime
-from sqlalchemy import Column, Integer, BigInteger, String, Float, Date, DateTime, ForeignKey, UniqueConstraint, func, JSON
+from sqlalchemy import Column, Integer, BigInteger, String, Float, Date, DateTime, ForeignKey, UniqueConstraint, func, JSON, Text
 from sqlalchemy.orm import relationship
 from database import Base
 
@@ -346,3 +346,26 @@ class BigMoneyTopAccumulation(Base):
     phase       = Column(String(12))
 
     computed_at = Column(DateTime, server_default=func.now())
+
+
+class BigMoneyDailyReport(Base):
+    """Laporan harian berbahasa manusia, ditulis Gemini dari skor dan rezim.
+
+    `context` menyimpan angka persis yang disodorkan ke model. Tanpa itu, laporan
+    lama tak bisa diaudit: kita takkan tahu apakah kalimatnya salah karena
+    modelnya mengarang atau karena datanya memang begitu.
+
+    Gemini di sini terpisah total dari Groq, yang tetap milik AI Advisor EMETIQ.
+    """
+    __tablename__ = "bigmoney_daily_report"
+    __table_args__ = (UniqueConstraint("date", name="uq_bmdr_date"),)
+
+    id           = Column(Integer, primary_key=True, index=True)
+    date         = Column(Date, nullable=False, index=True)
+
+    headline     = Column(String(300))
+    narrative    = Column(Text)
+    context      = Column(JSON)      # angka yang disodorkan ke model — untuk audit
+    model        = Column(String(50))
+
+    generated_at = Column(DateTime, server_default=func.now())

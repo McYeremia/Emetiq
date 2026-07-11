@@ -63,8 +63,13 @@ def test_generate_text_rejects_empty_response(monkeypatch, mocker):
 
 
 def test_llm_module_does_not_import_groq():
-    """Batas tegas: fitur ini pakai Gemini, Groq tetap milik AI Advisor."""
+    """Batas tegas: fitur ini pakai Gemini, Groq tetap milik AI Advisor.
+
+    Yang dilarang adalah impornya, bukan penyebutannya — docstring modul justru
+    perlu menyebut Groq untuk menjelaskan batas itu.
+    """
     import inspect
+    import re
 
     source = inspect.getsource(llm)
-    assert "groq" not in source.lower()
+    assert not re.search(r"^\s*(import groq|from groq)", source, re.MULTILINE | re.IGNORECASE)
