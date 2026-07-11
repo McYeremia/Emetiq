@@ -441,6 +441,14 @@ export const api = {
     const body = await res.json();
     return body.report ? body : null;   // belum ada laporan Gemini
   },
+
+  /** Kode sekali pakai untuk menautkan Telegram. Bukti kepemilikannya sesi login
+   *  ini — bukan email, yang siapa pun bisa menebaknya. */
+  async issueTelegramCode(): Promise<TelegramLinkCode | null> {
+    const res = await apiFetch(`${API_BASE_URL}/bigmoney/telegram/code`, { method: 'POST' });
+    if (!res.ok) return null;
+    return res.json();
+  },
 };
 
 export interface AdminUser {
@@ -523,4 +531,10 @@ export interface BigMoneyReport {
   model: string;
   generated_at: string | null;
   disclaimer: string;
+}
+
+export interface TelegramLinkCode {
+  code: string;
+  expires_in_minutes: number;
+  instruction: string;
 }

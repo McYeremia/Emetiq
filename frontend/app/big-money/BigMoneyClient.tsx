@@ -10,6 +10,7 @@ import {
   BigMoneyRegime,
   BigMoneyReport,
   BigMoneyTopAccumulation,
+  TelegramLinkCode,
 } from '@/lib/api';
 
 // ── EMETIQ theme tokens ────────────────────────────────────────
@@ -228,6 +229,8 @@ function BigMoneyInner() {
               </div>
             </section>
 
+            <TelegramLink />
+
             <p style={{ fontSize: 12, color: FAINT, lineHeight: 1.65, marginTop: 20 }}>
               {top?.disclaimer || regime.disclaimer}
             </p>
@@ -235,6 +238,68 @@ function BigMoneyInner() {
         )}
       </main>
     </div>
+  );
+}
+
+/** Penautan Telegram. Kode sekali pakai, bukan email: bukti kepemilikannya adalah
+ *  sesi login ini. Kode tampil sekali dan kedaluwarsa — tidak disimpan di klien. */
+function TelegramLink() {
+  const [code, setCode] = useState<TelegramLinkCode | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [failed, setFailed] = useState(false);
+
+  const request = async () => {
+    setBusy(true);
+    setFailed(false);
+    const issued = await api.issueTelegramCode();
+    if (issued) setCode(issued);
+    else setFailed(true);
+    setBusy(false);
+  };
+
+  return (
+    <section style={{ ...CARD, padding: 20, marginTop: 18 }}>
+      <h2 style={{ fontSize: 12, fontWeight: 700, letterSpacing: '.12em', color: FAINT, marginBottom: 6 }}>
+        NOTIFIKASI TELEGRAM
+      </h2>
+      <p style={{ fontSize: 13.5, color: MUTED, marginBottom: 14, lineHeight: 1.6 }}>
+        Terima laporan harian ini otomatis tiap sore lewat bot Telegram EMETIQ.
+      </p>
+
+      {code ? (
+        <div>
+          <div style={{
+            fontFamily: MONO, fontSize: 22, fontWeight: 700, letterSpacing: '.12em',
+            color: ACCENT, background: `color-mix(in oklab, ${ACCENT}, white 92%)`,
+            padding: '12px 16px', borderRadius: 12, display: 'inline-block',
+          }}>
+            {code.code}
+          </div>
+          <p style={{ fontSize: 13.5, color: MUTED, marginTop: 12, lineHeight: 1.6 }}>
+            Kirim <code style={{ fontFamily: MONO, color: INK }}>/start {code.code}</code> ke bot Telegram EMETIQ.
+            Kode hangus setelah dipakai dan kedaluwarsa dalam {code.expires_in_minutes} menit.
+          </p>
+        </div>
+      ) : (
+        <button
+          onClick={request}
+          disabled={busy}
+          style={{
+            background: '#fff', border: `1px solid ${HAIR}`, color: INK, fontFamily: SANS,
+            fontWeight: 600, fontSize: 13.5, padding: '9px 15px', borderRadius: 10,
+            cursor: busy ? 'default' : 'pointer', opacity: busy ? 0.6 : 1,
+          }}
+        >
+          {busy ? 'Membuat kode…' : 'Hubungkan Telegram'}
+        </button>
+      )}
+
+      {failed && (
+        <p style={{ fontSize: 13, color: DOWN, marginTop: 10 }}>
+          Gagal membuat kode. Coba lagi.
+        </p>
+      )}
+    </section>
   );
 }
 

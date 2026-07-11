@@ -192,6 +192,14 @@ class Profile(Base):
     tier       = Column(String(20), nullable=False, default="free")
     created_at = Column(DateTime, server_default=func.now())
 
+    # Tautan Telegram (fitur Big Money). Penautan memakai kode sekali pakai yang
+    # dibuat saat user SUDAH login — bukan dengan mengetik email di bot. Email itu
+    # identitas, bukan bukti kepemilikan: siapa pun yang tahu email orang lain akan
+    # bisa membajak notifikasinya.
+    telegram_chat_id         = Column(String(32), index=True)
+    telegram_link_code       = Column(String(12))
+    telegram_code_expires_at = Column(DateTime)
+
 
 class Watchlist(Base):
     """Watchlist per user (sebelumnya localStorage di frontend). Unik per (user, ticker)."""
@@ -369,3 +377,4 @@ class BigMoneyDailyReport(Base):
     model        = Column(String(50))
 
     generated_at = Column(DateTime, server_default=func.now())
+    sent_at      = Column(DateTime)  # penanda broadcast Telegram; NULL = belum terkirim

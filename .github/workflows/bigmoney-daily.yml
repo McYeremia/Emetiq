@@ -1,0 +1,48 @@
+name: Big Money Daily (ingest + skor + laporan)
+
+# Ambil ringkasan perdagangan IDX hari itu, hitung skor big money, lalu tulis
+# laporan Gemini. Hari non-bursa berhenti sendiri setelah ingest (IDX membalas nol
+# baris) dan job tetap hijau — akhir pekan bukan kegagalan.
+#
+# GEMINI_API_KEY bersifat opsional: tanpa key, skornya tetap dihitung dan hanya
+# tahap laporan yang dilewati.
+on:
+  schedule:
+    # 10:30 UTC = 17:30 WIB, hari kerja. Setelah pasar IDX tutup (16:00 WIB) dan
+    # data EOD terbit. Sengaja 30 menit setelah daily-sync agar keduanya tak
+    # berebut koneksi Supabase.
+    - cron: "30 10 * * 1-5"
+  workflow_dispatch:
+    inputs:
+      date:
+        description: "Tanggal YYYY-MM-DD (kosongkan untuk hari ini)"
+        required: false
+
+jobs:
+  bigmoney:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        working-directory: backend
+        run: pip install -r requirements.txt
+
+      - name: Pipeline Big Money ke Supabase
+        working-directory: backend
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          # Tanpa token, broadcast dilewati diam-diam; skor tetap tersimpan.
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+        run: |
+          if [ -n "${{ inputs.date }}" ]; then
+            python scripts/bigmoney_daily.py --date "${{ inputs.date }}"
+          else
+            python scripts/bigmoney_daily.py
+          fi

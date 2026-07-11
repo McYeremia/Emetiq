@@ -11,15 +11,20 @@ Router ini hanya MEMBACA. Perhitungan dijalankan lewat scripts/bigmoney_score.py
 dan scripts/bigmoney_report.py — tak ada endpoint yang memicu pipeline, supaya
 satu permintaan HTTP tak bisa menyandera worker selama berpuluh detik.
 """
+import logging
+import os
 from datetime import date
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from auth import CurrentUser, require_dev
 from database import get_db
 import models
+from services.bigmoney import telegram
+
+log = logging.getLogger("bigmoney.router")
 
 router = APIRouter(prefix="/bigmoney", tags=["bigmoney"])
 
@@ -148,3 +153,117 @@ def get_latest_report(
         "generated_at": report.generated_at.isoformat() if report.generated_at else None,
         "disclaimer": DISCLAIMER,
     }
+
+
+# ── Telegram ─────────────────────────────────────────────────────────────────
+#
+# Penautan akun memakai kode sekali pakai yang diterbitkan untuk user yang SEDANG
+# LOGIN. Spec lama meminta user mengetik email di bot; itu tak aman — email adalah
+# identitas, bukan bukti kepemilikan, dan siapa pun yang tahu email orang lain akan
+# bisa membajak notifikasinya.
+
+BOT_HELP = (
+    "Perintah:\n"
+    "/start &lt;kode&gt; — hubungkan akun EMETIQ\n"
+    "/report — laporan Big Money terakhir\n"
+    "/top — peringkat top akumulasi"
+)
+
+
+@router.post("/telegram/code")
+def issue_telegram_code(
+    db: Session = Depends(get_db),
+    user: CurrentUser = Depends(require_dev),
+):
+    """Terbitkan kode tautan sekali pakai untuk user yang sedang login."""
+    code = telegram.issue_link_code(user.id, db)
+    return {
+        "code": code,
+        "expires_in_minutes": telegram._CODE_TTL_MINUTES,
+        "instruction": f"Kirim /start {code} ke bot Telegram EMETIQ.",
+    }
+
+
+def _profile_by_chat(chat_id: str, db: Session) -> models.Profile | None:
+    return (
+        db.query(models.Profile)
+          .filter(models.Profile.telegram_chat_id == chat_id)
+          .one_or_none()
+    )
+
+
+def _handle_command(text: str, chat_id: str, db: Session) -> str:
+    """Perintah bot → teks balasan. Tanpa I/O Telegram, supaya bisa diuji langsung."""
+    command, _, argument = text.strip().partition(" ")
+    command = command.lower()
+
+    if command == "/start":
+        code = argument.strip()
+        if not code:
+            return ("Kirim kode tautan Anda: <code>/start KODE</code>\n\n"
+                    "Kode dibuat di halaman Big Money EMETIQ setelah Anda masuk.")
+        if telegram.link_chat(code, chat_id, db):
+            return "✅ Akun terhubung. Laporan Big Money harian akan dikirim ke sini."
+        return "❌ Kode tidak valid atau sudah kedaluwarsa. Buat kode baru di halaman Big Money."
+
+    profile = _profile_by_chat(chat_id, db)
+    if profile is None:
+        return ("Chat ini belum terhubung ke akun EMETIQ. "
+                "Buat kode di halaman Big Money lalu kirim <code>/start KODE</code>.")
+
+    if command == "/report":
+        report = (
+            db.query(models.BigMoneyDailyReport)
+              .order_by(models.BigMoneyDailyReport.date.desc())
+              .first()
+        )
+        if report is None:
+            return "Belum ada laporan."
+        return telegram.format_report(report)
+
+    if command == "/top":
+        latest = _latest_date(db, models.BigMoneyTopAccumulation.date)
+        if latest is None:
+            return "Belum ada peringkat."
+        context = (
+            db.query(models.BigMoneyDailyReport)
+              .filter(models.BigMoneyDailyReport.date == latest)
+              .one_or_none()
+        )
+        picks = (context.context or {}).get("top_accumulation", []) if context else []
+        return telegram.render_top(latest, picks)
+
+    return BOT_HELP
+
+
+@router.post("/telegram/webhook")
+async def telegram_webhook(
+    request: Request,
+    secret: str | None = Header(None, alias="X-Telegram-Bot-Api-Secret-Token"),
+    db: Session = Depends(get_db),
+):
+    """Terima update dari Telegram.
+
+    Tak bisa memakai auth Supabase — pemanggilnya Telegram, bukan browser user.
+    Penggantinya secret_token yang disetel saat mendaftarkan webhook; tanpa itu,
+    siapa pun di internet bisa memberi perintah atas nama chat mana pun.
+
+    SELALU membalas 200: galat internal yang membalas 5xx membuat Telegram
+    mengulang update yang sama berkali-kali.
+    """
+    expected = os.getenv("TELEGRAM_WEBHOOK_SECRET")
+    if not expected or secret != expected:
+        raise HTTPException(status_code=403, detail="Secret token tidak cocok")
+
+    try:
+        update = await request.json()
+        message = update.get("message") or {}
+        chat_id = str((message.get("chat") or {}).get("id") or "")
+        text = message.get("text") or ""
+
+        if chat_id and text:
+            telegram.send_message(chat_id, _handle_command(text, chat_id, db))
+    except Exception as exc:   # noqa: BLE001 — lihat docstring: jangan memancing pengulangan
+        log.error("Gagal memproses update Telegram: %s", exc)
+
+    return {"ok": True}
