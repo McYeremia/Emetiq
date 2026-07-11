@@ -47,9 +47,17 @@ def session_factory():
         weight_set="VOLATILE", days_confirmed=2, s_relative_foreign_flow=99.0,
         s_foreign_persistence=70.0, s_big_ticket=88.0, s_cost_basis=60.0, s_volume_price=55.0,
         flags={"divergence": False, "pump_dump_risk": False}))
+    # Partisipasi asing CUAN: (180rb + 60rb) / (2 × 1jt) = 12%. Sisanya domestik.
     db.add(models.BigMoneyStockDaily(
         date=TARGET, ticker="CUAN", close=1500.0, volume=1_000_000, value=2_000_000_000,
-        change_pct=1.2, foreign_net=500, foreign_net_value=16_230_000_000, avg_ticket=2_000_000.0))
+        change_pct=1.2, foreign_net=500, foreign_net_value=16_230_000_000, avg_ticket=2_000_000.0,
+        foreign_buy=180_000, foreign_sell=60_000, foreign_participation=0.12))
+    # Saham kedua supaya agregat pasar bukan sekadar menyalin baris pertama:
+    # (240rb + 60rb) / (2 × 1,25jt) = 12%.
+    db.add(models.BigMoneyStockDaily(
+        date=TARGET, ticker="GOTO", close=90.0, volume=250_000, value=500_000_000,
+        change_pct=0.5, foreign_net=200, foreign_net_value=12_830_000_000, avg_ticket=1_000_000.0,
+        foreign_buy=40_000, foreign_sell=20_000, foreign_participation=0.24))
 
     db.add(models.BigMoneyDailyReport(
         date=TARGET, headline="Asing keluar dari Finance",
@@ -135,6 +143,25 @@ def test_top_accumulation_carries_evidence_for_the_ui(make_client):
     assert row["flags"]["pump_dump_risk"] is False
 
 
+def test_top_accumulation_exposes_foreign_participation(make_client):
+    """Pembaca harus tahu berapa persen perdagangan yang BUKAN asing.
+
+    Sinyal ini hanya melihat sisi asing. Kalau partisipasi asing cuma 12%, maka 88%
+    aktivitas saham itu domestik dan tak terlihat sama sekali oleh engine — dan
+    menyembunyikan fakta itu membuat pembaca mengira ia melihat seluruh meja.
+    """
+    row = make_client().get("/bigmoney/top-accumulation").json()["data"][0]
+
+    assert row["foreign_participation"] == pytest.approx(0.12)
+
+
+def test_regime_exposes_market_foreign_participation(make_client):
+    """Agregat pasar: 2 saham, (buy+sell) / (2 × volume) = 300rb / (2×1,25jt) = 12%."""
+    body = make_client().get("/bigmoney/regime").json()
+
+    assert body["foreign_participation"] == pytest.approx(0.12)
+
+
 def test_top_accumulation_includes_disclaimer(make_client):
     """Angka asing adalah estimasi; UI tak boleh menampilkannya tanpa peringatan."""
     body = make_client().get("/bigmoney/top-accumulation").json()
@@ -153,6 +180,66 @@ def test_top_accumulation_empty_when_never_scored(make_client, session_factory):
 
     assert body["date"] is None
     assert body["data"] == []
+
+
+# --- posisi ------------------------------------------------------------------
+
+def _seed_positions(factory):
+    db = factory()
+    db.add(models.BigMoneyPosition(
+        ticker="CUAN", status="ACTIVE", opened_on=EARLIER, last_date=TARGET,
+        entry_close=1000.0, last_close=1200.0, accumulated_value=8_000_000_000,
+        peak_value=10_000_000_000, inflow_days=4, distribution_days=0,
+        entry_score=68.0, last_score=85.0))
+    db.add(models.BigMoneyPosition(
+        ticker="LAMA", status="CLOSED", opened_on=date(2026, 6, 20), closed_on=EARLIER,
+        close_reason="OUTFLOW", entry_close=500.0, last_close=460.0,
+        accumulated_value=1_000_000_000, peak_value=9_000_000_000))
+    db.commit()
+    db.close()
+
+
+def test_positions_requires_dev_tier(make_client):
+    assert make_client(tier="pro").get("/bigmoney/positions").status_code == 403
+
+
+def test_positions_separates_active_from_closed(make_client, session_factory):
+    _seed_positions(session_factory)
+
+    body = make_client().get("/bigmoney/positions").json()
+
+    assert [p["ticker"] for p in body["active"]] == ["CUAN"]
+    assert [p["ticker"] for p in body["recently_closed"]] == ["LAMA"]
+
+
+def test_active_position_shows_progress_since_entry(make_client, session_factory):
+    """Yang membedakan posisi dari peringkat harian: perkembangannya bisa diikuti."""
+    _seed_positions(session_factory)
+
+    posisi = make_client().get("/bigmoney/positions").json()["active"][0]
+
+    assert posisi["price_change_pct"] == pytest.approx(20.0)      # 1000 → 1200
+    assert posisi["accumulated_value"] == 8_000_000_000
+    assert posisi["outflow_ratio"] == pytest.approx(0.2)          # Rp2M keluar dari puncak Rp10M
+    assert posisi["opened_on"] == "2026-07-09"
+
+
+def test_closed_position_records_why(make_client, session_factory):
+    """'Baru keluar' berguna hanya kalau alasannya ikut tercatat."""
+    _seed_positions(session_factory)
+
+    ditutup = make_client().get("/bigmoney/positions").json()["recently_closed"][0]
+
+    assert ditutup["close_reason"] == "OUTFLOW"
+    assert ditutup["closed_on"] == "2026-07-09"
+
+
+def test_positions_state_the_rules(make_client, session_factory):
+    """Aturan masuk-keluar harus terbaca pengguna, bukan tersembunyi di kode."""
+    body = make_client().get("/bigmoney/positions").json()
+
+    assert "3 dari 5" in body["rules"]["entry"]
+    assert "50%" in body["rules"]["exit"]
 
 
 # --- laporan -----------------------------------------------------------------

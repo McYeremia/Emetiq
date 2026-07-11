@@ -7,6 +7,8 @@ import { useAuth } from '@/components/AuthProvider';
 import {
   api,
   BigMoneyPick,
+  BigMoneyPosition,
+  BigMoneyPositions,
   BigMoneyRegime,
   BigMoneyReport,
   BigMoneyTopAccumulation,
@@ -129,8 +131,10 @@ function BigMoneyInner() {
   const [regime, setRegime] = useState<BigMoneyRegime | null>(null);
   const [top, setTop] = useState<BigMoneyTopAccumulation | null>(null);
   const [report, setReport] = useState<BigMoneyReport | null>(null);
+  const [positions, setPositions] = useState<BigMoneyPositions | null>(null);
   const [loaded, setLoaded] = useState(false);
   const [expanded, setExpanded] = useState<string | null>(null);
+  const [showAllPositions, setShowAllPositions] = useState(false);
 
   // Backend menolak non-dev dengan 403, jadi jangan meminta apa pun untuk mereka.
   const isDev = tier === 'dev';
@@ -138,8 +142,13 @@ function BigMoneyInner() {
 
   useEffect(() => {
     if (!isDev) return;
-    Promise.all([api.getBigMoneyRegime(), api.getBigMoneyTopAccumulation(), api.getBigMoneyReport()])
-      .then(([r, t, rep]) => { setRegime(r); setTop(t); setReport(rep); })
+    Promise.all([
+      api.getBigMoneyRegime(),
+      api.getBigMoneyTopAccumulation(),
+      api.getBigMoneyReport(),
+      api.getBigMoneyPositions(),
+    ])
+      .then(([r, t, rep, pos]) => { setRegime(r); setTop(t); setReport(rep); setPositions(pos); })
       .finally(() => setLoaded(true));
   }, [isDev]);
 
@@ -238,11 +247,33 @@ function BigMoneyInner() {
                   catatan="tertimbang nilai transaksi"
                 />
                 <Metrik
-                  label="Ayunan harga"
-                  nilai={regime.volatility_regime === 'VOLATILE' ? 'Bergejolak' : 'Tenang'}
-                  warna={regime.volatility_regime === 'VOLATILE' ? AMBER : UP}
-                  catatan={regime.market_volatility_20d !== null ? `stdev ${regime.market_volatility_20d.toFixed(2)}% (20 hari)` : ''}
+                  label="Ditransaksikan asing"
+                  nilai={regime.foreign_participation !== null ? `${(regime.foreign_participation * 100).toFixed(0)}%` : '—'}
+                  warna={INK}
+                  catatan={regime.foreign_participation !== null
+                    ? `sisanya ${(100 - regime.foreign_participation * 100).toFixed(0)}% domestik`
+                    : 'dari volume bursa'}
                 />
+              </div>
+
+              {/* Batas pengetahuan produk ini, ditulis terang-terangan. Pembaca yang mengira
+                  melihat seluruh pasar akan salah menafsirkan setiap angka di bawahnya. */}
+              <div style={{
+                marginTop: 20, paddingTop: 16, borderTop: `1px solid ${HAIR}`,
+                display: 'flex', gap: 10, alignItems: 'flex-start',
+              }}>
+                <span style={{ fontSize: 14, flex: 'none', lineHeight: 1.5 }}>👁️</span>
+                <p style={{ fontSize: 12.5, color: MUTED, lineHeight: 1.65 }}>
+                  <strong style={{ color: INK }}>Yang terlihat dan yang tidak.</strong>{' '}
+                  Halaman ini melacak <strong>aliran dana asing</strong> — satu-satunya sisi yang
+                  dipublikasikan IDX per saham. Perdagangan domestik
+                  {regime.foreign_participation !== null && (
+                    <> (sekitar {(100 - regime.foreign_participation * 100).toFixed(0)}% volume bursa hari ini)</>
+                  )}{' '}
+                  tidak terpisah datanya, sehingga akumulasi oleh institusi lokal tidak akan muncul di
+                  sini. &ldquo;Tidak ada akumulasi&rdquo; di halaman ini berarti{' '}
+                  <em>tidak ada akumulasi asing</em> — bukan tidak ada akumulasi sama sekali.
+                </p>
               </div>
             </div>
 
@@ -282,6 +313,63 @@ function BigMoneyInner() {
                 <DaftarSektor judul="Ditinggalkan" rows={keluar} warna={DOWN} />
               </div>
             </div>
+
+            {/* ── Akumulasi berjalan ───────────────────────────────────── */}
+            {positions && positions.active.length > 0 && (
+              <div style={{ ...CARD, padding: '24px 0 8px', marginBottom: 24 }}>
+                <div style={{ padding: '0 24px' }}>
+                  <p style={EYEBROW}>Akumulasi Berjalan</p>
+                  <p style={{ fontSize: 13.5, color: MUTED, marginBottom: 4, lineHeight: 1.6, maxWidth: 700 }}>
+                    Berbeda dari peringkat harian di bawah, daftar ini <strong>tidak berganti tiap hari</strong>.
+                    Saham bertahan di sini selama akumulasi asingnya masih hidup — jadi perkembangannya
+                    bisa diikuti.
+                  </p>
+                  <p style={{ fontSize: 12, color: FAINT, marginBottom: 16, lineHeight: 1.6, maxWidth: 700 }}>
+                    Masuk: {positions.rules.entry} Keluar: {positions.rules.exit}
+                  </p>
+                </div>
+
+                <div className="bm-rows">
+                  {(showAllPositions ? positions.active : positions.active.slice(0, 15)).map(p => (
+                    <BarisPosisi key={p.ticker} posisi={p} />
+                  ))}
+                </div>
+
+                {positions.active.length > 15 && (
+                  <div style={{ padding: '12px 24px 8px' }}>
+                    <button
+                      onClick={() => setShowAllPositions(!showAllPositions)}
+                      style={{
+                        background: 'none', border: 'none', color: ACCENT, fontFamily: SANS,
+                        fontWeight: 600, fontSize: 13, cursor: 'pointer', padding: 0,
+                      }}
+                    >
+                      {showAllPositions
+                        ? 'Tampilkan 15 teratas saja'
+                        : `Tampilkan ${positions.active.length - 15} posisi lainnya`}
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* ── Baru keluar ──────────────────────────────────────────── */}
+            {positions && positions.recently_closed.length > 0 && (
+              <div style={{ ...CARD, padding: '24px 0 8px', marginBottom: 24 }}>
+                <div style={{ padding: '0 24px' }}>
+                  <p style={EYEBROW}>Baru Keluar</p>
+                  <p style={{ fontSize: 13.5, color: MUTED, marginBottom: 16, lineHeight: 1.6, maxWidth: 700 }}>
+                    Akumulasi yang sudah berakhir — asing melepas lebih dari separuh yang pernah ia
+                    kumpulkan, atau mendistribusi dua hari beruntun.
+                  </p>
+                </div>
+                <div className="bm-rows">
+                  {positions.recently_closed.slice(0, 6).map(p => (
+                    <BarisPosisi key={`${p.ticker}-${p.closed_on}`} posisi={p} />
+                  ))}
+                </div>
+              </div>
+            )}
 
             {/* ── Top akumulasi ────────────────────────────────────────── */}
             <div style={{ ...CARD, padding: '24px 0 8px' }}>
@@ -380,6 +468,83 @@ function DaftarSektor({ judul, rows, warna }: { judul: string; rows: [string, nu
   );
 }
 
+const ALASAN_TUTUP: Record<string, string> = {
+  OUTFLOW: 'dana ditarik >50%',
+  DISTRIBUSI: 'distribusi 2 hari',
+  REVERSED: 'akumulasi berbalik',
+};
+
+/** Satu posisi: umur, akumulasi, perkembangan harga, dan seberapa dekat ia ke pintu keluar. */
+function BarisPosisi({ posisi }: { posisi: BigMoneyPosition }) {
+  const aktif = posisi.status === 'ACTIVE';
+  const naik = (posisi.price_change_pct ?? 0) >= 0;
+  const tarik = (posisi.outflow_ratio ?? 0) * 100;
+
+  const umur = posisi.last_date && posisi.opened_on
+    ? Math.max(0, Math.round(
+        (new Date(posisi.last_date).getTime() - new Date(posisi.opened_on).getTime()) / 86_400_000))
+    : 0;
+
+  return (
+    <div>
+      <div className="bm-row" style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '13px 24px' }}>
+        <span style={{ display: 'flex', flexDirection: 'column', gap: 3, flex: 1, minWidth: 0 }}>
+          <span style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+            <span style={{ fontWeight: 700, fontSize: 14.5 }}>{posisi.ticker}</span>
+            {aktif ? (
+              <span style={{ fontSize: 11, fontWeight: 600, color: UP, background: UP_BG, padding: '1px 7px', borderRadius: 999 }}>
+                berjalan {umur} hari
+              </span>
+            ) : (
+              <span style={{ fontSize: 11, fontWeight: 600, color: DOWN, background: DOWN_BG, padding: '1px 7px', borderRadius: 999 }}>
+                keluar · {ALASAN_TUTUP[posisi.close_reason ?? ''] ?? posisi.close_reason}
+              </span>
+            )}
+          </span>
+          <span style={{ fontSize: 12, color: FAINT }}>
+            sejak {tanggalPanjang(posisi.opened_on)}
+            {posisi.entry_close !== null && ` · masuk di ${posisi.entry_close.toLocaleString('id-ID')}`}
+          </span>
+        </span>
+
+        {/* Akumulasi bersih — angka yang menjelaskan kenapa posisi ini ada */}
+        <span className="hidden sm:block" style={{ textAlign: 'right', flex: 'none', width: 112 }}>
+          <span style={{ display: 'block', fontFamily: MONO, fontSize: 13, fontWeight: 600, color: UP }}>
+            {rupiah(posisi.accumulated_value)}
+          </span>
+          <span style={{ fontSize: 11, color: FAINT }}>akumulasi asing</span>
+        </span>
+
+        {/* Seberapa dekat ke pintu keluar: >50% ditarik = ditutup */}
+        {aktif && posisi.outflow_ratio !== null && (
+          <span className="hidden md:block" style={{ flex: 'none', width: 92 }}>
+            <span style={{ display: 'block', height: 5, background: '#F2F1EC', borderRadius: 999, overflow: 'hidden' }}>
+              <span style={{
+                display: 'block', width: `${Math.min(100, tarik * 2)}%`, height: '100%',
+                background: tarik > 35 ? DOWN : tarik > 15 ? AMBER : '#D6D5CE',
+              }} />
+            </span>
+            <span style={{ fontSize: 11, color: FAINT, marginTop: 3, display: 'block' }}>
+              {tarik.toFixed(0)}% ditarik
+            </span>
+          </span>
+        )}
+
+        <span style={{ textAlign: 'right', flex: 'none', width: 74 }}>
+          <span style={{
+            fontFamily: MONO, fontSize: 13, fontWeight: 600, color: naik ? UP : DOWN,
+            background: naik ? UP_BG : DOWN_BG, padding: '2px 7px', borderRadius: 6,
+            display: 'inline-block', minWidth: 68, textAlign: 'right',
+          }}>
+            {naik ? '▲' : '▼'} {Math.abs(posisi.price_change_pct ?? 0).toFixed(1)}%
+          </span>
+          <span style={{ fontSize: 11, color: FAINT, marginTop: 3, display: 'block' }}>sejak masuk</span>
+        </span>
+      </div>
+    </div>
+  );
+}
+
 function BarisSaham({ pick, open, onToggle }: { pick: BigMoneyPick; open: boolean; onToggle: () => void }) {
   const konviksi = KONVIKSI[pick.conviction] ?? KONVIKSI.WEAK;
   const naik = (pick.change_pct ?? 0) >= 0;
@@ -464,7 +629,32 @@ function BarisSaham({ pick, open, onToggle }: { pick: BigMoneyPick; open: boolea
               </div>
             );
           })}
-          <p style={{ fontSize: 11.5, color: FAINT, marginTop: 4, lineHeight: 1.6 }}>
+          {pick.foreign_participation !== null && (
+            <div style={{ marginTop: 10, paddingTop: 10, borderTop: `1px solid #F2F1EC` }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                <span style={{ fontSize: 12.5, color: MUTED, width: 118, flex: 'none' }}>Siapa yang bertransaksi</span>
+                <span style={{ display: 'flex', flex: 1, maxWidth: 300, height: 6, borderRadius: 999, overflow: 'hidden' }}>
+                  <span style={{ width: `${pick.foreign_participation * 100}%`, background: ACCENT }} />
+                  <span style={{ flex: 1, background: '#DCDBD4' }} />
+                </span>
+                <span style={{ fontFamily: MONO, fontSize: 11.5, color: FAINT, width: 24, textAlign: 'right', flex: 'none' }}>
+                  {(pick.foreign_participation * 100).toFixed(0)}
+                </span>
+              </div>
+              <p style={{ fontSize: 11.5, color: FAINT, marginTop: 6, lineHeight: 1.6 }}>
+                <span style={{ color: ACCENT, fontWeight: 600 }}>
+                  {(pick.foreign_participation * 100).toFixed(0)}% asing
+                </span>
+                {' · '}
+                {(100 - pick.foreign_participation * 100).toFixed(0)}% domestik
+                {pick.foreign_participation < 0.1 && (
+                  <> — sebagian besar pergerakan saham ini digerakkan pemain lokal yang tak terlihat sinyal ini.</>
+                )}
+              </p>
+            </div>
+          )}
+
+          <p style={{ fontSize: 11.5, color: FAINT, marginTop: 8, lineHeight: 1.6 }}>
             Nilai 0–100 adalah peringkat terhadap saham lain pada hari yang sama, bukan nilai mutlak.
           </p>
         </div>

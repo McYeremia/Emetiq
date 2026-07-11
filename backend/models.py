@@ -356,6 +356,46 @@ class BigMoneyTopAccumulation(Base):
     computed_at = Column(DateTime, server_default=func.now())
 
 
+class BigMoneyPosition(Base):
+    """Akumulasi asing yang sedang berjalan pada satu saham — bukan peringkat harian.
+
+    Peringkat harian berganti 6-9 nama tiap hari; itu membuat perkembangan sebuah
+    akumulasi mustahil diikuti. Posisi menjawab itu: saham MASUK ketika akumulasinya
+    terbukti (asing net beli >= 3 dari 5 hari terakhir dan skor >= 55), lalu BERTAHAN
+    meski peringkat hariannya turun.
+
+    Keluarnya dibandingkan dengan akumulasinya sendiri, bukan dengan skor: posisi
+    ditutup ketika dana yang keluar sejak puncak melampaui separuh dari yang pernah
+    masuk, atau ketika fase distribusi/markdown bertahan dua hari beruntun.
+
+    `peak_value` adalah akumulasi bersih tertinggi yang pernah dicapai; `accumulated_value`
+    adalah posisinya sekarang. Selisih keduanya adalah dana yang sudah ditarik keluar.
+    """
+    __tablename__ = "bigmoney_position"
+
+    id                = Column(Integer, primary_key=True, index=True)
+    ticker            = Column(String(10), nullable=False, index=True)
+
+    opened_on         = Column(Date, nullable=False, index=True)
+    closed_on         = Column(Date, index=True)
+    status            = Column(String(10), nullable=False, default="ACTIVE", index=True)  # ACTIVE | CLOSED
+
+    entry_close       = Column(Float)    # harga saat masuk — pembanding perkembangan harga
+    last_close        = Column(Float)
+    last_date         = Column(Date)
+
+    accumulated_value = Column(BigInteger, default=0)  # Rupiah, ESTIMASI — net asing sejak masuk
+    peak_value        = Column(BigInteger, default=0)  # akumulasi tertinggi yang pernah dicapai
+    inflow_days       = Column(Integer, default=0)     # hari asing net beli sejak masuk
+    distribution_days = Column(Integer, default=0)     # fase jual beruntun; 2 = keluar
+
+    entry_score       = Column(Float)
+    last_score        = Column(Float)
+    close_reason      = Column(String(40))   # DISTRIBUSI | OUTFLOW | (NULL selama aktif)
+
+    updated_at        = Column(DateTime, server_default=func.now())
+
+
 class BigMoneyDailyReport(Base):
     """Laporan harian berbahasa manusia, ditulis Gemini dari skor dan rezim.
 

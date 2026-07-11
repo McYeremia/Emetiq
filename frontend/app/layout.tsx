@@ -43,7 +43,10 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}>
-      <body className="min-h-full flex flex-col bg-[#050505]">
+      {/* Latar EMETIQ. Sebelumnya hitam #050505 warisan IDXAnalyst, yang berkedip
+          gelap tiap hard refresh sebelum halaman terang menutupinya. Halaman
+          warisan yang masih gelap (/broker-flow) membawa latarnya sendiri. */}
+      <body className="min-h-full flex flex-col bg-[#FCFCFB]">
         <AuthProvider>
           <ToastProvider>
             <WatchlistProvider>

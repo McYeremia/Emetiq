@@ -442,6 +442,14 @@ export const api = {
     return body.report ? body : null;   // belum ada laporan Gemini
   },
 
+  /** Akumulasi yang sedang berjalan. Berbeda dari top-accumulation yang berganti tiap
+   *  hari, daftar ini bertahan selama akumulasinya masih hidup. */
+  async getBigMoneyPositions(): Promise<BigMoneyPositions | null> {
+    const res = await apiFetch(`${API_BASE_URL}/bigmoney/positions`);
+    if (!res.ok) return null;
+    return res.json();
+  },
+
   /** Kode sekali pakai untuk menautkan Telegram. Bukti kepemilikannya sesi login
    *  ini — bukan email, yang siapa pun bisa menebaknya. */
   async issueTelegramCode(): Promise<TelegramLinkCode | null> {
@@ -487,6 +495,8 @@ export interface BigMoneyRegime {
   market_volatility_20d: number | null;
   breadth: number | null;
   total_foreign_net_value: number | null;
+  /** Porsi volume bursa yang dilakukan asing. Sisanya domestik — dan tak terlihat sinyal ini. */
+  foreign_participation: number | null;
   sector_rotation: Record<string, number>;
   disclaimer: string;
 }
@@ -516,6 +526,8 @@ export interface BigMoneyPick {
   close: number | null;
   change_pct: number | null;
   foreign_net_value: number | null;
+  /** 0–1. Porsi perdagangan saham ini yang dilakukan asing; sisanya domestik. */
+  foreign_participation: number | null;
 }
 
 export interface BigMoneyTopAccumulation {
@@ -530,6 +542,33 @@ export interface BigMoneyReport {
   narrative: string;
   model: string;
   generated_at: string | null;
+  disclaimer: string;
+}
+
+export interface BigMoneyPosition {
+  ticker: string;
+  status: 'ACTIVE' | 'CLOSED';
+  opened_on: string;
+  closed_on: string | null;
+  close_reason: 'OUTFLOW' | 'DISTRIBUSI' | 'REVERSED' | null;
+  entry_close: number | null;
+  last_close: number | null;
+  price_change_pct: number | null;
+  accumulated_value: number | null;
+  peak_value: number | null;
+  /** 0–1. Porsi akumulasi yang sudah ditarik keluar sejak puncak; >0,5 = posisi ditutup. */
+  outflow_ratio: number | null;
+  inflow_days: number | null;
+  distribution_days: number | null;
+  entry_score: number | null;
+  last_score: number | null;
+  last_date: string | null;
+}
+
+export interface BigMoneyPositions {
+  active: BigMoneyPosition[];
+  recently_closed: BigMoneyPosition[];
+  rules: { entry: string; exit: string };
   disclaimer: string;
 }
 

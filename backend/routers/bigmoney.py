@@ -39,6 +39,27 @@ def _latest_date(db: Session, column) -> date | None:
     return db.query(func.max(column)).scalar()
 
 
+def _market_foreign_participation(db: Session, target: date) -> float | None:
+    """Porsi volume bursa yang dilakukan asing pada `target`.
+
+    Angka ini menyatakan seberapa banyak yang TIDAK terlihat oleh engine: sisanya
+    adalah perdagangan domestik, dan akumulasi oleh institusi lokal tak muncul di
+    sinyal mana pun. Pembaca berhak tahu ukuran kebutaan itu.
+
+    Pembagi 2 karena tiap transaksi punya sisi beli dan sisi jual, sedangkan Volume
+    menghitungnya sekali.
+    """
+    M = models.BigMoneyStockDaily
+    volume, foreign = (
+        db.query(func.sum(M.volume), func.sum(M.foreign_buy + M.foreign_sell))
+          .filter(M.date == target)
+          .one()
+    )
+    if not volume or foreign is None:
+        return None
+    return foreign / (2 * volume)
+
+
 @router.get("/regime")
 def get_regime(
     target: date | None = Query(None, alias="date"),
@@ -65,6 +86,7 @@ def get_regime(
         "market_volatility_20d": regime.market_volatility_20d,
         "breadth": regime.breadth,
         "total_foreign_net_value": regime.total_foreign_net_value,
+        "foreign_participation": _market_foreign_participation(db, regime.date),
         "sector_rotation": regime.sector_rotation or {},
         "disclaimer": DISCLAIMER,
     }
@@ -125,9 +147,82 @@ def get_top_accumulation(
             "close": daily.close if daily else None,
             "change_pct": daily.change_pct if daily else None,
             "foreign_net_value": daily.foreign_net_value if daily else None,
+            # Porsi perdagangan yang dilakukan asing. Sisanya domestik — dan sinyal
+            # ini buta terhadapnya. Menyembunyikan angka ini membuat pembaca mengira
+            # ia melihat seluruh meja.
+            "foreign_participation": daily.foreign_participation if daily else None,
         })
 
     return {"date": str(target), "data": data, "disclaimer": DISCLAIMER}
+
+
+def _position_row(p: models.BigMoneyPosition) -> dict:
+    naik_pct = None
+    if p.entry_close and p.last_close is not None:
+        naik_pct = (p.last_close - p.entry_close) / p.entry_close * 100
+
+    # Dana yang sudah ditarik keluar sejak puncak — inti aturan keluar, dan angka yang
+    # membuat pengguna bisa menilai sendiri seberapa dekat posisi ini ke pintu keluar.
+    outflow = max(0, (p.peak_value or 0) - (p.accumulated_value or 0))
+    outflow_ratio = outflow / p.peak_value if p.peak_value else None
+
+    return {
+        "ticker": p.ticker,
+        "status": p.status,
+        "opened_on": str(p.opened_on),
+        "closed_on": str(p.closed_on) if p.closed_on else None,
+        "close_reason": p.close_reason,
+        "entry_close": p.entry_close,
+        "last_close": p.last_close,
+        "price_change_pct": naik_pct,
+        "accumulated_value": p.accumulated_value,
+        "peak_value": p.peak_value,
+        "outflow_ratio": outflow_ratio,
+        "inflow_days": p.inflow_days,
+        "distribution_days": p.distribution_days,
+        "entry_score": p.entry_score,
+        "last_score": p.last_score,
+        "last_date": str(p.last_date) if p.last_date else None,
+    }
+
+
+@router.get("/positions")
+def get_positions(
+    db: Session = Depends(get_db),
+    user: CurrentUser = Depends(require_dev),
+):
+    """Akumulasi yang sedang berjalan, plus yang baru saja ditutup.
+
+    Berbeda dari /top-accumulation yang berganti tiap hari, daftar ini BERTAHAN: sebuah
+    saham tetap di sini selama akumulasinya berjalan, meski peringkat hariannya jatuh.
+    Itu yang membuat perkembangannya bisa diikuti.
+    """
+    P = models.BigMoneyPosition
+
+    active = (
+        db.query(P)
+          .filter(P.status == "ACTIVE")
+          .order_by(P.accumulated_value.desc())
+          .all()
+    )
+    closed = (
+        db.query(P)
+          .filter(P.status == "CLOSED")
+          .order_by(P.closed_on.desc())
+          .limit(10)
+          .all()
+    )
+
+    return {
+        "active": [_position_row(p) for p in active],
+        "recently_closed": [_position_row(p) for p in closed],
+        "rules": {
+            "entry": "Asing net beli ≥3 dari 5 hari bursa terakhir dan skor ≥55.",
+            "exit": "Dana keluar melampaui 50% dari yang pernah masuk, atau fase "
+                    "distribusi/markdown 2 hari beruntun.",
+        },
+        "disclaimer": DISCLAIMER,
+    }
 
 
 @router.get("/report/latest")

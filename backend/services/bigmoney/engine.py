@@ -14,6 +14,7 @@ from sqlalchemy.orm import Session
 
 import models
 from services.bigmoney.features import build_features
+from services.bigmoney.positions import update_positions
 from services.bigmoney.regime import compute_regime
 from services.bigmoney.scoring import score_universe, select_universe
 
@@ -118,6 +119,10 @@ def compute_scores(target: date, db: Session) -> EngineResult:
     _upsert_scores(db, target, scores)
     _rebuild_top_accumulation(db, target, scores)
     db.commit()
+
+    # Posisi dimajukan setelah skor tersimpan: ia membaca skor hari ini untuk syarat
+    # masuk dan fase untuk syarat keluar.
+    update_positions(target, db)
 
     return EngineResult(
         date=target,

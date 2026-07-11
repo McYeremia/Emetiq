@@ -10,14 +10,25 @@ const NAV_LINKS = [
   { label: 'PORTOFOLIO', href: '/portfolio' },
 ];
 
+// Halaman warisan IDXAnalyst yang belum dipindahkan ke tema EMETIQ dan masih
+// memakai chrome gelap ini sebagai satu-satunya navigasinya.
+//
+// Dulu daftarnya kebalikan — "sembunyikan di rute-rute ini" — dan itu rapuh:
+// setiap halaman baru otomatis mewarisi navbar mati kecuali seseorang ingat
+// mendaftarkannya. Halaman /big-money kena persis itu: navbar gelap ini terus
+// dirender di bawahnya, berkedip saat hard refresh, dan warnanya menembus
+// EmetiqNav yang semi-transparan sehingga terlihat keabu-abuan.
+//
+// Sebagai daftar-izin, default-nya kini aman: halaman baru tidak mendapat apa-apa.
+//
+// Tinggal satu penghuni: /broker-flow (data broker lama). /backtest sudah jadi
+// stub redirect ke Screener, jadi ia tak butuh navigasi sama sekali.
+const LEGACY_ROUTES = ['/broker-flow'];
+
 export default function Header() {
   const pathname = usePathname();
 
-  // Pages migrated to the EMETIQ theme ship their own navigation, so the
-  // legacy dark app chrome is hidden there. Auth pages (login/register/callback)
-  // are self-contained cards with their own EMETIQ branding — no navbar.
-  const HIDE_EXACT = ['/', '/dashboard', '/overview', '/screener', '/portfolio', '/profile', '/advisor', '/ai-porto', '/admin', '/login', '/register'];
-  if (HIDE_EXACT.includes(pathname) || pathname.startsWith('/stocks/') || pathname.startsWith('/auth')) return null;
+  if (!LEGACY_ROUTES.includes(pathname)) return null;
 
   return (
     <header className="fixed top-0 w-full z-50 bg-[#0A0A0A] border-b-2 border-white/10">
