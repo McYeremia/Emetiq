@@ -261,3 +261,88 @@ class BigMoneyStockDaily(Base):
     change_pct            = Column(Float)
 
     scraped_at    = Column(DateTime, server_default=func.now())
+
+
+class BigMoneyMarketRegime(Base):
+    """Rezim pasar harian, diturunkan dari agregat bigmoney_stock_daily.
+
+    Sengaja tidak memakai OHLCV `^JKSE`: tabel itu tertinggal berminggu-minggu
+    dari data bigmoney, sehingga rezimnya akan salah. Deret pasar di sini selalu
+    sesegar ingest terakhir.
+
+    `weight_set` memilih himpunan bobot sinyal di services/bigmoney/scoring.py.
+    """
+    __tablename__ = "bigmoney_market_regime"
+    __table_args__ = (UniqueConstraint("date", name="uq_bmmr_date"),)
+
+    id                      = Column(Integer, primary_key=True, index=True)
+    date                    = Column(Date, nullable=False, index=True)
+
+    volatility_regime       = Column(String(10))   # CALM | VOLATILE
+    trend_regime            = Column(String(10))   # BULL | SIDEWAYS | BEAR
+    weight_set              = Column(String(10))   # CALM | VOLATILE
+
+    market_return_pct       = Column(Float)        # return pasar tertimbang nilai transaksi
+    market_volatility_20d   = Column(Float)        # stdev return harian, 20 hari
+    breadth                 = Column(Float)        # rasio saham naik terhadap yang bergerak
+    total_foreign_net_value = Column(BigInteger)   # Rupiah — ESTIMASI
+    sector_rotation         = Column(JSON)         # {sektor: foreign_net_value}
+
+    computed_at             = Column(DateTime, server_default=func.now())
+
+
+class BigMoneyScore(Base):
+    """Skor big money per saham per hari, hanya untuk saham yang lolos filter likuiditas.
+
+    Subskor adalah peringkat persentil (0-100) di antara universe HARI ITU, bukan
+    ambang absolut: dengan 77 hari data, ambang tebakan tak punya dasar dan basi
+    begitu skala pasar bergeser.
+
+    Karena skor bersifat relatif, sesuatu selalu meraih peringkat ~100 bahkan di
+    hari terburuk. `days_confirmed` yang menahan itu — STRONG mustahil tanpa tiga
+    hari inflow asing beruntun.
+    """
+    __tablename__ = "bigmoney_score"
+    __table_args__ = (UniqueConstraint("ticker", "date", name="uq_bms_ticker_date"),)
+
+    id             = Column(Integer, primary_key=True, index=True)
+    ticker         = Column(String(10), nullable=False, index=True)
+    date           = Column(Date, nullable=False, index=True)
+
+    composite      = Column(Float)       # 0-100, sudah dipotong bila divergence
+    conviction     = Column(String(10))  # STRONG | WATCH | WEAK
+    phase          = Column(String(12))  # AKUMULASI | MARKUP | DISTRIBUSI | MARKDOWN | NETRAL
+    weight_set     = Column(String(10))  # rezim yang berlaku saat skor dihitung
+
+    s_relative_foreign_flow = Column(Float)
+    s_foreign_persistence   = Column(Float)
+    s_big_ticket            = Column(Float)
+    s_cost_basis            = Column(Float)
+    s_volume_price          = Column(Float)
+
+    days_confirmed = Column(Integer, default=0)  # hari beruntun foreign_net > 0
+    flags          = Column(JSON)                # {divergence, pump_dump_risk}
+
+    computed_at    = Column(DateTime, server_default=func.now())
+
+
+class BigMoneyTopAccumulation(Base):
+    """Peringkat 10 besar per tanggal — target baca API dan laporan AI.
+
+    Tabel tipis ini ada supaya konsumen tak perlu memindai bigmoney_score.
+    Ditulis ulang seluruhnya tiap kali skor dihitung ulang: peringkat harus
+    konsisten dengan skor yang melahirkannya.
+    """
+    __tablename__ = "bigmoney_top_accumulation"
+    __table_args__ = (UniqueConstraint("date", "rank", name="uq_bmta_date_rank"),)
+
+    id          = Column(Integer, primary_key=True, index=True)
+    date        = Column(Date, nullable=False, index=True)
+    rank        = Column(Integer, nullable=False)
+
+    ticker      = Column(String(10), nullable=False, index=True)
+    composite   = Column(Float)
+    conviction  = Column(String(10))
+    phase       = Column(String(12))
+
+    computed_at = Column(DateTime, server_default=func.now())
