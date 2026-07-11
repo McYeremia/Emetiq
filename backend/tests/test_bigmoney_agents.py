@@ -159,6 +159,28 @@ def test_critic_failure_does_not_block_report(mocker, db):
     assert verdict.skipped is True
 
 
+def test_critic_prompt_treats_news_facts_as_legitimate(db):
+    """Kasus nyata 2026-07-10: kritikus memprotes dividen BSSR Rp486 yang sebenarnya benar.
+
+    Angka itu berasal dari berita, bukan engine. Kritikus yang buta terhadap berita akan
+    menghukum justru bagian laporan yang paling berharga.
+    """
+    _seed(db)
+
+    prompt = critic.render_prompt("draf", _ctx(db), news="BSSR membagikan dividen Rp486/lembar.")
+
+    assert "BSSR membagikan dividen Rp486/lembar." in prompt
+    assert "sumber sah" in prompt.lower()
+
+
+def test_critic_receives_news_from_supervisor(db, agents):
+    _seed(db)
+
+    supervisor.run_report(TARGET, db)
+
+    assert agents["critic"].call_args.kwargs["news"] == "CUAN: pendiri melepas 1,7 miliar lembar."
+
+
 def test_critic_prompt_targets_facts_not_style(mocker, db):
     _seed(db)
     prompt = critic.render_prompt("draf", _ctx(db)).lower()
@@ -209,6 +231,49 @@ def test_supervisor_rewrites_when_critic_rejects(db, agents):
     assert agents["write"].call_count == 2
     assert "Klaim asing memborong salah." in agents["write"].call_args.args[0]
     assert report.context["agents"]["critic"]["passed"] is False
+
+
+def test_factcheck_forces_rewrite_even_when_critic_is_blocked(db, agents):
+    """Kasus nyata 2026-07-10: kritikus diblokir Gemini, tuduhan pump-dump palsu lolos.
+
+    Pemeriksa deterministik tak bisa diblokir — ia harus tetap memaksa penulisan ulang.
+    """
+    _seed(db)
+    agents["critic"].return_value = critic.Verdict(passed=True, skipped=True)   # kritikus mati
+    agents["write"].side_effect = [
+        "Waspada\n\nCUAN rentan risiko pump-and-dump.",   # tuduhan palsu: flag = False
+        "Asing keluar\n\nCUAN memimpin akumulasi.",
+    ]
+
+    report = supervisor.run_report(TARGET, db)
+
+    assert agents["write"].call_count == 2
+    assert "pump-and-dump" in agents["write"].call_args.args[0]   # kesalahannya disodorkan balik
+    assert report.narrative == "CUAN memimpin akumulasi."
+    assert report.context["agents"]["factcheck"]["passed"] is True
+
+
+def test_factcheck_records_when_rewrite_still_lies(db, agents):
+    """Revisi yang tetap melanggar tak boleh diam-diam dianggap beres."""
+    _seed(db)
+    agents["critic"].return_value = critic.Verdict(passed=True, skipped=True)
+    agents["write"].side_effect = [
+        "Judul\n\nCUAN rentan pump-and-dump.",
+        "Judul\n\nCUAN tetap rentan pump-and-dump.",   # masih bohong
+    ]
+
+    report = supervisor.run_report(TARGET, db)
+
+    assert report.context["agents"]["factcheck"]["passed"] is False
+    assert any("CUAN" in issue for issue in report.context["agents"]["factcheck"]["issues"])
+
+
+def test_clean_draft_is_not_rewritten(db, agents):
+    _seed(db)
+
+    supervisor.run_report(TARGET, db)
+
+    assert agents["write"].call_count == 1
 
 
 def test_supervisor_survives_news_worker_failure(db, agents):

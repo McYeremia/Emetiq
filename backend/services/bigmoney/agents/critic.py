@@ -26,41 +26,70 @@ class Verdict:
     skipped: bool = False   # kritikus tak bisa dijalankan; draf disimpan apa adanya
 
 
-def render_prompt(draft: str, context: dict) -> str:
-    return "\n".join([
-        "Kamu pemeriksa fakta. Di bawah ada ANGKA RESMI, lalu DRAF LAPORAN yang ditulis "
-        "model lain. Tugasmu memeriksa apakah draf itu bertentangan dengan angka.",
+def render_prompt(draft: str, context: dict, news: str | None = None) -> str:
+    """Prompt kritikus. `news` WAJIB disertakan bila ada.
+
+    Tanpa berita, kritikus akan menuduh setiap fakta berita sebagai karangan — persis
+    yang terjadi pada 2026-07-10, ketika ia memprotes nilai dividen BSSR yang sebenarnya
+    benar dan berasal dari berita. Pemeriksa yang buta terhadap salah satu sumber sah
+    akan menghukum justru bagian laporan yang paling berharga.
+    """
+    sections = [
+        "Kamu pemeriksa fakta. Di bawah ada ANGKA RESMI dan KONTEKS BERITA, lalu DRAF "
+        "LAPORAN yang ditulis model lain. Tugasmu memeriksa apakah draf bertentangan "
+        "dengan keduanya.",
         "",
         "=== ANGKA RESMI ===",
         render_numbers(context),
+    ]
+
+    if news:
+        sections += [
+            "",
+            "=== KONTEKS BERITA (sumber sah) ===",
+            news,
+            "",
+            "Fakta yang berasal dari berita di atas — termasuk angka seperti nilai dividen "
+            "atau aksi korporasi — SAH dan bukan karangan. Jangan protes hanya karena angka "
+            "itu tidak ada di ANGKA RESMI.",
+        ]
+
+    sections += [
         "",
         "=== DRAF LAPORAN ===",
         draft,
         "",
         "=== TUGASMU ===",
-        f"Bila draf konsisten dengan angka, balas satu kata: {_PASS}",
-        "Bila ada klaim yang bertentangan dengan angka, atau angka yang dikarang dan tidak "
-        "ada di daftar resmi, tulis daftar masalahnya (satu baris per masalah).",
-        "",
-        "Yang WAJIB kamu tangkap:",
-        "- Menyebut asing membeli padahal net asing pasar negatif (atau sebaliknya).",
-        "- Angka yang tidak ada di ANGKA RESMI.",
-        "- Menyebut skor sebagai kepastian, padahal skor bersifat relatif terhadap hari itu.",
-        "- Rekomendasi membeli atau menjual. Laporan ini bukan nasihat investasi.",
-        "",
-        "JANGAN mengkritik gaya bahasa, panjang kalimat, atau pilihan kata. "
-        "Hanya fakta yang bertentangan dengan angka.",
-    ])
+    ]
+
+    return "\n".join(sections + _RULES)
 
 
-def review(draft: str, context: dict) -> Verdict:
+_RULES = [
+    f"Bila draf konsisten dengan angka dan berita, balas satu kata: {_PASS}",
+    "Bila ada klaim yang bertentangan dengan keduanya, tulis daftar masalahnya "
+    "(satu baris per masalah).",
+    "",
+    "Yang WAJIB kamu tangkap:",
+    "- Menyebut asing membeli pasar padahal net asing pasar negatif (atau sebaliknya).",
+    "- Angka pasar yang tidak ada di ANGKA RESMI dan tidak berasal dari berita.",
+    "- Menuduh saham berisiko pump-and-dump atau divergensi padahal bendera itu tidak menyala.",
+    "- Menyebut skor sebagai kepastian, padahal skor bersifat relatif terhadap hari itu.",
+    "- Rekomendasi membeli atau menjual. Laporan ini bukan nasihat investasi.",
+    "",
+    "JANGAN mengkritik gaya bahasa, panjang kalimat, atau pilihan kata. "
+    "Hanya fakta yang bertentangan dengan angka atau berita.",
+]
+
+
+def review(draft: str, context: dict, news: str | None = None) -> Verdict:
     """Periksa draf. Kritikus yang gagal TIDAK memblokir laporan — ia hanya berhenti menjaga.
 
     Menjatuhkan laporan karena pemeriksanya mati akan membuat kegagalan kecil jadi
     kehilangan besar; yang benar adalah menyimpan draf sambil menandai bahwa ia belum diperiksa.
     """
     try:
-        response = generate_text(render_prompt(draft, context))
+        response = generate_text(render_prompt(draft, context, news))
     except Exception as exc:   # noqa: BLE001
         logger.warning("Kritikus gagal, draf disimpan tanpa pemeriksaan: %s", exc)
         return Verdict(passed=True, skipped=True)

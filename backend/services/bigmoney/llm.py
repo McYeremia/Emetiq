@@ -9,7 +9,11 @@ GEMINI_API_KEY — kerangka laporan bisa dikerjakan sebelum key-nya diambil.
 """
 import os
 
-_MODEL_NAME = "gemini-2.0-flash"
+# `gemini-flash-latest`, bukan `gemini-2.0-flash`: pada key free-tier, model bernomor
+# sering berjatah NOL (429 dengan limit: 0) atau tak dikenali sama sekali. Alias
+# `-latest` mengikuti model gratis yang sedang berlaku, jadi ia tak ikut mati saat
+# Google memutar versi. Bisa ditimpa lewat env bila perlu dikunci ke versi tertentu.
+_MODEL_NAME = os.getenv("GEMINI_MODEL", "gemini-flash-latest")
 _MODEL_CACHE = None   # klien di-cache: konfigurasi ulang tiap panggilan itu pemborosan
 
 
@@ -64,7 +68,18 @@ def generate_text(prompt: str) -> str:
     except Exception as exc:   # noqa: BLE001 — SDK melempar aneka galat; pemanggil cuma perlu tahu Gemini gagal
         raise LlmError(f"Gemini gagal merespons: {exc}") from exc
 
-    text = (getattr(response, "text", "") or "").strip()
+    # Respons terblokir (filter keamanan, RECITATION) tak punya Part sama sekali, dan
+    # mengakses .text di sana melempar galat SDK yang membingungkan. Baca alasannya dulu
+    # supaya log menyebut sebabnya, bukan gejalanya.
+    candidates = getattr(response, "candidates", None) or []
+    if candidates and not getattr(candidates[0].content, "parts", None):
+        raise LlmError(f"Gemini memblokir respons (finish_reason={candidates[0].finish_reason})")
+
+    try:
+        text = (response.text or "").strip()
+    except Exception as exc:   # noqa: BLE001 — SDK melempar saat respons tak punya teks
+        raise LlmError(f"Respons Gemini tak berisi teks: {exc}") from exc
+
     if not text:
         raise LlmError("Gemini mengembalikan teks kosong")
 

@@ -34,10 +34,25 @@ def test_generate_text_without_key_raises_actionable_error():
 def test_generate_text_returns_model_output(monkeypatch, mocker):
     monkeypatch.setenv("GEMINI_API_KEY", "kunci-palsu")
     model = mocker.Mock()
-    model.generate_content.return_value = mocker.Mock(text="  laporan pasar  ")
+    model.generate_content.return_value = mocker.Mock(text="  laporan pasar  ", candidates=[])
     mocker.patch("services.bigmoney.llm._get_model", return_value=model)
 
     assert generate_text("prompt apa saja") == "laporan pasar"
+
+
+def test_generate_text_reports_blocked_response(monkeypatch, mocker):
+    """Respons terblokir (RECITATION) tak punya Part; galatnya harus menyebut SEBABNYA.
+
+    Terjadi sungguhan pada kritikus 2026-07-10, dan pesan SDK mentahnya menyesatkan.
+    """
+    monkeypatch.setenv("GEMINI_API_KEY", "kunci-palsu")
+    blocked = mocker.Mock(candidates=[mocker.Mock(finish_reason=8, content=mocker.Mock(parts=[]))])
+    model = mocker.Mock()
+    model.generate_content.return_value = blocked
+    mocker.patch("services.bigmoney.llm._get_model", return_value=model)
+
+    with pytest.raises(LlmError, match="memblokir"):
+        generate_text("prompt")
 
 
 def test_generate_text_wraps_sdk_failure(monkeypatch, mocker):
@@ -55,7 +70,7 @@ def test_generate_text_rejects_empty_response(monkeypatch, mocker):
     """Respons kosong (mis. kena filter keamanan) adalah kegagalan, bukan laporan kosong."""
     monkeypatch.setenv("GEMINI_API_KEY", "kunci-palsu")
     model = mocker.Mock()
-    model.generate_content.return_value = mocker.Mock(text="")
+    model.generate_content.return_value = mocker.Mock(text="", candidates=[])
     mocker.patch("services.bigmoney.llm._get_model", return_value=model)
 
     with pytest.raises(LlmError, match="kosong"):

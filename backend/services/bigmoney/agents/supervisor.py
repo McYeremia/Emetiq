@@ -18,8 +18,9 @@ from sqlalchemy.orm import Session
 
 import models
 from services.bigmoney.agents import critic, flow_worker, news_worker
+from services.bigmoney.agents.factcheck import check_claims
 from services.bigmoney.agents.news_source import fetch_news
-from services.bigmoney.llm import LlmError, generate_text
+from services.bigmoney.llm import _MODEL_NAME, LlmError, generate_text
 from services.bigmoney.report_generator import (
     build_context,
     generate_report,
@@ -130,13 +131,28 @@ def run_report(target: date, db: Session) -> models.BigMoneyDailyReport | None:
         logger.error("Penulis gagal (%s) — jatuh kembali ke laporan satu-panggilan", exc)
         return generate_report(target, db)
 
-    verdict = critic.review(draft, context)
-    if not verdict.passed:
+    # Dua lapis pemeriksaan, dan yang deterministik didahulukan dengan sengaja: klaim
+    # yang bisa dihitung tak boleh bergantung pada model yang bisa diblokir atau kehabisan
+    # kuota. Kritikus LLM menangani sisanya — kesalahan yang tak bisa dirumuskan.
+    hard_issues = check_claims(draft, context)
+    # Kritikus harus melihat berita juga: tanpa itu ia akan menuduh setiap fakta berita
+    # sebagai karangan — dan justru membuang bagian laporan yang paling berharga.
+    verdict = critic.review(draft, context, news=news_summary)
+
+    all_issues = hard_issues + ([verdict.issues] if verdict.issues else [])
+    if all_issues:
+        joined = "\n".join(all_issues)
         try:
             draft = generate_text(
-                render_writer_prompt(context, news_summary, flow_reading, issues=verdict.issues))
+                render_writer_prompt(context, news_summary, flow_reading, issues=joined))
         except LlmError as exc:
-            logger.warning("Revisi gagal (%s) — draf awal disimpan dengan catatan kritikus", exc)
+            logger.warning("Revisi gagal (%s) — draf awal disimpan dengan catatan pemeriksa", exc)
+        else:
+            # Jejak audit harus mencerminkan draf yang BENAR-BENAR disimpan, bukan draf
+            # pertama yang sudah dibuang. Revisi yang masih melanggar dicatat keras.
+            hard_issues = check_claims(draft, context)
+            if hard_issues:
+                logger.error("Revisi MASIH melanggar fakta: %s", "; ".join(hard_issues))
 
     headline, narrative = split_report(draft)
     worthy, reason = _newsworthy(target, context, db)
@@ -151,6 +167,10 @@ def run_report(target: date, db: Session) -> models.BigMoneyDailyReport | None:
             "passed": verdict.passed,
             "skipped": verdict.skipped,
             "issues": verdict.issues,
+        },
+        "factcheck": {
+            "passed": not hard_issues,
+            "issues": hard_issues,
         },
     }
     context["broadcast"] = {"worthy": worthy, "reason": reason}
@@ -167,7 +187,7 @@ def run_report(target: date, db: Session) -> models.BigMoneyDailyReport | None:
     report.headline = headline
     report.narrative = narrative
     report.context = context
-    report.model = "gemini-2.0-flash (tim agen)"
+    report.model = f"{_MODEL_NAME} (tim agen)"
 
     db.commit()
     db.refresh(report)
