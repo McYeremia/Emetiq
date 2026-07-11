@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { useState } from 'react';
 import { useAuth } from './AuthProvider';
+import { isBigMoneyEnabled } from '@/lib/flags';
 
 // Shared EMETIQ light-theme top nav for migrated app pages (Overview, Market, ...).
 const ACCENT = '#F26A1B';
@@ -29,7 +30,7 @@ const ITEMS = [
 
 export type NavKey = typeof ITEMS[number]['key'];
 
-export default function EmetiqNav({ active }: { active?: NavKey | 'advisor' | 'ai-porto' }) {
+export default function EmetiqNav({ active }: { active?: NavKey | 'advisor' | 'ai-porto' | 'big-money' }) {
   const [open, setOpen] = useState(false);
   const { user, tier, loading } = useAuth();
 
@@ -67,6 +68,9 @@ export default function EmetiqNav({ active }: { active?: NavKey | 'advisor' | 'a
           ))}
           {tier === 'dev' && (
             <Link href="/ai-porto" style={navItem(active === 'ai-porto')}>AI Porto</Link>
+          )}
+          {tier === 'dev' && isBigMoneyEnabled && (
+            <Link href="/big-money" style={navItem(active === 'big-money')}>Big Money</Link>
           )}
         </div>
 
@@ -131,6 +135,15 @@ export default function EmetiqNav({ active }: { active?: NavKey | 'advisor' | 'a
               style={{ padding: '11px 13px', borderRadius: 11, textDecoration: 'none', fontSize: 15, fontWeight: active === 'ai-porto' ? 700 : 600, color: active === 'ai-porto' ? ACCENT : INK, background: active === 'ai-porto' ? `color-mix(in oklab, ${ACCENT}, white 88%)` : 'transparent' }}
             >
               AI Porto
+            </Link>
+          )}
+          {tier === 'dev' && isBigMoneyEnabled && (
+            <Link
+              href="/big-money"
+              onClick={() => setOpen(false)}
+              style={{ padding: '11px 13px', borderRadius: 11, textDecoration: 'none', fontSize: 15, fontWeight: active === 'big-money' ? 700 : 600, color: active === 'big-money' ? ACCENT : INK, background: active === 'big-money' ? `color-mix(in oklab, ${ACCENT}, white 88%)` : 'transparent' }}
+            >
+              Big Money
             </Link>
           )}
           <Link

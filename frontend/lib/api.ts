@@ -419,6 +419,28 @@ export const api = {
     const res = await apiFetch(`${API_BASE_URL}/watchlist/${ticker}`, { method: 'DELETE' });
     return res.ok;
   },
+
+  // ── Big Money (dev only; backend menolak tier selain dev dengan 403) ────────
+  async getBigMoneyRegime(date?: string): Promise<BigMoneyRegime | null> {
+    const qs = date ? `?date=${date}` : '';
+    const res = await apiFetch(`${API_BASE_URL}/bigmoney/regime${qs}`);
+    if (!res.ok) return null;   // 404 = hari itu belum di-skor; itu keadaan sah, bukan galat
+    return res.json();
+  },
+
+  async getBigMoneyTopAccumulation(date?: string): Promise<BigMoneyTopAccumulation> {
+    const qs = date ? `?date=${date}` : '';
+    const res = await apiFetch(`${API_BASE_URL}/bigmoney/top-accumulation${qs}`);
+    if (!res.ok) return { date: null, data: [], disclaimer: '' };
+    return res.json();
+  },
+
+  async getBigMoneyReport(): Promise<BigMoneyReport | null> {
+    const res = await apiFetch(`${API_BASE_URL}/bigmoney/report/latest`);
+    if (!res.ok) return null;
+    const body = await res.json();
+    return body.report ? body : null;   // belum ada laporan Gemini
+  },
 };
 
 export interface AdminUser {
@@ -445,4 +467,60 @@ export interface AdvisorResponse {
   data: any;
   quota: AdvisorQuota | null;
   confidence: number | null;
+}
+
+// ── Big Money ────────────────────────────────────────────────────────────────
+export interface BigMoneyRegime {
+  date: string;
+  volatility_regime: string;
+  trend_regime: string;
+  weight_set: string;
+  market_return_pct: number | null;
+  market_volatility_20d: number | null;
+  breadth: number | null;
+  total_foreign_net_value: number | null;
+  sector_rotation: Record<string, number>;
+  disclaimer: string;
+}
+
+export interface BigMoneyFlags {
+  divergence: boolean;
+  pump_dump_risk: boolean;
+}
+
+export interface BigMoneySubscores {
+  relative_foreign_flow: number | null;
+  foreign_persistence: number | null;
+  big_ticket: number | null;
+  cost_basis: number | null;
+  volume_price: number | null;
+}
+
+export interface BigMoneyPick {
+  rank: number;
+  ticker: string;
+  composite: number | null;
+  conviction: 'STRONG' | 'WATCH' | 'WEAK';
+  phase: string;
+  days_confirmed: number | null;
+  flags: BigMoneyFlags | null;
+  subscores: BigMoneySubscores | null;
+  close: number | null;
+  change_pct: number | null;
+  foreign_net_value: number | null;
+}
+
+export interface BigMoneyTopAccumulation {
+  date: string | null;
+  data: BigMoneyPick[];
+  disclaimer: string;
+}
+
+export interface BigMoneyReport {
+  date: string;
+  headline: string;
+  narrative: string;
+  model: string;
+  generated_at: string | null;
+  disclaimer: string;
 }
