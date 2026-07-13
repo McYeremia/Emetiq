@@ -6,12 +6,22 @@ name: Big Money Daily (ingest + skor + laporan)
 #
 # GEMINI_API_KEY bersifat opsional: tanpa key, skornya tetap dihitung dan hanya
 # tahap laporan yang dilewati.
+#
+# ── JADWAL DIMATIKAN (2026-07-13) ────────────────────────────────────────────
+# IDX memblokir IP datacenter: runner GitHub Actions dibalas HTTP 403 di tahap
+# ingest, dan Hugging Face Spaces (AWS) ditolak juga. Dari IP rumah, endpoint yang
+# sama membalas ~965 baris. curl_cffi sudah menyamar Chrome — ini pemblokiran
+# berbasis IP, bukan TLS fingerprint, jadi tak ada yang bisa diperbaiki dari sisi
+# kode.
+#
+# Selama itu berlaku, pipeline dijalankan dari mesin lokal lewat Windows Task
+# Scheduler (backend/scripts/register_bigmoney_task.ps1). Cron di bawah dibiarkan
+# tertulis, bukan dihapus: begitu ada proxy ber-IP Indonesia, tinggal dinyalakan
+# lagi. Menjalankannya sekarang hanya menghasilkan job merah tiap sore.
+#
+# schedule:
+#   - cron: "30 10 * * 1-5"   # 10:30 UTC = 17:30 WIB
 on:
-  schedule:
-    # 10:30 UTC = 17:30 WIB, hari kerja. Setelah pasar IDX tutup (16:00 WIB) dan
-    # data EOD terbit. Sengaja 30 menit setelah daily-sync agar keduanya tak
-    # berebut koneksi Supabase.
-    - cron: "30 10 * * 1-5"
   workflow_dispatch:
     inputs:
       date:

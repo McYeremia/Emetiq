@@ -57,7 +57,6 @@ from routers.account import router as account_router    # noqa: E402
 from routers.ai_porto import router as ai_porto_router  # noqa: E402
 from routers.admin import router as admin_router  # noqa: E402
 from routers.bigmoney import router as bigmoney_router  # noqa: E402
-from routers.diag_idx import router as diag_idx_router  # noqa: E402 — SEMENTARA, lihat routers/diag_idx.py
 app.include_router(stocks_router)
 app.include_router(trades_router)
 app.include_router(backtest_router)
@@ -68,4 +67,3 @@ app.include_router(account_router)
 app.include_router(ai_porto_router)
 app.include_router(admin_router)
 app.include_router(bigmoney_router)
-app.include_router(diag_idx_router)  # SEMENTARA
