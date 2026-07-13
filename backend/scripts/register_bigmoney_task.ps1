@@ -22,10 +22,12 @@ if (-not (Test-Path $script)) { throw "Tidak ketemu: $script" }
 
 $action = New-ScheduledTaskAction -Execute $script
 
-# 17:30 WIB: pasar tutup 16:00, data EOD IDX sudah terbit. Senin-Jumat; akhir pekan
-# tak perlu dikecualikan secara khusus karena IDX membalas nol baris dan pipeline
-# berhenti tenang, tapi menjadwalkannya saja lebih jujur.
-$trigger = New-ScheduledTaskTrigger -Weekly -DaysOfWeek Monday,Tuesday,Wednesday,Thursday,Friday -At 17:30
+# 19:00 WIB, bukan 17:30. Kita tak pernah membuktikan IDX sudah menerbitkan data EOD
+# pada 17:30 — yang terverifikasi cuma: pukul 20:00 datanya ada. Kalau IDX belum terbit,
+# ia membalas 200 dengan NOL BARIS, dan pipeline menganggapnya hari non-bursa lalu
+# berhenti tenang tanpa alarm. Kegagalan yang diam seperti itu justru yang paling mahal,
+# jadi ambil marjin: laporannya toh dibaca malam hari.
+$trigger = New-ScheduledTaskTrigger -Weekly -DaysOfWeek Monday,Tuesday,Wednesday,Thursday,Friday -At 19:00
 
 $settings = New-ScheduledTaskSettingsSet `
     -StartWhenAvailable `
