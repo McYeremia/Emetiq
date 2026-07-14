@@ -46,11 +46,25 @@ def save_ohlcv(db: Session, stock: models.Stock, df: pd.DataFrame) -> int:
 
     cutoff = date.today() - timedelta(days=5)
 
-    # 1 query untuk semua existing dates — hindari N SELECT queries
+    def to_date(index):
+        return index.date() if hasattr(index, "date") else index
+
+    df_dates = [to_date(index) for index in df.index]
+    if not df_dates:
+        return 0
+
+    # 1 query untuk existing dates — hindari N SELECT queries. DIBATASI ke rentang
+    # tanggal df: baris di luar rentang itu tak pernah ditanyakan di loop bawah,
+    # jadi memuat seluruh riwayat saham hanya membuang egress (~1.076 baris per
+    # saham per sync, padahal yang dipakai cuma ~5).
     existing_rows = {
         r.date: r
         for r in db.query(models.OHLCVDaily)
-        .filter(models.OHLCVDaily.stock_id == stock.id)
+        .filter(
+            models.OHLCVDaily.stock_id == stock.id,
+            models.OHLCVDaily.date >= min(df_dates),
+            models.OHLCVDaily.date <= max(df_dates),
+        )
         .all()
     }
 

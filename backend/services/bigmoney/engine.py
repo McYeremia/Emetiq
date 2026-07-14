@@ -51,6 +51,12 @@ def _load_window(db: Session, target: date) -> list[dict]:
     if target not in dates:
         return []
 
+    # Hanya 9 kolom yang benar-benar dipakai, bukan 63: tabelnya lebar, dan
+    # `db.query(M)` menyeret semua kolom melintasi jaringan hanya untuk dibuang
+    # di dict ini. Jendela 20 hari × ~963 saham = ~19.200 baris per skoring.
+    columns = (M.ticker, M.date, M.close, M.volume, M.value,
+               M.avg_ticket, M.foreign_net, M.foreign_net_value, M.change_pct)
+
     return [
         {
             "ticker": r.ticker,
@@ -63,7 +69,7 @@ def _load_window(db: Session, target: date) -> list[dict]:
             "foreign_net_value": r.foreign_net_value,
             "change_pct": r.change_pct,
         }
-        for r in db.query(M).filter(M.date.in_(dates)).all()
+        for r in db.query(*columns).filter(M.date.in_(dates)).all()
     ]
 
 
