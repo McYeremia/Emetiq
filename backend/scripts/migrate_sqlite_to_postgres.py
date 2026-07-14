@@ -1,6 +1,6 @@
 """Salin data dari SQLite lokal (idxanalyst.db) -> Postgres (Supabase). SEKALI JALAN.
 
-Menyalin: Stock, OHLCVDaily, MlPrediction, BrokerFlow.
+Menyalin: Stock, OHLCVDaily, BrokerFlow.
 TIDAK menyalin: indicators_cache (dihitung ulang on-the-fly), serta tabel auth baru
 (profiles/watchlist/trade_logs) yang memang mulai kosong.
 
@@ -102,22 +102,7 @@ def main():
         done += len(batch)
     print(f"OHLCV selesai: {done} baris")
 
-    # 3) ML predictions (PK ticker)
-    preds = src.query(models.MlPrediction).all()
-    for p in preds:
-        if dst.query(models.MlPrediction).filter_by(ticker=p.ticker).first():
-            continue
-        dst.add(models.MlPrediction(
-            ticker=p.ticker, direction=p.direction, recommendation=p.recommendation,
-            probability_up=p.probability_up, probability_down=p.probability_down,
-            confidence=p.confidence, horizon_days=p.horizon_days, top_features=p.top_features,
-            model_accuracy=p.model_accuracy, model_auc=p.model_auc,
-            samples_train=p.samples_train, trained_at=p.trained_at,
-        ))
-    dst.commit()
-    print(f"ML predictions tersalin: {len(preds)}")
-
-    # 4) Broker flows
+    # 3) Broker flows
     flows = src.query(models.BrokerFlow).all()
     for f in flows:
         if dst.query(models.BrokerFlow).filter_by(date=f.date, broker_code=f.broker_code).first():

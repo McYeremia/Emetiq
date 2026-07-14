@@ -142,29 +142,6 @@ class AgentPositionTarget(Base):
     updated_at = Column(DateTime, server_default=func.now())
 
 
-class MlPrediction(Base):
-    """
-    Prediksi ML terbaru per saham. Satu baris per ticker dan di-overwrite (upsert)
-    setiap kali daily_sync melatih ulang — jadi tabel ini tidak pernah membengkak
-    (selalu ~jumlah saham, bukan bertambah tiap hari).
-    """
-    __tablename__ = "ml_predictions"
-
-    ticker           = Column(String(10), primary_key=True, index=True)
-    direction        = Column(String(10))   # BULLISH / BEARISH / NEUTRAL
-    recommendation   = Column(String(10))    # BUY / WAIT / HOLD
-    probability_up   = Column(Float)
-    probability_down = Column(Float)
-    confidence       = Column(Float)
-    horizon_days     = Column(Integer, default=5)
-    top_features     = Column(JSON)          # list[{name, importance}]
-    model_accuracy   = Column(Float)
-    model_auc        = Column(Float)
-    samples_train    = Column(Integer)
-    trained_at       = Column(String(40))    # ISO timestamp (string, sesuai output training)
-    updated_at       = Column(DateTime, server_default=func.now(), onupdate=func.now())
-
-
 class AdvisorUsage(Base):
     """
     Pemakaian kuota AI Advisor per user per hari. Unik per (user_id, tanggal) — baris

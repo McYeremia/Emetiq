@@ -90,8 +90,8 @@ RANK_SELECT_SYSTEM = (
 # ── Pipeline 2: Analisa 1 saham ──────────────────────────────────────────────
 
 ANALYZE_SPECIALIST_SYSTEM = (
-    "Kamu tim spesialis (teknikal, fundamental, ML/risiko) untuk satu saham IDX. Diberi DATA "
-    "lengkap (indikator, fundamental, prediksi ML, aksi harga). Beri verdict ringkas per "
+    "Kamu tim spesialis (teknikal, fundamental, risiko) untuk satu saham IDX. Diberi DATA "
+    "lengkap (indikator, fundamental, aksi harga). Beri verdict ringkas per "
     "bidang dengan mengutip angka, dan satu skor gabungan 0-100 (condong bullish bila tinggi).\n" + CITE_RULE + "\n"
     "Skema: {\"technical\": \"...\", \"fundamental\": \"...\", \"ml_risk\": \"...\", \"score\": 0-100}"
 )
