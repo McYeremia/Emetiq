@@ -29,8 +29,27 @@ _sync_state: dict = {
 
 
 @router.get("")
-def list_stocks(db: Session = Depends(get_db)):
-    stocks = db.query(models.Stock).order_by(models.Stock.ticker).all()
+def list_stocks(
+    db: Session = Depends(get_db),
+    ringkas: bool = Query(
+        False,
+        description="Kirim hanya ticker, name, last_price, change_pct — yang "
+                    "benar-benar ditampilkan dashboard dan overview.",
+    ),
+):
+    # Space HF gratis mengirim ~35 KB/detik, jadi payload penuh 179 KB berarti
+    # lima detik layar kosong — dan dashboard mengulangnya tiap siklus polling.
+    # Dashboard dan overview tak pernah menyentuh sector, prev_close, last_date,
+    # maupun kolom fundamental; hanya screener yang membacanya. Membuangnya
+    # memangkas payload jadi 64 KB.
+    kolom_saham = [models.Stock.id, models.Stock.ticker, models.Stock.name]
+    if not ringkas:
+        kolom_saham += [
+            models.Stock.sector,
+            models.Stock.market_cap, models.Stock.pe_ratio,
+            models.Stock.pbv_ratio, models.Stock.dividend_yield,
+        ]
+    stocks = db.query(*kolom_saham).order_by(models.Stock.ticker).all()
 
     # Dua baris terakhir per saham — untuk harga terkini dan pembanding harian.
     #
@@ -74,19 +93,23 @@ def list_stocks(db: Session = Depends(get_db)):
             change_pct = round((last_price - prev_close) / prev_close * 100, 2)
         else:
             change_pct = None
-        result.append({
+        baris = {
             "ticker": stock.ticker,
             "name": stock.name,
-            "sector": stock.sector,
             "last_price": last_price,
-            "prev_close": prev_close,
             "change_pct": change_pct,
-            "last_date": str(latest.date) if latest else None,
-            "market_cap": stock.market_cap,
-            "pe_ratio": stock.pe_ratio,
-            "pbv_ratio": stock.pbv_ratio,
-            "dividend_yield": stock.dividend_yield
-        })
+        }
+        if not ringkas:
+            baris.update({
+                "sector": stock.sector,
+                "prev_close": prev_close,
+                "last_date": str(latest.date) if latest else None,
+                "market_cap": stock.market_cap,
+                "pe_ratio": stock.pe_ratio,
+                "pbv_ratio": stock.pbv_ratio,
+                "dividend_yield": stock.dividend_yield,
+            })
+        result.append(baris)
     return result
 
 

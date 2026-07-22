@@ -25,6 +25,14 @@ export interface Stock {
   dividend_yield: number | null;
 }
 
+/** Bentuk yang dikirim `/stocks?ringkas=true` — dipakai dashboard dan overview. */
+export interface StockRingkas {
+  ticker: string;
+  name: string;
+  last_price: number | null;
+  change_pct: number | null;
+}
+
 export interface OHLCV {
   date: string;
   open: number;
@@ -159,6 +167,14 @@ export interface BacktestResult {
 export const api = {
   async getStocks(): Promise<Stock[]> {
     const res = await apiFetch(`${API_BASE_URL}/stocks`);
+    return res.json();
+  },
+
+  // Payload penuh 179 KB, dan Space HF gratis mengirimnya ~35 KB/detik — lima
+  // detik layar kosong. Dashboard dan overview hanya menampilkan empat field,
+  // jadi mereka memakai ini: 64 KB, sekitar 1,8 detik.
+  async getStocksRingkas(): Promise<StockRingkas[]> {
+    const res = await apiFetch(`${API_BASE_URL}/stocks?ringkas=true`);
     return res.json();
   },
 

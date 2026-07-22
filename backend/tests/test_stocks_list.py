@@ -127,6 +127,50 @@ def test_field_fundamental_ikut_terkirim(engine, client):
     assert row["name"] == "PT TLKM"
 
 
+# ── mode ringkas ─────────────────────────────────────────────────────────────
+#
+# Dashboard dan overview hanya menampilkan ticker, nama, harga, dan perubahan.
+# Kolom fundamental hanya dipakai screener. Payload penuh 183 KB melintasi
+# bandwidth Space gratis pada ~35 KB/detik — lima detik layar kosong — dan
+# dashboard mengulangnya tiap kali polling.
+
+def test_ringkas_hanya_mengirim_yang_ditampilkan(engine, client):
+    """Dashboard dan overview hanya menyentuh empat field ini — sector,
+    prev_close, dan last_date tak muncul sekali pun di kedua halaman."""
+    _tambah(engine, "BBCA", [(2, 100.0), (1, 110.0)], market_cap=1e12,
+            pe_ratio=15.0, pbv_ratio=2.0, dividend_yield=4.5)
+
+    row = _cari(client.get("/stocks?ringkas=true").json(), "BBCA")
+
+    assert set(row) == {"ticker", "name", "last_price", "change_pct"}
+    assert row["ticker"] == "BBCA"
+    assert row["name"] == "PT BBCA"
+    assert row["last_price"] == 110.0
+    assert row["change_pct"] == 10.0
+
+
+def test_ringkas_tetap_menghitung_perubahan_dari_dua_baris(engine, client):
+    """prev_close dibuang dari payload, tapi perubahan harian tetap dihitung
+    di server dari dua baris terakhir — informasinya tidak hilang."""
+    _tambah(engine, "WSKT", [(400, 200.0), (399, 220.0)])
+
+    row = _cari(client.get("/stocks?ringkas=true").json(), "WSKT")
+
+    assert row["last_price"] == 220.0
+    assert row["change_pct"] == 10.0
+
+
+def test_tanpa_ringkas_tetap_lengkap(engine, client):
+    """Default TIDAK boleh berubah — screener bergantung padanya."""
+    _tambah(engine, "TLKM", [(1, 300.0)], market_cap=1e12, pe_ratio=15.0,
+            pbv_ratio=2.0, dividend_yield=4.5)
+
+    row = _cari(client.get("/stocks").json(), "TLKM")
+
+    assert row["market_cap"] == 1e12
+    assert row["pe_ratio"] == 15.0
+
+
 # ── jejak baca ───────────────────────────────────────────────────────────────
 
 def _rekam_sql(engine, client):
