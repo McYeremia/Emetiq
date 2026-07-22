@@ -69,6 +69,35 @@ def send(mocker):
     return mocker.patch("services.bigmoney.telegram.send_message")
 
 
+# --- pengiriman & proxy ------------------------------------------------------
+
+def test_send_message_hits_bot_api_directly_by_default(mocker, monkeypatch):
+    """Tanpa TELEGRAM_API_BASE: tembak api.telegram.org langsung (jalur laptop)."""
+    monkeypatch.delenv("TELEGRAM_API_BASE", raising=False)
+    post = mocker.patch("services.bigmoney.telegram.httpx.post")
+    post.return_value.status_code = 200
+
+    telegram.send_message("111", "halo")
+
+    url = post.call_args.args[0]
+    assert url == "https://api.telegram.org/bottoken-palsu/sendMessage"
+    assert "X-Proxy-Secret" not in post.call_args.kwargs["headers"]
+
+
+def test_send_message_routes_through_proxy_when_base_set(mocker, monkeypatch):
+    """TELEGRAM_API_BASE mengalihkan ke Worker; secret ikut supaya bukan open relay."""
+    monkeypatch.setenv("TELEGRAM_API_BASE", "https://tg-proxy.example.workers.dev/")
+    monkeypatch.setenv("TELEGRAM_PROXY_SECRET", "rahasia")
+    post = mocker.patch("services.bigmoney.telegram.httpx.post")
+    post.return_value.status_code = 200
+
+    telegram.send_message("111", "halo")
+
+    url = post.call_args.args[0]
+    assert url == "https://tg-proxy.example.workers.dev/bottoken-palsu/sendMessage"
+    assert post.call_args.kwargs["headers"]["X-Proxy-Secret"] == "rahasia"
+
+
 # --- format pesan ------------------------------------------------------------
 
 def test_report_message_carries_headline_and_top_picks(reported):

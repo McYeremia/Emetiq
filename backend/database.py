@@ -8,11 +8,36 @@ load_dotenv()
 
 _DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "idxanalyst.db")
 DATABASE_URL = os.getenv("DATABASE_URL", f"sqlite:///{_DB_PATH}")
-connect_args = {"check_same_thread": False} if DATABASE_URL.startswith("sqlite") else {}
 
-# SQLite tidak butuh connection pool — NullPool buka/tutup file langsung per session
-pool_kwargs = {"poolclass": NullPool} if DATABASE_URL.startswith("sqlite") else {}
-engine = create_engine(DATABASE_URL, connect_args=connect_args, **pool_kwargs)
+
+def build_engine(url: str):
+    if url.startswith("sqlite"):
+        # SQLite tidak butuh connection pool — NullPool buka/tutup file langsung
+        # per session
+        return create_engine(
+            url,
+            connect_args={"check_same_thread": False},
+            poolclass=NullPool,
+        )
+
+    # Space HF gratis membekukan container saat idle, dan pooler Supabase
+    # memutus koneksi yang diam. Soket di pool jadi mati tanpa sempat mengirim
+    # FIN yang sampai ke sini, lalu dibagikan lagi ke request berikutnya:
+    # psycopg2 menulis ke soket mati, tak ada yang meng-ACK, TCP retransmit
+    # sampai menyerah ~2 menit — "could not send data to server: Connection
+    # timed out", HTTP 500. Yang kebetulan dapat koneksi segar tetap jalan,
+    # jadi gejalanya sebagian halaman hidup dan sebagian mati.
+    #
+    # pre_ping menembak probe murah sebelum koneksi dipakai dan mengganti yang
+    # mati secara transparan; recycle membuang koneksi tua sebelum sempat basi.
+    return create_engine(
+        url,
+        pool_pre_ping=True,
+        pool_recycle=1800,
+    )
+
+
+engine = build_engine(DATABASE_URL)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
 

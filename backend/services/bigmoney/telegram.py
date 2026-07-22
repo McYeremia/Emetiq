@@ -22,7 +22,7 @@ import models
 
 logger = logging.getLogger("bigmoney.telegram")
 
-_API = "https://api.telegram.org/bot{token}/sendMessage"
+_DEFAULT_API_BASE = "https://api.telegram.org"
 _TIMEOUT = 15
 _CODE_TTL_MINUTES = 15
 _CODE_BYTES = 6          # ~10 karakter base32 — cukup panjang untuk tak bisa ditebak
@@ -39,17 +39,36 @@ def is_configured() -> bool:
     return bool(os.getenv("TELEGRAM_BOT_TOKEN"))
 
 
+def _send_url(token: str) -> str:
+    """URL sendMessage. Default langsung ke Bot API; TELEGRAM_API_BASE mengalihkannya.
+
+    HF Spaces memblokir egress ke api.telegram.org, jadi backend di HF menyetel
+    TELEGRAM_API_BASE ke Cloudflare Worker yang meneruskan permintaan. Laptop
+    (pipeline harian) membiarkannya kosong dan menembak Telegram langsung.
+    """
+    base = os.getenv("TELEGRAM_API_BASE", _DEFAULT_API_BASE).rstrip("/")
+    return f"{base}/bot{token}/sendMessage"
+
+
 def send_message(chat_id: str, text: str) -> None:
     """Kirim satu pesan HTML. Melempar TelegramError bila gagal."""
     token = os.getenv("TELEGRAM_BOT_TOKEN")
     if not token:
         raise TelegramError("TELEGRAM_BOT_TOKEN belum diset")
 
+    # Proxy Worker menolak relay anonim: tanpa secret ini ia bukan open proxy.
+    # Kosong saat menembak Telegram langsung — Bot API mengabaikan header asing.
+    headers = {}
+    proxy_secret = os.getenv("TELEGRAM_PROXY_SECRET")
+    if proxy_secret:
+        headers["X-Proxy-Secret"] = proxy_secret
+
     try:
         response = httpx.post(
-            _API.format(token=token),
+            _send_url(token),
             json={"chat_id": chat_id, "text": text, "parse_mode": "HTML",
                   "disable_web_page_preview": True},
+            headers=headers,
             timeout=_TIMEOUT,
         )
     except Exception as exc:   # noqa: BLE001 — httpx melempar aneka galat jaringan

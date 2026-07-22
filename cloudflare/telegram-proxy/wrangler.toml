@@ -1,0 +1,6 @@
+name = "emetiq-telegram-proxy"
+main = "worker.js"
+compatibility_date = "2026-07-15"
+
+# PROXY_SECRET diset sebagai secret, BUKAN di sini:
+#   wrangler secret put PROXY_SECRET
