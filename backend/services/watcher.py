@@ -10,6 +10,14 @@ import models
 
 import math as _math
 
+# Jendela baca scan_market_signals, dalam hari kalender. Setara dengan nilai
+# terpanjang di CALENDAR_LOOKBACK milik screen_by_strategy — scan menghitung
+# SEMUA strategi sekaligus, jadi ia harus memakai yang paling haus riwayat
+# (MA200). Menurunkannya di bawah ~500 akan melumpuhkan defensive-bull dan
+# institutional-trend.
+SCAN_LOOKBACK_DAYS = 700
+
+
 def _f(val, default: float = 0.0) -> float:
     """Konversi ke float, ganti NaN/inf dengan default agar JSON-safe."""
     try:
@@ -266,10 +274,16 @@ def scan_market_signals():
     from database import SessionLocal
     from sqlalchemy import func
     import models as mdl
-    from datetime import datetime
+    from datetime import datetime, date as _date, timedelta
 
     db = SessionLocal()
     count = 0
+    # Jendela baca mengikuti CALENDAR_LOOKBACK di screen_by_strategy: MA200 adalah
+    # indikator terpanjang yang dihitung di sini, dan 700 hari kalender (~480 hari
+    # bursa) menutupinya dengan margin lebar. Sebelum dibatasi, query di bawah tak
+    # punya batas bawah sama sekali — 797.487 baris per run, seluruh tabel harga,
+    # tiap hari kerja, untuk menghitung satu baris terakhir tiap saham.
+    cutoff_date = _date.today() - timedelta(days=SCAN_LOOKBACK_DAYS)
     try:
         # Hapus semua signal lama agar tidak menumpuk
         db.query(mdl.Signal).delete()
@@ -277,9 +291,17 @@ def scan_market_signals():
 
         stocks = db.query(mdl.Stock).filter(mdl.Stock.ticker != "^JKSE").all()
         for stock in stocks:
-            rows = db.query(mdl.OHLCVDaily).filter(
-                mdl.OHLCVDaily.stock_id == stock.id
-            ).order_by(mdl.OHLCVDaily.date).all()
+            # Hanya 4 kolom yang dipakai membentuk df di bawah, bukan 9
+            rows = (
+                db.query(mdl.OHLCVDaily.close, mdl.OHLCVDaily.high,
+                         mdl.OHLCVDaily.low, mdl.OHLCVDaily.volume)
+                .filter(
+                    mdl.OHLCVDaily.stock_id == stock.id,
+                    mdl.OHLCVDaily.date >= cutoff_date,
+                )
+                .order_by(mdl.OHLCVDaily.date)
+                .all()
+            )
 
             if not rows or len(rows) < 50:
                 continue

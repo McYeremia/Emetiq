@@ -32,41 +32,37 @@ _sync_state: dict = {
 def list_stocks(db: Session = Depends(get_db)):
     stocks = db.query(models.Stock).order_by(models.Stock.ticker).all()
 
-    # Latest OHLCV per stock
-    latest_subq = (
+    # Dua baris terakhir per saham — untuk harga terkini dan pembanding harian.
+    #
+    # Dulu ini tiga query: satu agregat max(date), satu join balik untuk baris
+    # terkini, lalu sepasang lagi untuk baris sebelumnya. Empat pindaian penuh
+    # atas ~800 ribu baris tiap kali dashboard dimuat, dan tiap baris ditarik
+    # lengkap 9 kolom padahal hanya date dan close yang dibaca di bawah.
+    #
+    # row_number() menyelesaikannya dalam satu pindaian, dan indeks
+    # (stock_id, date) yang sudah ada melayaninya langsung. Sengaja TIDAK
+    # dibatasi rentang tanggal: ~131 saham suspensi terakhir berdagang berbulan
+    # lalu, dan jendela pendek akan menghapus harganya dari daftar.
+    peringkat = (
         db.query(
-            models.OHLCVDaily.stock_id,
-            func.max(models.OHLCVDaily.date).label("max_date"),
+            models.OHLCVDaily.stock_id.label("stock_id"),
+            models.OHLCVDaily.date.label("date"),
+            models.OHLCVDaily.close.label("close"),
+            func.row_number()
+            .over(
+                partition_by=models.OHLCVDaily.stock_id,
+                order_by=models.OHLCVDaily.date.desc(),
+            )
+            .label("rn"),
         )
-        .group_by(models.OHLCVDaily.stock_id)
         .subquery()
     )
-    latest_rows = (
-        db.query(models.OHLCVDaily)
-        .join(latest_subq, (models.OHLCVDaily.stock_id == latest_subq.c.stock_id)
-              & (models.OHLCVDaily.date == latest_subq.c.max_date))
-        .all()
-    )
-    latest_map = {row.stock_id: row for row in latest_rows}
 
-    # Second-latest OHLCV per stock (for daily change)
-    prev_subq = (
-        db.query(
-            models.OHLCVDaily.stock_id,
-            func.max(models.OHLCVDaily.date).label("prev_date"),
-        )
-        .join(latest_subq, (models.OHLCVDaily.stock_id == latest_subq.c.stock_id)
-              & (models.OHLCVDaily.date < latest_subq.c.max_date))
-        .group_by(models.OHLCVDaily.stock_id)
-        .subquery()
-    )
-    prev_rows = (
-        db.query(models.OHLCVDaily)
-        .join(prev_subq, (models.OHLCVDaily.stock_id == prev_subq.c.stock_id)
-              & (models.OHLCVDaily.date == prev_subq.c.prev_date))
-        .all()
-    )
-    prev_map = {row.stock_id: row for row in prev_rows}
+    latest_map: dict = {}
+    prev_map: dict = {}
+    for row in db.query(peringkat).filter(peringkat.c.rn <= 2).all():
+        target = latest_map if row.rn == 1 else prev_map
+        target[row.stock_id] = row
 
     result = []
     for stock in stocks:
