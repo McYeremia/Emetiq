@@ -87,3 +87,52 @@ def test_save_ohlcv_skips_duplicates(db):
     count2 = save_ohlcv(db, stock, df)
     assert count2 == 0
     assert db.query(models.OHLCVDaily).count() == 5
+
+
+# ── save_ohlcv: menolak data cacat ───────────────────────────────────────────
+#
+# 21 Juli 2026: satu fetch buruk menulis NaN ke OHLC 605 saham sementara Volume
+# tetap benar — pola khas auto_adjust mengalikan OHLC dengan rasio adjclose yang
+# null. `float('nan')` tidak melempar apa pun dan Postgres menerima NaN sebagai
+# float sah, jadi `close = Column(..., nullable=False)` pun lolos. Harga di web
+# hilang tanpa satu alarm berbunyi.
+
+def _df_nan(days=2):
+    df = _mock_df(days)
+    for kolom in ["Open", "High", "Low", "Close"]:
+        df[kolom] = float("nan")
+    return df                                    # Volume sengaja tetap waras
+
+
+def test_save_ohlcv_menolak_baris_ohlc_nan(db):
+    stock = models.Stock(ticker="AALI", name="Astra Agro", sector="Agri", market_cap_cat="large")
+    db.add(stock); db.commit()
+
+    count = save_ohlcv(db, stock, _df_nan(days=2))
+
+    assert count == 0
+    assert db.query(models.OHLCVDaily).count() == 0
+
+
+def test_save_ohlcv_tidak_menimpa_harga_baik_dengan_nan(db):
+    """Jalur upsert 5-hari-terakhir adalah cara korupsi menyebar: tanpa
+    penjagaan, fetch buruk menimpa harga yang sudah benar di DB."""
+    stock = models.Stock(ticker="AALI", name="Astra Agro", sector="Agri", market_cap_cat="large")
+    db.add(stock); db.commit()
+    save_ohlcv(db, stock, _mock_df(days=2))
+
+    save_ohlcv(db, stock, _df_nan(days=2))
+
+    for baris in db.query(models.OHLCVDaily).all():
+        assert baris.close == 9050.0
+
+
+def test_save_ohlcv_menolak_harga_nol(db):
+    """Harga nol bukan harga — saham tak pernah ditutup di 0."""
+    stock = models.Stock(ticker="AALI", name="Astra Agro", sector="Agri", market_cap_cat="large")
+    db.add(stock); db.commit()
+    df = _mock_df(days=2)
+    df["Close"] = 0.0
+
+    assert save_ohlcv(db, stock, df) == 0
+    assert db.query(models.OHLCVDaily).count() == 0

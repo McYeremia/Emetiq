@@ -1,3 +1,4 @@
+import math
 import os
 import sys
 import yfinance as yf
@@ -31,6 +32,19 @@ def fetch_ohlcv(ticker: str, period: str = "5y", start: date = None) -> pd.DataF
     except Exception as e:
         print(f"Error fetching {symbol}: {e}")
         return pd.DataFrame()
+
+def _harga_waras(*nilai: float) -> bool:
+    """Harga yang layak disimpan: angka hingga dan positif.
+
+    Yahoo sesekali membalas OHLC NaN dengan Volume yang tetap benar — auto_adjust
+    mengalikan OHLC dengan rasio adjclose yang null, dan Volume tidak ikut
+    dikalikan. `float('nan')` tak melempar apa pun dan Postgres menerima NaN
+    sebagai float sah, jadi `nullable=False` di kolom close TIDAK menahannya.
+    Sekali lolos, harga 605 saham hilang dari web tanpa satu alarm berbunyi
+    (21 Juli 2026). Gerbangnya harus di sini, sebelum baris ditulis.
+    """
+    return all(math.isfinite(v) and v > 0 for v in nilai)
+
 
 def save_ohlcv(db: Session, stock: models.Stock, df: pd.DataFrame) -> int:
     """
@@ -79,6 +93,13 @@ def save_ohlcv(db: Session, stock: models.Stock, df: pd.DataFrame) -> int:
             close  = get_val(row["Close"])
             volume = int(get_val(row["Volume"]))
             adj    = get_val(row["Adj Close"]) if "Adj Close" in row else close
+
+            # Sebelum menyentuh DB — termasuk sebelum upsert, karena jalur upsert
+            # itulah yang menimpa harga baik dengan data cacat
+            if not _harga_waras(open_, high, low, close):
+                print(f"Lewati {stock.ticker} {d}: OHLC cacat "
+                      f"(open={open_} high={high} low={low} close={close})")
+                continue
 
             exists = existing_rows.get(d)
             if exists:
