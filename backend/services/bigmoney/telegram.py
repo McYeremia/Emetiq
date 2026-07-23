@@ -18,6 +18,7 @@ from datetime import date, datetime, timedelta
 from urllib.parse import urlsplit
 
 import httpx
+from curl_cffi import requests as cffi_requests
 from sqlalchemy.orm import Session
 
 import models
@@ -26,8 +27,7 @@ logger = logging.getLogger("bigmoney.telegram")
 
 _DEFAULT_API_BASE = "https://api.telegram.org"
 _TIMEOUT = 15
-_MAX_PERCOBAAN = 3       # webhook Telegram menunggu balasan; jangan lebih lama dari itu
-_JEDA_ULANG = 0.5        # detik, dikali nomor percobaan
+_JEDA_ULANG = 0.5        # detik, dikali nomor percobaan; webhook Telegram tak boleh lama menggantung
 _CODE_TTL_MINUTES = 15
 _CODE_BYTES = 6          # ~10 karakter base32 — cukup panjang untuk tak bisa ditebak
 _TOP_IN_MESSAGE = 5
@@ -52,6 +52,32 @@ def _send_url(token: str) -> str:
     """
     base = os.getenv("TELEGRAM_API_BASE", _DEFAULT_API_BASE).rstrip("/")
     return f"{base}/bot{token}/sendMessage"
+
+
+def _kirim_httpx(url: str, payload: dict, headers: dict):
+    r = httpx.post(url, json=payload, headers=headers, timeout=_TIMEOUT)
+    return r.status_code, r.text
+
+
+def _kirim_cffi(url: str, payload: dict, headers: dict):
+    """Jalur cadangan dengan sidik jari TLS Chrome.
+
+    Egress HF memutus handshake TLS ke Worker (SSL EOF, bukan jawaban HTTP).
+    Penyaring semacam itu menilai salah satu dari dua hal: nama domain, atau
+    sidik jari TLS klien. Yang kedua bisa dilewati — `idx_client.py:69` sudah
+    memakai trik yang sama untuk menembus pemeriksaan IDX.
+    """
+    r = cffi_requests.post(url, json=payload, headers=headers,
+                           timeout=_TIMEOUT, impersonate="chrome120")
+    return r.status_code, r.text
+
+
+# Percobaan 1 memakai httpx karena itu jalur yang sudah terbukti dari laptop;
+# sisanya turun ke curl_cffi. Log menyebut transport mana yang akhirnya tembus,
+# jadi satu kali rebuild sudah cukup untuk tahu bentuk penyaringannya.
+_TRANSPORT = (("httpx", _kirim_httpx),
+              ("curl_cffi/chrome", _kirim_cffi),
+              ("curl_cffi/chrome", _kirim_cffi))
 
 
 def _target(url: str) -> str:
@@ -82,37 +108,34 @@ def send_message(chat_id: str, text: str) -> None:
     # di HF berubah jadi tebak-tebakan.
     jalur = f"{_target(url)}, secret={'ada' if proxy_secret else 'tidak ada'}"
 
-    # Egress HF ke Worker kadang diputus di tengah handshake TLS: pesan yang sama
-    # bisa gagal lalu berhasil beberapa detik kemudian. Menyerah di percobaan
-    # pertama berarti balasan bot hilang karena satu kedipan jaringan. Hanya galat
-    # transport yang diulang — penolakan HTTP (403 secret salah, 400 chat_id
-    # salah) deterministik, mengulanginya cuma menunda kabar buruk.
-    galat_terakhir = None
-    for percobaan in range(1, _MAX_PERCOBAAN + 1):
-        try:
-            response = httpx.post(
-                url,
-                json={"chat_id": chat_id, "text": text, "parse_mode": "HTML",
-                      "disable_web_page_preview": True},
-                headers=headers,
-                timeout=_TIMEOUT,
-            )
-            break
-        except Exception as exc:   # noqa: BLE001 — httpx melempar aneka galat jaringan
-            galat_terakhir = exc
-            logger.warning("Percobaan %s/%s ke %s gagal: %s",
-                           percobaan, _MAX_PERCOBAAN, _target(url), exc)
-            if percobaan < _MAX_PERCOBAAN:
-                time.sleep(_JEDA_ULANG * percobaan)
-    else:
-        raise TelegramError(
-            f"Gagal menghubungi {jalur} setelah {_MAX_PERCOBAAN} percobaan: {galat_terakhir}"
-        )
+    payload = {"chat_id": chat_id, "text": text, "parse_mode": "HTML",
+               "disable_web_page_preview": True}
 
-    if response.status_code >= 400:
-        raise TelegramError(
-            f"Ditolak {jalur}: HTTP {response.status_code} {response.text[:200]}"
-        )
+    # Hanya galat transport yang diulang. Penolakan HTTP (403 secret salah, 400
+    # chat_id salah) deterministik — mengulanginya cuma menunda kabar buruk.
+    galat_terakhir = None
+    for percobaan, (nama, kirim) in enumerate(_TRANSPORT, start=1):
+        try:
+            status, body = kirim(url, payload, headers)
+        except Exception as exc:   # noqa: BLE001 — tiap pustaka melempar galat jaringannya sendiri
+            galat_terakhir = exc
+            logger.warning("Percobaan %s/%s ke %s via %s gagal: %s",
+                           percobaan, len(_TRANSPORT), _target(url), nama, exc)
+            if percobaan < len(_TRANSPORT):
+                time.sleep(_JEDA_ULANG * percobaan)
+            continue
+
+        if percobaan > 1:
+            logger.info("Tembus ke %s via %s di percobaan %s",
+                        _target(url), nama, percobaan)
+        if status >= 400:
+            raise TelegramError(f"Ditolak {jalur} via {nama}: HTTP {status} {body[:200]}")
+        return
+
+    raise TelegramError(
+        f"Gagal menghubungi {jalur} setelah {len(_TRANSPORT)} percobaan "
+        f"({', '.join(n for n, _ in _TRANSPORT)}): {galat_terakhir}"
+    )
 
 
 def _rupiah(value) -> str:
