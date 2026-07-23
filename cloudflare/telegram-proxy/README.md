@@ -1,46 +1,26 @@
-# Proxy egress Telegram (Cloudflare Worker)
+# Proxy egress Telegram (Cloudflare Worker) — TIDAK DIPAKAI
 
-HF Spaces memblokir egress ke `api.telegram.org`, jadi balasan bot interaktif
-(`/start`, `/report`, `/top`) yang jalan di backend HF macet dengan SSL timeout.
-Worker ini jadi jembatan: HF → Cloudflare → Telegram.
+**Diganti oleh `frontend/app/api/tg/[...path]/route.ts` sejak 2026-07-23.**
+Berkas di folder ini disimpan sebagai catatan, bukan bagian dari jalur produksi.
 
-`broadcast_report` (laporan harian) tak butuh ini — ia jalan dari laptop lewat
-Task Scheduler dan menembak Telegram langsung.
+## Kenapa gagal
 
-## Deploy
+Egress HF Spaces memblokir tujuan berdasarkan **domain**, bukan berdasarkan
+sidik jari TLS. `*.workers.dev` ikut terblokir bersama `api.telegram.org`, jadi
+Worker ini tak pernah bisa dihubungi dari HF. Buktinya di log HF:
 
-```bash
-cd cloudflare/telegram-proxy
-npm install -g wrangler        # sekali saja
-wrangler login
-wrangler secret put PROXY_SECRET   # tempel string acak panjang; simpan
-wrangler deploy
-```
+- `httpx` → `[SSL: UNEXPECTED_EOF_WHILE_READING]`, koneksi diputus saat
+  handshake TLS, sebelum ada satu byte HTTP pun.
+- `curl_cffi` impersonate Chrome → `curl: (28) Connection timed out`. Sidik jari
+  Chrome tak menolong; kalau penyaringnya menilai TLS, jalur ini akan tembus.
+- Domain lain dari HF (`emetiq.vercel.app`) dijawab normal — HTTP 404 dari
+  Vercel. Jadi egress HF sendiri sehat; yang ditolak adalah tujuannya.
 
-Catat URL hasilnya, mis. `https://emetiq-telegram-proxy.<akun>.workers.dev`.
+Worker-nya sendiri benar dan pernah terbukti bekerja saat dipanggil dari laptop
+(menembus sampai Telegram dan membawa pulang balasan JSON asli). Yang salah
+bukan kodenya, melainkan pilihan domainnya.
 
-## Sambungkan backend HF
+## Kalau suatu saat mau dipakai lagi
 
-Di Settings → Variables and secrets pada HF Space, tambah:
-
-| Nama | Nilai |
-|------|-------|
-| `TELEGRAM_API_BASE` | URL Worker (tanpa `/` di akhir) |
-| `TELEGRAM_PROXY_SECRET` | `PROXY_SECRET` yang sama |
-
-`TELEGRAM_BOT_TOKEN` sudah ada dari sebelumnya. Lalu **Factory rebuild**.
-
-**JANGAN** set `TELEGRAM_API_BASE` di laptop — pipeline harian harus tetap
-menembak Telegram langsung.
-
-## Uji
-
-Kirim `/report` ke bot dari Telegram. Balasan yang muncul = jalur egress tembus.
-Kalau perlu cek dari sisi HF:
-
-```bash
-curl -X POST "$TELEGRAM_API_BASE/bot$TELEGRAM_BOT_TOKEN/sendMessage" \
-  -H "X-Proxy-Secret: $TELEGRAM_PROXY_SECRET" \
-  -H "Content-Type: application/json" \
-  -d '{"chat_id":"<chat_id_kamu>","text":"tes proxy"}'
-```
+Perlu **custom domain** di Cloudflare (Worker → Settings → Domains & Routes).
+Selama alamatnya masih `*.workers.dev`, HF akan terus memutusnya.

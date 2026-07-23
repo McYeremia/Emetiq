@@ -99,32 +99,28 @@ def test_send_message_routes_through_proxy_when_base_set(mocker, monkeypatch):
     assert post.call_args.kwargs["headers"]["X-Proxy-Secret"] == "rahasia"
 
 
-def test_send_message_falls_back_to_cffi_when_httpx_blocked(mocker, monkeypatch):
-    """Egress HF memutus handshake TLS httpx; jalur sidik jari Chrome dicoba berikutnya."""
+def test_send_message_retries_transient_network_error(mocker, monkeypatch):
+    """Satu kedipan jaringan tak boleh menelan balasan bot."""
     monkeypatch.setattr(telegram.time, "sleep", lambda _: None)
-    post = mocker.patch("services.bigmoney.telegram.httpx.post",
-                        side_effect=httpx.ConnectError("EOF"))
-    cffi = mocker.patch("services.bigmoney.telegram.cffi_requests.post")
-    cffi.return_value = mocker.Mock(status_code=200, text="{}")
+    post = mocker.patch("services.bigmoney.telegram.httpx.post")
+    post.side_effect = [httpx.ConnectError("EOF"), mocker.Mock(status_code=200, text="{}")]
 
     telegram.send_message("111", "halo")
 
-    assert post.call_count == 1
-    assert cffi.call_args.kwargs["impersonate"] == "chrome120"
+    assert post.call_count == 2
 
 
-def test_send_message_gives_up_after_all_transports(mocker, monkeypatch):
-    """Semua transport gagal berarti penyaringan berbasis domain — sebut keduanya."""
+def test_send_message_gives_up_after_max_attempts(mocker, monkeypatch):
+    """Gagal terus bukan kedipan — sebutkan jumlah percobaan dan host tujuannya."""
     monkeypatch.setattr(telegram.time, "sleep", lambda _: None)
-    mocker.patch("services.bigmoney.telegram.httpx.post",
-                 side_effect=httpx.ConnectError("EOF"))
-    cffi = mocker.patch("services.bigmoney.telegram.cffi_requests.post",
-                        side_effect=OSError("EOF"))
+    monkeypatch.setenv("TELEGRAM_API_BASE", "https://emetiq.vercel.app/api/tg")
+    post = mocker.patch("services.bigmoney.telegram.httpx.post",
+                        side_effect=httpx.ConnectError("EOF"))
 
-    with pytest.raises(telegram.TelegramError, match="curl_cffi"):
+    with pytest.raises(telegram.TelegramError, match="emetiq.vercel.app.*3 percobaan"):
         telegram.send_message("111", "halo")
 
-    assert cffi.call_count == 2
+    assert post.call_count == 3
 
 
 def test_send_message_does_not_retry_http_rejection(mocker, monkeypatch):
@@ -132,13 +128,11 @@ def test_send_message_does_not_retry_http_rejection(mocker, monkeypatch):
     monkeypatch.setattr(telegram.time, "sleep", lambda _: None)
     post = mocker.patch("services.bigmoney.telegram.httpx.post")
     post.return_value = mocker.Mock(status_code=403, text="Forbidden")
-    cffi = mocker.patch("services.bigmoney.telegram.cffi_requests.post")
 
     with pytest.raises(telegram.TelegramError, match="Ditolak"):
         telegram.send_message("111", "halo")
 
     assert post.call_count == 1
-    assert cffi.call_count == 0
 
 
 # --- format pesan ------------------------------------------------------------
