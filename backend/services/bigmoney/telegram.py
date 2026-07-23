@@ -14,6 +14,7 @@ import logging
 import os
 import secrets
 from datetime import date, datetime, timedelta
+from urllib.parse import urlsplit
 
 import httpx
 from sqlalchemy.orm import Session
@@ -50,6 +51,15 @@ def _send_url(token: str) -> str:
     return f"{base}/bot{token}/sendMessage"
 
 
+def _target(url: str) -> str:
+    """Host tujuan saja, untuk pesan galat.
+
+    Token ada di path, jadi jangan pernah menaruh URL utuh ke log — host cukup
+    untuk membedakan 'menembak Telegram langsung' dari 'lewat Worker'.
+    """
+    return urlsplit(url).netloc or "(URL tanpa host)"
+
+
 def send_message(chat_id: str, text: str) -> None:
     """Kirim satu pesan HTML. Melempar TelegramError bila gagal."""
     token = os.getenv("TELEGRAM_BOT_TOKEN")
@@ -63,19 +73,27 @@ def send_message(chat_id: str, text: str) -> None:
     if proxy_secret:
         headers["X-Proxy-Secret"] = proxy_secret
 
+    url = _send_url(token)
+    # Host & status secret ikut ke pesan galat: tanpa itu, 'SSL EOF' dan '403'
+    # tak bisa dibedakan antara Telegram langsung dan proxy Worker, dan diagnosis
+    # di HF berubah jadi tebak-tebakan.
+    jalur = f"{_target(url)}, secret={'ada' if proxy_secret else 'tidak ada'}"
+
     try:
         response = httpx.post(
-            _send_url(token),
+            url,
             json={"chat_id": chat_id, "text": text, "parse_mode": "HTML",
                   "disable_web_page_preview": True},
             headers=headers,
             timeout=_TIMEOUT,
         )
     except Exception as exc:   # noqa: BLE001 — httpx melempar aneka galat jaringan
-        raise TelegramError(f"Gagal menghubungi Telegram: {exc}") from exc
+        raise TelegramError(f"Gagal menghubungi {jalur}: {exc}") from exc
 
     if response.status_code >= 400:
-        raise TelegramError(f"Telegram menolak: HTTP {response.status_code} {response.text[:200]}")
+        raise TelegramError(
+            f"Ditolak {jalur}: HTTP {response.status_code} {response.text[:200]}"
+        )
 
 
 def _rupiah(value) -> str:
