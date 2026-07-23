@@ -5,6 +5,7 @@ TELEGRAM_BOT_TOKEN.
 """
 from datetime import date, datetime, timedelta
 
+import httpx
 import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
@@ -96,6 +97,41 @@ def test_send_message_routes_through_proxy_when_base_set(mocker, monkeypatch):
     url = post.call_args.args[0]
     assert url == "https://tg-proxy.example.workers.dev/bottoken-palsu/sendMessage"
     assert post.call_args.kwargs["headers"]["X-Proxy-Secret"] == "rahasia"
+
+
+def test_send_message_retries_transient_network_error(mocker, monkeypatch):
+    """Egress HF ke Worker kadang putus sesaat; percobaan kedua harus dicoba."""
+    monkeypatch.setattr(telegram.time, "sleep", lambda _: None)
+    post = mocker.patch("services.bigmoney.telegram.httpx.post")
+    post.side_effect = [httpx.ConnectError("EOF"), mocker.Mock(status_code=200)]
+
+    telegram.send_message("111", "halo")
+
+    assert post.call_count == 2
+
+
+def test_send_message_gives_up_after_max_attempts(mocker, monkeypatch):
+    """Gagal terus berarti bukan kedipan jaringan — sebutkan jumlah percobaannya."""
+    monkeypatch.setattr(telegram.time, "sleep", lambda _: None)
+    post = mocker.patch("services.bigmoney.telegram.httpx.post")
+    post.side_effect = httpx.ConnectError("EOF")
+
+    with pytest.raises(telegram.TelegramError, match="3 percobaan"):
+        telegram.send_message("111", "halo")
+
+    assert post.call_count == 3
+
+
+def test_send_message_does_not_retry_http_rejection(mocker, monkeypatch):
+    """403 secret salah itu deterministik; mengulanginya cuma menunda kabar buruk."""
+    monkeypatch.setattr(telegram.time, "sleep", lambda _: None)
+    post = mocker.patch("services.bigmoney.telegram.httpx.post")
+    post.return_value = mocker.Mock(status_code=403, text="Forbidden")
+
+    with pytest.raises(telegram.TelegramError, match="Ditolak"):
+        telegram.send_message("111", "halo")
+
+    assert post.call_count == 1
 
 
 # --- format pesan ------------------------------------------------------------

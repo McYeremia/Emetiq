@@ -13,6 +13,7 @@ import html
 import logging
 import os
 import secrets
+import time
 from datetime import date, datetime, timedelta
 from urllib.parse import urlsplit
 
@@ -25,6 +26,8 @@ logger = logging.getLogger("bigmoney.telegram")
 
 _DEFAULT_API_BASE = "https://api.telegram.org"
 _TIMEOUT = 15
+_MAX_PERCOBAAN = 3       # webhook Telegram menunggu balasan; jangan lebih lama dari itu
+_JEDA_ULANG = 0.5        # detik, dikali nomor percobaan
 _CODE_TTL_MINUTES = 15
 _CODE_BYTES = 6          # ~10 karakter base32 — cukup panjang untuk tak bisa ditebak
 _TOP_IN_MESSAGE = 5
@@ -79,16 +82,32 @@ def send_message(chat_id: str, text: str) -> None:
     # di HF berubah jadi tebak-tebakan.
     jalur = f"{_target(url)}, secret={'ada' if proxy_secret else 'tidak ada'}"
 
-    try:
-        response = httpx.post(
-            url,
-            json={"chat_id": chat_id, "text": text, "parse_mode": "HTML",
-                  "disable_web_page_preview": True},
-            headers=headers,
-            timeout=_TIMEOUT,
+    # Egress HF ke Worker kadang diputus di tengah handshake TLS: pesan yang sama
+    # bisa gagal lalu berhasil beberapa detik kemudian. Menyerah di percobaan
+    # pertama berarti balasan bot hilang karena satu kedipan jaringan. Hanya galat
+    # transport yang diulang — penolakan HTTP (403 secret salah, 400 chat_id
+    # salah) deterministik, mengulanginya cuma menunda kabar buruk.
+    galat_terakhir = None
+    for percobaan in range(1, _MAX_PERCOBAAN + 1):
+        try:
+            response = httpx.post(
+                url,
+                json={"chat_id": chat_id, "text": text, "parse_mode": "HTML",
+                      "disable_web_page_preview": True},
+                headers=headers,
+                timeout=_TIMEOUT,
+            )
+            break
+        except Exception as exc:   # noqa: BLE001 — httpx melempar aneka galat jaringan
+            galat_terakhir = exc
+            logger.warning("Percobaan %s/%s ke %s gagal: %s",
+                           percobaan, _MAX_PERCOBAAN, _target(url), exc)
+            if percobaan < _MAX_PERCOBAAN:
+                time.sleep(_JEDA_ULANG * percobaan)
+    else:
+        raise TelegramError(
+            f"Gagal menghubungi {jalur} setelah {_MAX_PERCOBAAN} percobaan: {galat_terakhir}"
         )
-    except Exception as exc:   # noqa: BLE001 — httpx melempar aneka galat jaringan
-        raise TelegramError(f"Gagal menghubungi {jalur}: {exc}") from exc
 
     if response.status_code >= 400:
         raise TelegramError(
