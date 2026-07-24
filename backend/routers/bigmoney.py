@@ -261,7 +261,8 @@ BOT_HELP = (
     "Perintah:\n"
     "/start &lt;kode&gt; — hubungkan akun EMETIQ\n"
     "/report — laporan Big Money terakhir\n"
-    "/top — peringkat top akumulasi"
+    "/top — saham yang paling banyak dibeli asing\n"
+    "/skor — arti nilai 0–100 dan cara menghitungnya"
 )
 
 
@@ -291,6 +292,11 @@ def _handle_command(text: str, chat_id: str, db: Session) -> str:
     """Perintah bot → teks balasan. Tanpa I/O Telegram, supaya bisa diuji langsung."""
     command, _, argument = text.strip().partition(" ")
     command = command.lower()
+
+    # Sebelum pemeriksaan tautan akun: legenda skor tak memuat data siapa pun,
+    # dan orang yang belum tertaut justru paling butuh penjelasannya.
+    if command == "/skor":
+        return telegram.PENJELASAN_SKOR
 
     if command == "/start":
         code = argument.strip()

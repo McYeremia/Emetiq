@@ -158,6 +158,15 @@ def test_report_command_sends_latest_report_to_linked_chat(make_client, send, se
     assert "Asing keluar dari Finance" in send.call_args.args[1]
 
 
+def test_skor_command_explains_without_requiring_link(make_client, send):
+    """Legenda skor tak memuat data siapa pun, dan yang belum tertaut paling butuh penjelasannya."""
+    _post(make_client(), _update("/skor", chat_id="999"))
+
+    balasan = send.call_args.args[1]
+    assert "peringkat" in balasan.lower()
+    assert "belum terhubung" not in balasan.lower()
+
+
 def test_unknown_command_is_answered_not_ignored(make_client, send):
     _post(make_client(), _update("halo bot", chat_id="555"))
 

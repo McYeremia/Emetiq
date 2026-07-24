@@ -30,6 +30,29 @@ def _regime_dict(regime: models.BigMoneyMarketRegime) -> dict:
     }
 
 
+def _position_dict(position) -> dict:
+    """Akumulasi berjalan → kolom konteks. Semua None bila belum ada posisi aktif.
+
+    `gain_since_entry_pct` dihitung di sini, bukan saat merender: laporan yang
+    tersimpan harus bisa dibaca ulang bertahun kemudian tanpa menghitung ulang
+    apa pun dari harga yang sudah bergeser.
+    """
+    if position is None:
+        return {"accumulated_value": None, "inflow_days": None,
+                "opened_on": None, "gain_since_entry_pct": None}
+
+    gain = None
+    if position.entry_close and position.last_close:
+        gain = (position.last_close - position.entry_close) / position.entry_close * 100
+
+    return {
+        "accumulated_value": position.accumulated_value,
+        "inflow_days": position.inflow_days,
+        "opened_on": position.opened_on.isoformat() if position.opened_on else None,
+        "gain_since_entry_pct": gain,
+    }
+
+
 def build_context(target: date, db: Session) -> dict | None:
     """Kumpulkan angka yang jadi bahan laporan. Mengembalikan None bila hari itu belum di-skor."""
     regime = (
@@ -46,6 +69,16 @@ def build_context(target: date, db: Session) -> dict | None:
           .order_by(models.BigMoneyTopAccumulation.rank)
           .all()
     )
+
+    # Satu query untuk semua ticker sekaligus: peringkat berisi 10 nama, dan
+    # mengambilnya satu per satu berarti 10 perjalanan ke Supabase per laporan.
+    posisi = {
+        p.ticker: p
+        for p in db.query(models.BigMoneyPosition)
+                   .filter(models.BigMoneyPosition.status == "ACTIVE",
+                           models.BigMoneyPosition.ticker.in_([r.ticker for r in rows]))
+                   .all()
+    } if rows else {}
 
     top: list[dict] = []
     for row in rows:
@@ -70,6 +103,9 @@ def build_context(target: date, db: Session) -> dict | None:
             "foreign_net_value": daily.foreign_net_value if daily else None,
             "change_pct": daily.change_pct if daily else None,
             "close": daily.close if daily else None,
+            # Akumulasi berjalan. None bila saham ini belum punya posisi aktif —
+            # menampilkan "total 0" akan berbohong tentang apa yang sudah masuk.
+            **_position_dict(posisi.get(row.ticker)),
         })
 
     rotation = regime.sector_rotation or {}
@@ -149,24 +185,38 @@ def render_prompt(context: dict) -> str:
         if flags.get("pump_dump_risk"):
             catatan.append("RISIKO PUMP-DUMP")
         suffix = f" [{'; '.join(catatan)}]" if catatan else ""
+        akumulasi = ""
+        if row.get("accumulated_value"):
+            akumulasi = (f" | akumulasi berjalan {_rupiah(row['accumulated_value'])} "
+                         f"sejak {row.get('opened_on')} ({row.get('inflow_days')} hari beli)")
         lines.append(
             f"{row['rank']}. {row['ticker']} — skor {row['composite']:.1f} ({row['conviction']}, "
-            f"fase {row['phase']}) | net asing {_rupiah(row['foreign_net_value'])} | "
-            f"{row['days_confirmed']} hari inflow beruntun{suffix}"
+            f"fase {row['phase']}) | net asing HARI INI {_rupiah(row['foreign_net_value'])} | "
+            f"{row['days_confirmed']} hari inflow beruntun{akumulasi}{suffix}"
         )
 
     lines += [
         "",
         "ATURAN PENULISAN:",
         "1. Jawab tiga hal: ke mana arah big money hari ini, berdasarkan bukti apa, dan saham mana yang sedang top akumulasi.",
-        "2. Baris pertama adalah judul (maksimal 12 kata, tanpa markdown). Baris berikutnya isi laporan, 3-4 paragraf.",
+        "2. Baris pertama adalah judul (maksimal 12 kata, tanpa markdown). Baris berikutnya isi "
+        "laporan, 3-4 paragraf, TOTAL MAKSIMAL 220 KATA — laporan dikirim sebagai satu pesan "
+        "Telegram dan kelebihannya akan dipotong.",
         "3. Skor bersifat RELATIF terhadap saham lain hari itu. Bila net asing seluruh pasar negatif, "
         "'top akumulasi' berarti paling sedikit ditinggalkan, BUKAN diborong besar-besaran. Katakan apa adanya.",
         "4. Nilai net asing adalah ESTIMASI (net lembar dikali VWAP pasar) — IDX tak menyediakan harga per sisi asing. "
         "Jangan menyebutnya sebagai harga beli bandar yang presisi.",
         "5. Sebut saham berbendera risiko pump-dump sebagai peringatan, bukan peluang.",
         "6. Ini alat bantu analisis, BUKAN NASIHAT INVESTASI. Jangan menyuruh membeli atau menjual apa pun.",
-        "7. Bahasa Indonesia, lugas, tanpa jargon berlebihan. Tanpa emoji.",
+        "7. Bahasa Indonesia, lugas, tanpa emoji.",
+        "8. Pembacanya orang awam yang tak pernah belajar keuangan. Jangan memakai kata 'rezim', "
+        "'divergensi', 'akumulasi', 'distribusi', 'breadth', atau 'cost basis' tanpa langsung "
+        "menjelaskannya dengan kalimat biasa. Lebih baik tulis 'pasar sedang tenang' daripada "
+        "'rezim CALM', dan 'asing membeli diam-diam sementara harganya belum naik' daripada "
+        "'fase akumulasi'.",
+        "9. Bedakan dengan tegas angka HARI INI dari akumulasi berjalan. Kalau sebuah saham sudah "
+        "mengumpulkan dana beberapa hari, sebutkan totalnya dan sejak kapan — pembaca sering "
+        "mengira angka harian adalah totalnya.",
     ]
 
     return "\n".join(lines)

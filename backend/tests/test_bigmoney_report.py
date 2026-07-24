@@ -75,6 +75,67 @@ def test_build_context_gathers_regime_and_top_accumulation(scored_day):
     assert ctx["top_accumulation"][1]["foreign_net_value"] == 12_830_000_000
 
 
+def test_build_context_carries_running_accumulation(scored_day):
+    """Posisi aktif menjawab 'sebesar apa selama berapa hari' — angka harian saja tak cukup."""
+    scored_day.add(models.BigMoneyPosition(
+        ticker="CUAN", opened_on=date(2026, 7, 3), status="ACTIVE",
+        entry_close=1_000.0, last_close=1_048.0, last_date=TARGET,
+        accumulated_value=312_700_000_000, inflow_days=5))
+    scored_day.commit()
+
+    pick = build_context(TARGET, scored_day)["top_accumulation"][0]
+
+    assert pick["accumulated_value"] == 312_700_000_000
+    assert pick["inflow_days"] == 5
+    assert pick["opened_on"] == "2026-07-03"
+    assert pick["gain_since_entry_pct"] == pytest.approx(4.8)
+
+
+def test_build_context_leaves_accumulation_empty_without_active_position(scored_day):
+    """Posisi yang sudah ditutup bukan akumulasi berjalan; jangan tampilkan angkanya."""
+    scored_day.add(models.BigMoneyPosition(
+        ticker="CUAN", opened_on=date(2026, 6, 1), closed_on=date(2026, 7, 1), status="CLOSED",
+        accumulated_value=999_000_000_000, inflow_days=9))
+    scored_day.commit()
+
+    pick = build_context(TARGET, scored_day)["top_accumulation"][0]
+
+    assert pick["accumulated_value"] is None
+    assert pick["gain_since_entry_pct"] is None
+
+
+def test_prompt_separates_today_from_running_accumulation(scored_day):
+    """Model harus bisa menyebut durasi akumulasi, bukan cuma angka hari itu."""
+    scored_day.add(models.BigMoneyPosition(
+        ticker="CUAN", opened_on=date(2026, 7, 3), status="ACTIVE",
+        entry_close=1_000.0, last_close=1_048.0, last_date=TARGET,
+        accumulated_value=312_700_000_000, inflow_days=5))
+    scored_day.commit()
+
+    prompt = render_prompt(build_context(TARGET, scored_day))
+
+    assert "HARI INI" in prompt
+    assert "akumulasi berjalan Rp 312.7 miliar" in prompt
+
+
+def test_prompt_caps_narrative_length(scored_day):
+    """Narasi tanpa batas mendorong pesan Telegram melewati 4096 satuan lalu dipangkas.
+
+    Memangkas di hilir menyelamatkan pengiriman; membatasi di hulu menyelamatkan isinya.
+    """
+    prompt = render_prompt(build_context(TARGET, scored_day))
+
+    assert "220 KATA" in prompt
+
+
+def test_prompt_demands_plain_language(scored_day):
+    """Narasi teknis membuat laporan tak terbaca oleh pembaca yang dituju."""
+    prompt = render_prompt(build_context(TARGET, scored_day)).lower()
+
+    assert "awam" in prompt
+    assert "rezim" in prompt and "jangan memakai kata" in prompt
+
+
 def test_build_context_ranks_sector_rotation(scored_day):
     ctx = build_context(TARGET, scored_day)
 

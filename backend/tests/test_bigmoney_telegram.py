@@ -149,7 +149,149 @@ def test_report_message_warns_on_pump_dump(reported):
     """Saham berbendera risiko harus tampil sebagai peringatan, bukan peluang."""
     text = format_report(reported.query(models.BigMoneyDailyReport).one())
 
-    assert "RISIKO" in text.upper()
+    assert "peringatan, bukan peluang" in text
+
+
+def test_report_message_speaks_plainly(reported):
+    """Pembacanya awam: istilah engine boleh muncul, tapi tak boleh berdiri sendiri."""
+    text = format_report(reported.query(models.BigMoneyDailyReport).one())
+
+    assert "sedang mengumpulkan diam-diam" in text
+    assert "pasar bergejolak" in text and "tren naik" in text
+    assert "Rezim:" not in text
+
+
+def test_report_message_marks_daily_figure_as_today(reported):
+    """Angka harian yang tak berlabel dikira total — itu keluhan yang memicu perubahan ini."""
+    text = format_report(reported.query(models.BigMoneyDailyReport).one())
+
+    assert "Hari ini Rp 16,2 miliar" in text
+
+
+def test_report_says_money_left_when_market_is_negative(reported):
+    """Tanda minus menuntut pembaca menerjemahkan sendiri; hari outflow paling sering terjadi."""
+    text = format_report(reported.query(models.BigMoneyDailyReport).one())
+
+    assert "keluar</b> dari pasar" in text
+    assert "-285" not in text and "−285" not in text
+
+
+def test_rupiah_uses_indonesian_number_format():
+    """Pembacanya orang Indonesia: titik untuk ribuan, koma untuk desimal."""
+    assert telegram._rupiah(1_204_300_000_000) == "Rp 1,2 triliun"
+    assert telegram._rupiah(45_200_000_000) == "Rp 45,2 miliar"
+    assert telegram._rupiah(-2_500_000_000_000) == "Rp -2,5 triliun"
+    assert telegram._rupiah(None) == "tidak tersedia"
+
+
+def test_report_message_shows_running_accumulation(db):
+    """Posisi berjalan menjawab 'sebesar apa, selama berapa hari'."""
+    db.add(models.BigMoneyDailyReport(
+        date=TARGET, headline="Judul", narrative="Isi", model="gemini",
+        context={
+            "regime": {"volatility_regime": "CALM", "trend_regime": "BULL",
+                       "total_foreign_net_value": 1_204_300_000_000},
+            "top_accumulation": [
+                {"rank": 1, "ticker": "CUAN", "composite": 82.0, "conviction": "STRONG",
+                 "phase": "AKUMULASI", "days_confirmed": 5, "flags": {},
+                 "foreign_net_value": 45_200_000_000,
+                 "accumulated_value": 312_700_000_000, "inflow_days": 5,
+                 "opened_on": "2026-07-14", "gain_since_entry_pct": 4.8},
+            ],
+        }))
+    db.commit()
+
+    text = format_report(db.query(models.BigMoneyDailyReport).one())
+
+    assert "total Rp 312,7 miliar" in text
+    assert "5 hari beli" in text
+    assert "sejak 14 Jul" in text
+    assert "+4,8%" in text
+
+
+def test_report_message_falls_back_to_streak_without_position(reported):
+    """Tanpa posisi aktif, 'total 0' akan berbohong — pakai hari beruntun saja."""
+    text = format_report(reported.query(models.BigMoneyDailyReport).one())
+
+    assert "2 hari beli beruntun" in text
+    assert "total Rp" not in text
+
+
+def test_report_message_carries_score_legend(reported):
+    """Nilai 0-100 tanpa penjelasan asalnya tak berarti apa-apa bagi pembaca awam."""
+    text = format_report(reported.query(models.BigMoneyDailyReport).one())
+
+    assert "pada hari yang sama" in text
+    assert "/skor" in text
+
+
+def test_report_message_skips_legend_without_picks(reported):
+    """Tanpa satu pun saham, legenda menjelaskan nilai yang tak ditampilkan di mana pun."""
+    report = reported.query(models.BigMoneyDailyReport).one()
+    report.context = {**report.context, "top_accumulation": []}
+
+    text = format_report(report)
+
+    assert "/skor" not in text
+    assert "bukan nasihat investasi" in text.lower()
+
+
+# --- batas panjang pesan -----------------------------------------------------
+
+def test_report_message_stays_within_telegram_limit(reported):
+    """Bot API menolak pesan >4096 satuan dengan HTTP 400, dan broadcast tetap
+    menandai laporan terkirim — kegagalannya senyap, jadi jangan sampai terjadi."""
+    report = reported.query(models.BigMoneyDailyReport).one()
+    report.narrative = "Kalimat panjang tentang aliran dana asing. " * 200
+
+    text = format_report(report)
+
+    assert telegram._panjang(text) <= telegram._BATAS_PESAN
+
+
+def test_truncated_report_keeps_numbers_and_disclaimer(reported):
+    """Yang dipangkas hanya narasi. Angka, peringatan risiko, dan disclaimer harus utuh."""
+    report = reported.query(models.BigMoneyDailyReport).one()
+    report.narrative = "Kalimat panjang tentang aliran dana asing. " * 200
+
+    text = format_report(report)
+
+    assert "CUAN" in text and "GOTO" in text
+    assert "Hari ini Rp 16,2 miliar" in text
+    assert "peringatan, bukan peluang" in text
+    assert "bukan nasihat investasi" in text.lower()
+
+
+def test_truncated_report_says_it_was_truncated(reported):
+    """Narasi yang berhenti mendadak terbaca seperti laporan cacat, bukan laporan dipotong."""
+    report = reported.query(models.BigMoneyDailyReport).one()
+    report.narrative = "Kalimat panjang tentang aliran dana asing. " * 200
+
+    assert "dipotong" in format_report(report)
+
+
+def test_truncation_never_leaves_half_an_html_entity(reported):
+    """'&amp;' yang terpangkas jadi '&am' membuat Telegram menolak seluruh pesan."""
+    report = reported.query(models.BigMoneyDailyReport).one()
+    report.narrative = "PT Aneka Tambang & Mitra menyerap dana asing hari ini. " * 150
+
+    text = format_report(report)
+
+    assert all(";" in text[i:i + 8] for i, c in enumerate(text) if c == "&")
+
+
+def test_short_report_is_left_alone(reported):
+    """Laporan normal tak boleh ikut ditandai terpotong."""
+    text = format_report(reported.query(models.BigMoneyDailyReport).one())
+
+    assert "dipotong" not in text
+    assert "Paragraf kedua." in text
+
+
+def test_panjang_counts_the_way_telegram_does():
+    """Telegram menghitung UTF-16: emoji dua satuan, huruf biasa satu."""
+    assert telegram._panjang("abc") == 3
+    assert telegram._panjang("📊") == 2
 
 
 def test_report_message_includes_disclaimer(reported):
