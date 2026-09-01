@@ -106,7 +106,10 @@ export default function OverviewClient({
     }
   };
 
-  usePollingSaatTerlihat(loadData, { muatSegera: sahamAwal.length === 0 });
+  // Selalu muat saat mount. Data server dipakai untuk cat pertama — layar terisi
+  // tanpa kedip — bukan sebagai kata terakhir: HTML-nya datang dari cache ISR yang
+  // bisa jauh lebih tua dari lima menit.
+  usePollingSaatTerlihat(loadData);
 
   const currentIhsg = ihsgData[ihsgData.length - 1]?.close || 0;
   const prevIhsg = ihsgData[ihsgData.length - 2]?.close || 0;

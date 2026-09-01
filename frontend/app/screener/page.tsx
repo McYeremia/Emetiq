@@ -3,6 +3,7 @@
 import { useEffect, useState, Suspense, useRef } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { api, Stock, BacktestResult } from '@/lib/api';
+import { usePollingSaatTerlihat } from '@/lib/usePolling';
 import Link from 'next/link';
 import EmetiqNav from '@/components/EmetiqNav';
 import RequireAuth from '@/components/RequireAuth';
@@ -113,15 +114,27 @@ function ScreenerInner() {
     .sort((a, b) => b.metrics.total_return_pct - a.metrics.total_return_pct);
 
   // ── Load fundamental data on tab switch ─────────────────
+  const perluFundamental = activeTab === 'fundamental' || activeTab === 'backtest';
+
+  const muatFundamental = () => {
+    if (!perluFundamental) return;
+    // Skeleton hanya saat tabel masih kosong: muat ulang berkala tak boleh
+    // mengosongkan tabel yang sedang dibaca orang.
+    if (fundStocks.length === 0) setFundLoading(true);
+    api.getStocks()
+      .then(data => setFundStocks(data))
+      .catch(() => {})
+      .finally(() => setFundLoading(false));
+  };
+
   useEffect(() => {
-    if ((activeTab === 'fundamental' || activeTab === 'backtest') && fundStocks.length === 0) {
-      setFundLoading(true);
-      api.getStocks()
-        .then(data => setFundStocks(data))
-        .catch(() => {})
-        .finally(() => setFundLoading(false));
-    }
+    if (perluFundamental && fundStocks.length === 0) muatFundamental();
   }, [activeTab]);
+
+  // Tanpa ini, tab screener yang dibiarkan terbuka membekukan harganya selamanya:
+  // datanya dimuat sekali lalu tak pernah disegarkan sampai halaman dimuat ulang.
+  // `muatSegera: false` — efek di atas yang menangani muat pertama.
+  usePollingSaatTerlihat(muatFundamental, { muatSegera: false });
 
   // ── Teknikal logic ───────────────────────────────────────
   const runScreener = async (id: string) => {

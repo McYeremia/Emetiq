@@ -23,8 +23,15 @@ export function usePollingSaatTerlihat(
   muat: () => void,
   { jedaMs = JEDA_MUAT_ULANG, muatSegera = true }: {
     jedaMs?: number;
-    /** Setel `false` bila data awal sudah dikirim server — tanpa ini komponen
-     *  langsung menembak ulang permintaan yang barusan dijawab. */
+    /** Setel `false` HANYA bila komponen belum boleh memuat apa pun — mis. datanya
+     *  milik tab yang sedang tak terbuka.
+     *
+     *  JANGAN memakainya untuk "data awal sudah dikirim server". Halaman yang
+     *  di-render server dilayani dari cache ISR Vercel secara
+     *  stale-while-revalidate: pengunjung yang datang setelah cache kedaluwarsa
+     *  justru menerima salinan LAMA, dan hasil segarnya baru dinikmati
+     *  pengunjung berikutnya. Melewatkan muat pertama menambahkan satu jeda
+     *  penuh lagi di atas keterlambatan itu — harga bisa membeku ~10 menit. */
     muatSegera?: boolean;
   } = {},
 ) {

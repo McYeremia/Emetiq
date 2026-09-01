@@ -113,7 +113,10 @@ export default function DashboardClient({
     }
   };
 
-  usePollingSaatTerlihat(loadData, { muatSegera: sahamAwal.length === 0 });
+  // Selalu muat saat mount. Data server dipakai untuk cat pertama — layar terisi
+  // tanpa kedip — bukan sebagai kata terakhir: HTML-nya datang dari cache ISR yang
+  // bisa jauh lebih tua dari lima menit.
+  usePollingSaatTerlihat(loadData);
 
   const handleScan = async () => {
     setIsRunningScan(true);

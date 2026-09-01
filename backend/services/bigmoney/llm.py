@@ -7,7 +7,11 @@ SDK di-impor malas (lazy) di dalam fungsi, bukan di puncak berkas, supaya modul
 ini bisa di-impor dan diuji tanpa `google-generativeai` terpasang dan tanpa
 GEMINI_API_KEY — kerangka laporan bisa dikerjakan sebelum key-nya diambil.
 """
+import logging
 import os
+import time
+
+logger = logging.getLogger("bigmoney.llm")
 
 # `gemini-flash-latest`, bukan `gemini-2.0-flash`: pada key free-tier, model bernomor
 # sering berjatah NOL (429 dengan limit: 0) atau tak dikenali sama sekali. Alias
@@ -48,12 +52,12 @@ def _get_model():
     return _MODEL_CACHE
 
 
-def generate_text(prompt: str) -> str:
+def generate_text(prompt: str, max_retries: int = 3, retry_delay: float = 18.0) -> str:
     """Kirim prompt ke Gemini, kembalikan teksnya.
 
     Melempar LlmNotConfigured bila key belum ada, LlmError bila Gemini gagal atau
-    membalas kosong. Respons kosong (mis. tersaring filter keamanan) diperlakukan
-    sebagai kegagalan — menyimpan laporan kosong lebih buruk daripada tak menyimpan.
+    membalas kosong. Bila terkena rate limit (429 / kuota free tier), otomatis menunggu
+    dan mencoba kembali hingga max_retries kali.
     """
     if not is_configured():
         raise LlmNotConfigured(
@@ -61,12 +65,24 @@ def generate_text(prompt: str) -> str:
             "lalu tambahkan ke .env backend."
         )
 
-    try:
-        response = _get_model().generate_content(prompt)
-    except LlmError:
-        raise
-    except Exception as exc:   # noqa: BLE001 — SDK melempar aneka galat; pemanggil cuma perlu tahu Gemini gagal
-        raise LlmError(f"Gemini gagal merespons: {exc}") from exc
+    response = None
+    for attempt in range(1, max_retries + 1):
+        try:
+            response = _get_model().generate_content(prompt)
+            break
+        except LlmError:
+            raise
+        except Exception as exc:  # noqa: BLE001 — SDK melempar aneka galat
+            err_str = str(exc)
+            is_rate_limit = "429" in err_str or "quota" in err_str.lower() or "resourceexhausted" in err_str.lower()
+            if is_rate_limit and attempt < max_retries:
+                logger.warning(
+                    "Gemini rate limit (429) pada percobaan %d/%d. Menunggu %ds sebelum mencoba lagi...",
+                    attempt, max_retries, int(retry_delay)
+                )
+                time.sleep(retry_delay)
+                continue
+            raise LlmError(f"Gemini gagal merespons: {exc}") from exc
 
     # Respons terblokir (filter keamanan, RECITATION) tak punya Part sama sekali, dan
     # mengakses .text di sana melempar galat SDK yang membingungkan. Baca alasannya dulu
