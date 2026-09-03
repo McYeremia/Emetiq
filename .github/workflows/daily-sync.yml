@@ -9,8 +9,22 @@ name: Daily Sync (harga + fundamental + sinyal)
 # menyentuh hari yang terlewat — lubangnya menetap sampai mode `penuh` dijalankan.
 on:
   schedule:
-    # 10:00 UTC = 17:00 WIB, hari kerja (Senin-Jumat), setelah pasar IDX tutup.
-    - cron: "0 10 * * 1-5"
+    # 10:37 UTC = 17:37 WIB, hari kerja (Senin-Jumat), setelah pasar IDX tutup.
+    #
+    # Menit 37, BUKAN 0. Run #52 dijadwalkan 17:00 WIB tapi baru mulai 20:56 —
+    # tertunda ~3 jam 56 menit di antrean (durasi jobnya sendiri cuma 44 menit).
+    # GitHub mendokumentasikan awal tiap jam sebagai puncak beban penjadwal, dan
+    # `0 10` persis di sana.
+    #
+    # Jamnya sengaja TIDAK dimundurkan. Penundaan itu antrean, bukan offset tetap:
+    # menggeser ke 18:00 hanya memindahkan titik awal jadi lebih larut lagi.
+    #
+    # Kalau perubahan ini berhasil, job akan mulai jam 17:37 — jam yang praktis
+    # belum pernah terjadi selama ini, dan cuma ~1,5 jam setelah lelang penutupan
+    # IDX. Kalau Yahoo ternyata belum final, `save_ohlcv` menimpa ulang 5 hari
+    # terakhir tiap run (lihat komentar "harga bisa berubah jika sebelumnya
+    # di-fetch sebelum market close"), jadi run esok hari membetulkannya sendiri.
+    - cron: "37 10 * * 1-5"
   workflow_dispatch:
     inputs:
       mode:
