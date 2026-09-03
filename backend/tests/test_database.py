@@ -19,3 +19,21 @@ def test_postgres_membuang_koneksi_yang_sudah_lama():
 def test_sqlite_tetap_tanpa_pool():
     engine = build_engine("sqlite:///:memory:")
     assert isinstance(engine.pool, NullPool)
+
+
+def test_suite_tidak_menyentuh_basis_data_produksi():
+    """Penjaga permanen untuk pagar di tests/conftest.py.
+
+    `main.py` menjalankan create_all() saat impor, dan `.env` menunjuk Supabase.
+    Tanpa conftest, menjalankan `pytest` polos berarti menembak produksi diam-diam
+    — tak ada yang gagal, tak ada yang memberi tahu, cuma tagihan egress.
+
+    Tes ini yang akan berteriak kalau pagar itu hilang atau tertimpa.
+    """
+    from database import engine
+
+    assert engine.dialect.name == "sqlite", (
+        f"Tes menyambung ke '{engine.dialect.name}' "
+        f"(host: {engine.url.host}) — seharusnya SQLite. "
+        "Periksa tests/conftest.py."
+    )
