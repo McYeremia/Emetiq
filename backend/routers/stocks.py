@@ -3,7 +3,7 @@ from datetime import date, timedelta
 from typing import Optional
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Response
 from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import desc, func
 import yfinance as yf
@@ -14,6 +14,36 @@ import services.indicators as ind_svc
 from database import get_db
 
 router = APIRouter(prefix="/stocks", tags=["stocks"])
+
+# Harga di aplikasi ini berasal dari `daily_sync` yang jalan sekali sehari setelah
+# bursa tutup, jadi jawaban yang sama diulang sepanjang hari. Tanpa header ini
+# browser tak punya izin menyimpan apa pun: tiap siklus `usePollingSaatTerlihat`
+# (5 menit) mengunduh ulang seluruh payload — 78 KB per siklus untuk dashboard,
+# ~7,4 MB sehari untuk satu tab yang dibiarkan terbuka.
+#
+# 300 detik disamakan dengan jeda polling frontend dan `revalidate` ISR, jadi tak
+# ada lapisan yang lebih basi daripada lapisan lain. `stale-while-revalidate`
+# memberi satu jam tambahan: saat kedaluwarsa, salinan lama boleh dipakai sementara
+# yang segar diambil di latar — layar tak pernah kosong menunggu jaringan.
+#
+# `public` (bukan `private`) sengaja: kelima endpoint di bawah tak membaca user
+# sama sekali, jawabannya identik untuk semua orang. Ini penting karena `apiFetch`
+# frontend tetap menyertakan header Authorization saat user login, dan tanpa
+# `public` yang eksplisit cache bersama dilarang menyimpan respons semacam itu.
+#
+# JANGAN dipasang di endpoint yang membaca user. Kalau kelimanya nanti dipagari
+# login, nilai ini harus berubah jadi `private`.
+CACHE_PASAR = "public, max-age=300, stale-while-revalidate=3600"
+
+
+def cache_pasar(response: Response):
+    """Tandai respons sebagai data pasar yang boleh disimpan 5 menit.
+
+    Dipasang lewat `dependencies=[...]` di dekorator, bukan sebagai parameter
+    endpoint, supaya tanda tangan fungsi yang sudah ada tak perlu diubah.
+    """
+    response.headers["Cache-Control"] = CACHE_PASAR
+
 
 _sync_lock = threading.Lock()
 _sync_state: dict = {
@@ -28,7 +58,7 @@ _sync_state: dict = {
 }
 
 
-@router.get("")
+@router.get("", dependencies=[Depends(cache_pasar)])
 def list_stocks(
     db: Session = Depends(get_db),
     ringkas: bool = Query(
@@ -114,7 +144,7 @@ def list_stocks(
 
 
 # Static paths must come BEFORE parameterized /{ticker} routes
-@router.get("/ihsg")
+@router.get("/ihsg", dependencies=[Depends(cache_pasar)])
 def get_ihsg(db: Session = Depends(get_db)):
     """Returns IHSG composite index latest price and daily change — from local DB."""
     stock = db.query(models.Stock).filter(models.Stock.ticker == "^JKSE").first()
@@ -162,7 +192,7 @@ def get_ihsg(db: Session = Depends(get_db)):
         return {"price": None, "change": None, "change_pct": None, "date": None}
 
 
-@router.get("/signals")
+@router.get("/signals", dependencies=[Depends(cache_pasar)])
 def get_ai_signals(db: Session = Depends(get_db)):
     # joinedload menghindari N+1 (dulu tiap s.stock jadi query terpisah — 400+
     # round-trip ke pooler bikin endpoint hang belasan detik).
@@ -340,7 +370,7 @@ def add_custom_stock(ticker: str, db: Session = Depends(get_db)):
         raise HTTPException(status_code=400, detail=str(e))
 
 
-@router.get("/{ticker}/ohlcv")
+@router.get("/{ticker}/ohlcv", dependencies=[Depends(cache_pasar)])
 def get_ohlcv(
     ticker: str,
     from_date: Optional[date] = Query(None, alias="from"),
@@ -369,7 +399,7 @@ def get_ohlcv(
     }
 
 
-@router.get("/{ticker}/indicators")
+@router.get("/{ticker}/indicators", dependencies=[Depends(cache_pasar)])
 def get_indicators(ticker: str, db: Session = Depends(get_db)):
     stock = db.query(models.Stock).filter(models.Stock.ticker == ticker.upper()).first()
     if not stock:

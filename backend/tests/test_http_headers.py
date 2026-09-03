@@ -1,15 +1,24 @@
-"""Tes lapisan HTTP: kompresi gzip dan urutan middleware.
+"""Tes lapisan HTTP: kompresi gzip, urutan middleware, dan header cache.
 
-Sengaja memakai endpoint yang TIDAK menyentuh database:
-  • /openapi.json      — dihasilkan FastAPI sendiri, ~25 KB (di atas ambang kompresi)
+Bagian kompresi sengaja memakai endpoint yang TIDAK menyentuh database:
+  • /openapi.json       — dihasilkan FastAPI sendiri, ~25 KB (di atas ambang kompresi)
   • /stocks/sync-status — membaca dict di memori, ~200 byte (di bawah ambang)
 
-Dengan begitu tes ini tak bergantung pada isi basis data maupun pada
-DATABASE_URL yang sedang aktif.
+Bagian cache butuh basis data, jadi memakai SQLite in-memory lewat
+dependency_overrides — pola yang sama dengan tes endpoint lain di repo ini.
 """
-from fastapi.testclient import TestClient
+from datetime import date
 
+import pytest
+from fastapi.testclient import TestClient
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
+from sqlalchemy.pool import StaticPool
+
+from database import Base, get_db
 import main
+import models
+from routers.stocks import CACHE_PASAR
 
 AMBANG = 1000   # samakan dengan minimum_size di main.py
 
@@ -74,3 +83,76 @@ def test_header_cors_ada_pada_respons_biasa():
     res = _client().get("/openapi.json", headers={"Origin": "http://localhost:3000"})
     assert res.headers.get("access-control-allow-origin") == "http://localhost:3000"
     assert res.headers.get("content-encoding") == "gzip"
+
+
+# ── Header cache pada endpoint data pasar ────────────────────────────────────
+
+@pytest.fixture
+def klien_db():
+    """TestClient dengan SQLite in-memory berisi cukup data untuk lima endpoint baca.
+
+    ^JKSE sengaja disemai LENGKAP dengan dua baris harga: tanpa itu `/stocks/ihsg`
+    jatuh ke jalur cadangan yang menembak Yahoo Finance sungguhan, dan tes ini
+    berubah jadi tes jaringan.
+    """
+    engine = create_engine("sqlite://", connect_args={"check_same_thread": False},
+                           poolclass=StaticPool)
+    Base.metadata.create_all(bind=engine)
+    Session = sessionmaker(bind=engine)
+
+    db = Session()
+    ihsg = models.Stock(ticker="^JKSE", name="IHSG", sector="Indeks")
+    uji = models.Stock(ticker="TEST", name="Saham Uji", sector="Uji")
+    db.add_all([ihsg, uji])
+    db.commit()
+    for hari, tutup in ((date(2026, 5, 21), 7000.0), (date(2026, 5, 22), 7100.0)):
+        db.add(models.OHLCVDaily(stock_id=ihsg.id, date=hari, open=tutup, high=tutup,
+                                 low=tutup, close=tutup, volume=1000, adj_close=tutup))
+    db.commit()
+    db.close()
+
+    def override():
+        s = Session()
+        try:
+            yield s
+        finally:
+            s.close()
+
+    main.app.dependency_overrides[get_db] = override
+    yield TestClient(main.app)
+    main.app.dependency_overrides.clear()
+
+
+@pytest.mark.parametrize("path", [
+    "/stocks",
+    "/stocks?ringkas=true",
+    "/stocks/signals",
+    "/stocks/ihsg",
+    "/stocks/TEST/ohlcv",
+    "/stocks/TEST/indicators",
+])
+def test_endpoint_pasar_boleh_disimpan(klien_db, path):
+    res = klien_db.get(path)
+    assert res.status_code == 200
+    assert res.headers.get("cache-control") == CACHE_PASAR
+
+
+def test_sync_status_tidak_boleh_disimpan(klien_db):
+    """Progres sync harus selalu segar — menyimpannya membuat bilah progres membeku."""
+    res = klien_db.get("/stocks/sync-status")
+    assert res.status_code == 200
+    assert res.headers.get("cache-control") is None
+
+
+def test_galat_tidak_ikut_disimpan(klien_db):
+    """404 tak boleh dicache; ticker yang baru ditambahkan harus langsung terbaca."""
+    res = klien_db.get("/stocks/TIDAKADA/ohlcv")
+    assert res.status_code == 404
+    assert res.headers.get("cache-control") is None
+
+
+def test_nilai_cache_masuk_akal():
+    """Jaga agar umur cache tak melampaui jeda polling frontend (5 menit)."""
+    assert "public" in CACHE_PASAR
+    assert "max-age=300" in CACHE_PASAR
+    assert "stale-while-revalidate" in CACHE_PASAR
