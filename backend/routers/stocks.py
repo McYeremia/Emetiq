@@ -1,9 +1,7 @@
-import threading
-from datetime import date, timedelta
+from datetime import date
 from typing import Optional
-from concurrent.futures import ThreadPoolExecutor, as_completed
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Response
+from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import desc, func
 import yfinance as yf
@@ -11,7 +9,7 @@ import yfinance as yf
 import models
 import services.data_fetcher as fetcher
 import services.indicators as ind_svc
-from auth import CurrentUser, get_current_user, require_dev
+from auth import CurrentUser, get_current_user
 from database import get_db
 
 router = APIRouter(prefix="/stocks", tags=["stocks"])
@@ -20,10 +18,21 @@ router = APIRouter(prefix="/stocks", tags=["stocks"])
 # memanggilnya dari Server Component tanpa token, dan header CACHE_PASAR di
 # bawah hanya sah selama jawabannya sama untuk semua orang.
 #
-# Endpoint TULIS tidak. Tiga di antaranya (`/refresh`, `/scan`, `POST /{ticker}`)
-# tak punya satu pun pemanggil di frontend — `api.refreshData`, `api.triggerScan`,
-# dan `api.addStock` ada di lib/api.ts tapi tak dipakai berkas mana pun — jadi
-# selama ini mereka terbuka tanpa ada yang memakainya.
+# Endpoint TULIS butuh login (`POST /{ticker}` dan `POST /{ticker}/refresh`).
+# Keduanya menyentuh satu saham saja.
+#
+# `POST /refresh`, `POST /scan`, dan `GET /sync-status` DIHAPUS 3 Sep 2026 beserta
+# mesin `_sync_state`-nya (137 baris). Ketiganya tak pernah dipanggil frontend, dan
+# pekerjaannya sudah dilakukan `scripts/daily_sync.py` di runner GitHub — tempat
+# yang benar untuk pekerjaan berpuluh menit. Menjalankannya lewat HTTP berarti
+# menyandera worker Space yang sedang melayani pengunjung, dan untuk `scan` itu
+# berbahaya: ia menghapus seluruh tabel `signals` LEBIH DULU lalu menghitung ulang,
+# jadi run yang terpotong (Space gratis tidur saat idle) meninggalkan tabel kosong
+# — yang juga dibaca AI Porto lewat `services/ai_porto/data.py`.
+#
+# Kemampuan yang hilang bersamanya — menarik harga dari tanggal terakhir tiap saham,
+# bukan `period="5d"` — dipindahkan ke `daily_sync.py --penuh`, dapat dijalankan
+# lewat tombol "Run workflow" pada `daily-sync.yml` dengan mode `penuh`.
 
 # Harga di aplikasi ini berasal dari `daily_sync` yang jalan sekali sehari setelah
 # bursa tutup, jadi jawaban yang sama diulang sepanjang hari. Tanpa header ini
@@ -45,6 +54,10 @@ router = APIRouter(prefix="/stocks", tags=["stocks"])
 # login, nilai ini harus berubah jadi `private`.
 CACHE_PASAR = "public, max-age=300, stale-while-revalidate=3600"
 
+# Segmen jalur yang bukan kode saham. Dipakai `add_custom_stock` — lihat alasannya
+# di sana. Tambahkan ke sini setiap kali ada rute statis baru di bawah /stocks.
+NAMA_RUTE_BUKAN_TICKER = {"IHSG", "SIGNALS", "SCAN", "REFRESH", "SYNC-STATUS"}
+
 
 def cache_pasar(response: Response):
     """Tandai respons sebagai data pasar yang boleh disimpan 5 menit.
@@ -53,19 +66,6 @@ def cache_pasar(response: Response):
     endpoint, supaya tanda tangan fungsi yang sudah ada tak perlu diubah.
     """
     response.headers["Cache-Control"] = CACHE_PASAR
-
-
-_sync_lock = threading.Lock()
-_sync_state: dict = {
-    "is_running": False,
-    "phase": "",          # "fetch" | "save" | "done" | "error"
-    "phase_label": "",
-    "total": 0,
-    "done": 0,
-    "current": "",
-    "errors": 0,
-    "message": "",
-}
 
 
 @router.get("", dependencies=[Depends(cache_pasar)])
@@ -234,128 +234,6 @@ def get_ai_signals(db: Session = Depends(get_db)):
     ]
 
 
-@router.get("/sync-status")
-def get_sync_status():
-    with _sync_lock:
-        return dict(_sync_state)
-
-
-def _fetch_only(ticker: str, start_date: date | None) -> tuple:
-    """Hanya fetch HTTP dari Yahoo Finance — tanpa sentuh DB sama sekali."""
-    try:
-        if start_date is not None:
-            df = fetcher.fetch_ohlcv(ticker, start=start_date)
-        else:
-            df = fetcher.fetch_ohlcv(ticker, period="5y")
-        return ticker, df, None
-    except Exception as e:
-        return ticker, None, str(e)
-
-
-def _set_sync(updates: dict):
-    with _sync_lock:
-        _sync_state.update(updates)
-
-
-def _do_refresh_all():
-    """Sync semua saham — dijalankan di background task dengan session sendiri."""
-    from database import SessionLocal
-    db = SessionLocal()
-    try:
-        _set_sync({
-            "is_running": True, "phase": "init", "phase_label": "Inisialisasi...",
-            "total": 0, "done": 0, "current": "", "errors": 0, "message": "",
-        })
-
-        fetcher.seed_stocks(db)
-        stocks = db.query(models.Stock).all()
-        total = len(stocks)
-
-        latest_map: dict[int, date] = dict(
-            db.query(models.OHLCVDaily.stock_id, func.max(models.OHLCVDaily.date))
-            .group_by(models.OHLCVDaily.stock_id)
-            .all()
-        )
-
-        fetch_tasks = []
-        for stock in stocks:
-            ld = latest_map.get(stock.id)
-            start = ld if ld is not None and ld <= date.today() else None
-            fetch_tasks.append((stock, start))
-
-        # Fase 1: Fetch HTTP paralel
-        _set_sync({"phase": "fetch", "phase_label": "Mengambil data dari Yahoo Finance", "total": total, "done": 0})
-
-        fetched: dict[int, tuple] = {}
-        with ThreadPoolExecutor(max_workers=10) as executor:
-            futures = {
-                executor.submit(_fetch_only, stock.ticker, start): stock
-                for stock, start in fetch_tasks
-            }
-            for future in as_completed(futures):
-                stock = futures[future]
-                _, df, err = future.result()
-                fetched[stock.id] = (df, err)
-                with _sync_lock:
-                    _sync_state["done"] += 1
-                    _sync_state["current"] = stock.ticker
-                    if err:
-                        _sync_state["errors"] += 1
-
-        # Fase 2: Write DB sequential
-        _set_sync({"phase": "save", "phase_label": "Menyimpan ke database", "total": total, "done": 0})
-
-        for stock in stocks:
-            df, err = fetched.get(stock.id, (None, "fetch not found"))
-            with _sync_lock:
-                _sync_state["current"] = stock.ticker
-            if not err and df is not None and not df.empty:
-                try:
-                    fetcher.save_ohlcv(db, stock, df)
-                except Exception:
-                    with _sync_lock:
-                        _sync_state["errors"] += 1
-            with _sync_lock:
-                _sync_state["done"] += 1
-
-        _set_sync({"is_running": False, "phase": "done", "phase_label": "Selesai", "current": "", "message": f"{total} saham diperbarui"})
-        print(f"LOG: Background sync selesai — {total} saham diproses.")
-    except Exception as e:
-        _set_sync({"is_running": False, "phase": "error", "phase_label": "Error", "message": str(e)})
-    finally:
-        db.close()
-
-
-@router.post("/refresh")
-def refresh_all(background_tasks: BackgroundTasks,
-                _: CurrentUser = Depends(require_dev)):
-    """Sync ~740 saham dari yfinance di background. Tier dev saja.
-
-    Bukan sekadar "berat": ia menulis ke seluruh tabel harga. Satu orang iseng
-    yang tahu URL Space bisa menjadwalkannya berulang kali.
-    """
-    with _sync_lock:
-        if _sync_state["is_running"]:
-            return {"status": "already_running", "message": "Sync sedang berjalan"}
-    background_tasks.add_task(_do_refresh_all)
-    return {"status": "started", "message": "Sync dimulai di background"}
-
-
-@router.post("/scan")
-def trigger_scan(db: Session = Depends(get_db),
-                 _: CurrentUser = Depends(require_dev)):
-    """Pindai sinyal seluruh pasar. Tier dev saja.
-
-    Jalannya SINKRON di worker yang sama yang melayani permintaan lain — selama
-    ia berjalan, pengunjung lain menunggu. Itu alasan `require_dev`, bukan
-    sekadar `get_current_user`.
-    """
-    import services.watcher as watcher
-    print("LOG: Triggering AI Market Scan via API...")
-    count = watcher.scan_market_signals()
-    return {"status": "ok", "message": f"Scan complete. Found {count} signals."}
-
-
 # Parameterized routes after static ones
 @router.post("/{ticker}")
 def add_custom_stock(ticker: str, db: Session = Depends(get_db),
@@ -366,6 +244,21 @@ def add_custom_stock(ticker: str, db: Session = Depends(get_db),
     panggilan yfinance, bukan seluruh pasar.
     """
     ticker = ticker.upper()
+
+    # `POST /stocks/apa-pun` jatuh ke sini. Rute statis di router ini semuanya GET,
+    # jadi POST ke jalur yang sama TIDAK terhalang olehnya — `POST /stocks/ihsg`
+    # sudah sejak dulu berarti "tambah saham bernama IHSG". Sejak `/refresh`,
+    # `/scan`, dan `/sync-status` dihapus (3 Sep 2026), tiga nama itu ikut jatuh
+    # ke sini: klien lama yang memanggil `POST /stocks/scan` akan mendapat
+    # "Stock not found on Yahoo Finance" — pesan yang menyesatkan untuk endpoint
+    # yang sebenarnya sudah tidak ada.
+    if ticker in NAMA_RUTE_BUKAN_TICKER:
+        raise HTTPException(
+            status_code=404,
+            detail=f"'{ticker}' bukan kode saham. Endpoint /stocks/{ticker.lower()} "
+                   f"sudah tidak ada — lihat scripts/daily_sync.py.",
+        )
+
     existing = db.query(models.Stock).filter(models.Stock.ticker == ticker).first()
     if existing:
         return {"status": "exists", "ticker": ticker}

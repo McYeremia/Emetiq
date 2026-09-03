@@ -1,8 +1,13 @@
 """Tes lapisan HTTP: kompresi gzip, urutan middleware, dan header cache.
 
 Bagian kompresi sengaja memakai endpoint yang TIDAK menyentuh database:
-  • /openapi.json       — dihasilkan FastAPI sendiri, ~25 KB (di atas ambang kompresi)
-  • /stocks/sync-status — membaca dict di memori, ~200 byte (di bawah ambang)
+  • /openapi.json — dihasilkan FastAPI sendiri, ~25 KB (di atas ambang kompresi)
+  • /me tanpa token — balasan 401 ~49 byte (di bawah ambang)
+
+Dulu yang kecil adalah /stocks/sync-status, tapi endpoint itu dihapus bersama
+mesin sync 3 Sep 2026. Yang diuji tetap sama: respons di bawah ambang tak boleh
+dibungkus gzip. Status 401 bukan 200 tak mengubah apa pun di sini — middleware
+kompresi tak peduli status, hanya ukuran.
 
 Bagian cache butuh basis data, jadi memakai SQLite in-memory lewat
 dependency_overrides — pola yang sama dengan tes endpoint lain di repo ini.
@@ -39,9 +44,9 @@ def test_respons_besar_dikompresi():
 
 def test_respons_kecil_tidak_dikompresi():
     """Di bawah ambang, membungkus justru menambah ukuran — jangan dilakukan."""
-    res = _client().get("/stocks/sync-status")
-    assert res.status_code == 200
-    assert len(res.content) < AMBANG, "prasyarat tes: sync-status harus < ambang"
+    res = _client().get("/me")
+    assert res.status_code == 401
+    assert len(res.content) < AMBANG, "prasyarat tes: balasan /me harus < ambang"
     assert res.headers.get("content-encoding") is None
 
 
@@ -137,10 +142,15 @@ def test_endpoint_pasar_boleh_disimpan(klien_db, path):
     assert res.headers.get("cache-control") == CACHE_PASAR
 
 
-def test_sync_status_tidak_boleh_disimpan(klien_db):
-    """Progres sync harus selalu segar — menyimpannya membuat bilah progres membeku."""
-    res = klien_db.get("/stocks/sync-status")
-    assert res.status_code == 200
+def test_endpoint_non_pasar_tidak_ikut_disimpan(klien_db):
+    """CACHE_PASAR hanya boleh menempel di lima endpoint pasar.
+
+    Menggantikan tes lama atas /stocks/sync-status, yang dihapus 3 Sep 2026.
+    /me membaca user, jadi jawabannya BERBEDA per pemanggil — kalau header
+    `public` sampai bocor ke sini, cache bersama bisa menyajikan data satu user
+    kepada user lain.
+    """
+    res = klien_db.get("/me")
     assert res.headers.get("cache-control") is None
 
 

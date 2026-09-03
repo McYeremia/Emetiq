@@ -84,8 +84,6 @@ def make_client(session_factory):
 # --- 1. Anonim ditolak -------------------------------------------------------
 
 ENDPOINT_TERTUTUP = [
-    ("POST", "/stocks/refresh"),
-    ("POST", "/stocks/scan"),
     ("POST", "/stocks/BBRI"),
     ("POST", "/stocks/BBRI/refresh"),
     ("GET", "/backtest/screen/ma-cross"),
@@ -99,24 +97,29 @@ def test_anonim_ditolak(make_client, method, path):
     assert c.request(method, path).status_code == 401, path
 
 
-# --- 2. Login biasa tak cukup untuk operasi seluruh pasar --------------------
+# --- 2. Operasi seluruh pasar tak lagi punya jalur HTTP ---------------------
 
-@pytest.mark.parametrize("path", ["/stocks/refresh", "/stocks/scan"])
-def test_operasi_seluruh_pasar_butuh_dev(make_client, path):
-    """`free` sudah lolos 401 tapi harus kena 403: keduanya menulis ke seluruh
-    tabel harga / memblokir worker selama pemindaian."""
-    c = make_client("u1", tier="free")
-    assert c.post(path).status_code == 403
+@pytest.mark.parametrize("nama", ["scan", "refresh", "sync-status"])
+def test_operasi_seluruh_pasar_tak_bisa_dipicu_lewat_http(make_client, nama):
+    """`POST /stocks/refresh` & `/scan` dan `GET /sync-status` dihapus 3 Sep 2026;
+    pekerjaannya pindah ke `scripts/daily_sync.py` di runner GitHub.
 
-
-def test_dev_boleh_scan(make_client, monkeypatch):
-    import services.watcher as watcher
-    monkeypatch.setattr(watcher, "scan_market_signals", lambda: 7)
-
+    Yang diuji di sini bukan sekadar "rutenya hilang". Rute statis di router ini
+    semuanya GET, jadi POST ke jalur yang sama jatuh ke `POST /stocks/{ticker}` —
+    artinya `POST /stocks/scan` akan dibaca sebagai "tambah saham bernama SCAN"
+    dan menembak yfinance. Penjaga NAMA_RUTE_BUKAN_TICKER menghentikannya dengan
+    pesan yang jujur, bukan "Stock not found on Yahoo Finance".
+    """
     c = make_client("dev1", tier="dev")
-    res = c.post("/stocks/scan")
-    assert res.status_code == 200
-    assert "7" in res.json()["message"]
+    res = c.post(f"/stocks/{nama}")
+    assert res.status_code == 404
+    assert "bukan kode saham" in res.json()["detail"]
+
+
+def test_penjaga_nama_rute_tak_menghalangi_ticker_sungguhan(make_client):
+    """Penjaga di atas tak boleh menolak saham yang sah."""
+    c = make_client("u1", tier="free")
+    assert c.post("/stocks/BBRI").json()["status"] == "exists"
 
 
 # --- 3. Login biasa cukup untuk sisanya -------------------------------------
@@ -158,7 +161,6 @@ def test_screener_terpagari_di_level_router(make_client, monkeypatch):
     "/stocks/signals",
     "/stocks/BBRI/ohlcv",
     "/stocks/BBRI/indicators",
-    "/stocks/sync-status",
 ])
 def test_baca_pasar_tetap_publik(make_client, path):
     assert make_client().get(path).status_code == 200, path

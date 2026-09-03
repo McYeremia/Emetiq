@@ -247,28 +247,6 @@ export const api = {
     return res.json();
   },
 
-  async refreshData(ticker?: string) {
-    const url = ticker
-      ? `${API_BASE_URL}/stocks/${ticker}/refresh`
-      : `${API_BASE_URL}/stocks/refresh`;
-    const res = await apiFetch(url, { method: 'POST' });
-    return res.json();
-  },
-
-  async getSyncStatus(): Promise<{
-    is_running: boolean;
-    phase: string;
-    phase_label: string;
-    total: number;
-    done: number;
-    current: string;
-    errors: number;
-    message: string;
-  }> {
-    const res = await apiFetch(`${API_BASE_URL}/stocks/sync-status`);
-    return res.json();
-  },
-
   async runBacktest(ticker: string, strategyId: string, capital: number = 10_000_000): Promise<BacktestResult> {
     const res = await apiFetch(`${API_BASE_URL}/backtest/run/${ticker}/${strategyId}?capital=${capital}`);
     return res.json();
@@ -294,11 +272,6 @@ export const api = {
 
   async getSignals() {
     const res = await apiFetch(`${API_BASE_URL}/stocks/signals`);
-    return res.json();
-  },
-
-  async triggerScan() {
-    const res = await apiFetch(`${API_BASE_URL}/stocks/scan`, { method: 'POST' });
     return res.json();
   },
 

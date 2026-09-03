@@ -1,12 +1,23 @@
-name: Daily Sync (harga terbaru + ML)
+name: Daily Sync (harga + fundamental + sinyal)
 
-# Update harga 5 hari terakhir + fundamental + latih ulang model ML,
-# untuk SAHAM YANG SUDAH ADA di DB. Jalankan seed-data.yml dulu untuk DB kosong.
+# Update harga + fundamental + pindai sinyal, untuk SAHAM YANG SUDAH ADA di DB.
+# Jalankan seed-data.yml dulu untuk DB kosong.
+#
+# Mode `penuh` menggantikan `POST /stocks/refresh` yang dihapus 3 Sep 2026.
+# Pakai ia kalau cron sempat mati lebih dari 5 hari: mode `harian` menarik
+# `period="5d"` yang selalu dihitung dari HARI INI, jadi ia tak akan pernah
+# menyentuh hari yang terlewat — lubangnya menetap sampai mode `penuh` dijalankan.
 on:
   schedule:
     # 10:00 UTC = 17:00 WIB, hari kerja (Senin-Jumat), setelah pasar IDX tutup.
     - cron: "0 10 * * 1-5"
   workflow_dispatch:
+    inputs:
+      mode:
+        description: "harian = 5 hari terakhir · penuh = dari tanggal terakhir tiap saham (tambal lubang, jauh lebih lama)"
+        type: choice
+        options: [harian, penuh]
+        default: harian
 
 jobs:
   sync:
@@ -27,4 +38,8 @@ jobs:
         working-directory: backend
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
-        run: python scripts/daily_sync.py
+        # `github.event.inputs`, bukan `inputs`: konteks `inputs` hanya dijamin ada
+        # pada workflow_dispatch/workflow_call, sedangkan `github.event` selalu ada
+        # dan memberi kosong saat dipicu cron. Kalau ekspresi ini bermasalah yang
+        # rusak adalah sinkronisasi harian — bukan tempat untuk berhemat kehati-hatian.
+        run: python scripts/daily_sync.py --mode "${{ github.event.inputs.mode || 'harian' }}"
