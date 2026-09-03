@@ -1,7 +1,7 @@
 import type { Metadata } from 'next';
 
 import DashboardClient from './DashboardClient';
-import { ambilIhsg, ambilSaham, ambilSinyal, tanggalAwalIhsg } from '@/lib/marketServer';
+import { ambilIhsg, ambilSaham, tanggalAwalIhsg } from '@/lib/marketServer';
 
 export const metadata: Metadata = {
   title: 'Dashboard - EMETIQ',
@@ -23,17 +23,15 @@ export const metadata: Metadata = {
  * (lihat `lib/api.ts`), jadi ia tetap diambil komponen klien setelah hidrasi.
  */
 export default async function Dashboard() {
-  const [saham, ihsg, sinyal] = await Promise.all([
+  const [saham, ihsg] = await Promise.all([
     ambilSaham(),
     ambilIhsg(tanggalAwalIhsg()),
-    ambilSinyal(),
   ]);
 
   return (
     <DashboardClient
       sahamAwal={saham ?? []}
       ihsgAwal={ihsg?.data ?? []}
-      sinyalAwal={sinyal ?? []}
     />
   );
 }

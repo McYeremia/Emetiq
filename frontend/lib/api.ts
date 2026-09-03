@@ -42,6 +42,16 @@ export interface OHLCV {
   volume: number;
 }
 
+/** Balasan `/stocks/{ticker}/ohlcv`: metadata saham + deret harga.
+ *  `sector` ikut di sini supaya halaman detail tak perlu menarik daftar saham
+ *  payload penuh hanya untuk satu kolom. */
+export interface OHLCVResponse {
+  ticker: string;
+  name: string;
+  sector: string | null;
+  data: OHLCV[];
+}
+
 export interface PortfolioItem {
   ticker: string;
   shares: number;
@@ -178,7 +188,10 @@ export const api = {
     return res.json();
   },
 
-  async getOHLCV(ticker: string, from?: string): Promise<{ data: OHLCV[] }> {
+  /** `from` memangkas jendela DI SISI SERVER. Tanpa itu backend mengirim seluruh
+   *  riwayat (rata-rata 1.121 baris, 165 KB untuk BBCA) padahal grafik 3 bulan
+   *  cuma menggambar ~58 batang. Selalu isi `from` kecuali memang butuh semuanya. */
+  async getOHLCV(ticker: string, from?: string): Promise<OHLCVResponse> {
     const url = from
       ? `${API_BASE_URL}/stocks/${ticker}/ohlcv?from=${from}`
       : `${API_BASE_URL}/stocks/${ticker}/ohlcv`;

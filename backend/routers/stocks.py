@@ -391,6 +391,11 @@ def get_ohlcv(
     return {
         "ticker": stock.ticker,
         "name": stock.name,
+        # Sektor ikut di sini supaya halaman detail saham tak perlu mengunduh
+        # daftar saham payload PENUH (174 KB) hanya demi satu kolom. Endpoint ini
+        # memang sudah mengembalikan metadata saham (`name`), jadi menambah satu
+        # field lagi konsisten — dan biayanya belasan byte, bukan puluhan kilobyte.
+        "sector": stock.sector,
         "data": [
             {"date": str(r.date), "open": r.open, "high": r.high,
              "low": r.low, "close": r.close, "volume": r.volume}

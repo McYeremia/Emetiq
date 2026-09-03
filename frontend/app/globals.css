@@ -53,3 +53,26 @@ body {
     font-size: 16px !important;
   }
 }
+
+/* Perbesar area sentuh tanpa menggeser tata letak.
+
+   Tombol bintang watchlist dirender sebagai glif 12-18px tanpa padding, jadi
+   area sentuhnya sebesar hurufnya sendiri — di bawah 44px (Apple HIG), 48px
+   (Material), bahkan di bawah 24px (WCAG 2.2 SC 2.5.8, ambang AA paling longgar).
+
+   Menambah padding akan melebarkan tombolnya dan merusak kolom grid 24px di
+   daftar saham. Lapisan semu 44x44 yang diposisikan absolut menangkap sentuhan
+   tanpa memakan ruang: tampilannya persis sama, jangkauannya tiga kali lipat. */
+.emx-tap {
+  position: relative;
+}
+
+.emx-tap::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 44px;
+  height: 44px;
+  transform: translate(-50%, -50%);
+}

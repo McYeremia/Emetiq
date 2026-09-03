@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { useParams, useRouter } from 'next/navigation';
-import { api, Stock, OHLCV } from '@/lib/api';
+import { api, StockRingkas, OHLCV } from '@/lib/api';
 import { createChartSync } from '@/lib/chartSync';
 import dynamic from 'next/dynamic';
 import EmetiqNav from '@/components/EmetiqNav';
@@ -60,6 +60,19 @@ function fmt(v: number | null) {
   return v.toLocaleString("id-ID", { maximumFractionDigits: 2 });
 }
 
+/** Tanggal awal jendela untuk sebuah timeframe; `ALL` -> undefined (tanpa batas).
+ *
+ *  Jendelanya dipotong di SERVER, bukan di klien. Sebelumnya halaman ini menarik
+ *  seluruh riwayat (BBCA: 1.218 baris, 165 KB) lalu membuang 95%-nya untuk
+ *  menggambar 58 batang — dan mengulanginya tiap kali saham dibuka. */
+function awalJendela(tf: Timeframe): string | undefined {
+  if (tf === 'ALL') return undefined;
+  const bulan = { '3M': 3, '6M': 6, '1Y': 12 }[tf];
+  const d = new Date();
+  d.setMonth(d.getMonth() - bulan);
+  return d.toISOString().slice(0, 10);
+}
+
 export default function StockDetailPage() {
   const params = useParams();
   const router = useRouter();
@@ -72,8 +85,14 @@ export default function StockDetailPage() {
 
   const { toast } = useToast();
 
-  const [stocks, setStocks] = useState<Stock[]>([]);
+  // Daftar samping cuma menampilkan ticker, nama, harga, dan persentase — persis
+  // isi payload ringkas. Memakai getStocks() di sini berarti mengunduh 174 KB
+  // (sektor + prev_close + last_date + empat kolom fundamental) untuk membuang
+  // hampir semuanya; ringkas 66 KB. Sektor saham yang sedang dibuka datang dari
+  // respons OHLCV, bukan dari daftar ini.
+  const [stocks, setStocks] = useState<StockRingkas[]>([]);
   const [ohlcv, setOhlcv] = useState<OHLCV[]>([]);
+  const [sector, setSector] = useState<string | null>(null);
   const [indicators, setIndicators] = useState<Indicators | null>(null);
   const [portfolio, setPortfolio] = useState<any | null>(null);
   const [loading, setLoading] = useState(true);
@@ -109,7 +128,7 @@ export default function StockDetailPage() {
   const [timeframe, setTimeframe] = useState<Timeframe>('3M');
 
   useEffect(() => {
-    api.getStocks().then(setStocks);
+    api.getStocksRingkas().then(setStocks);
   }, []);
 
 
@@ -118,10 +137,11 @@ export default function StockDetailPage() {
     setLoading(true);
     try {
       const [ohlcvData, indData] = await Promise.all([
-        api.getOHLCV(ticker),
+        api.getOHLCV(ticker, awalJendela(timeframe)),
         api.getIndicators(ticker),
       ]);
       setOhlcv(ohlcvData.data || []);
+      setSector(ohlcvData.sector ?? null);
       setIndicators(indData.indicators || null);
     } catch (err) {
       toast('Gagal memuat data saham. Periksa koneksi backend.', 'error');
@@ -141,7 +161,7 @@ export default function StockDetailPage() {
     } catch {
       setPortfolio(null);
     }
-  }, [ticker]);
+  }, [ticker, timeframe]);
 
   useEffect(() => {
     fetchData();
@@ -192,14 +212,9 @@ export default function StockDetailPage() {
   const currentStockInfo = stocks.find(s => s.ticker === ticker);
   const priceUp = (currentStockInfo?.change_pct ?? 0) >= 0;
 
-  const displayedOhlcv = (() => {
-    if (timeframe === 'ALL' || ohlcv.length === 0) return ohlcv;
-    const months = { '3M': 3, '6M': 6, '1Y': 12 }[timeframe];
-    const cutoff = new Date();
-    cutoff.setMonth(cutoff.getMonth() - months);
-    const cutoffStr = cutoff.toISOString().slice(0, 10);
-    return ohlcv.filter(d => d.date >= cutoffStr);
-  })();
+  // Tak ada penyaringan di sini lagi: `fetchData` sudah meminta tepat jendela yang
+  // dipilih (lihat `awalJendela`), jadi apa pun yang diterima memang yang digambar.
+  const displayedOhlcv = ohlcv;
 
   // ── Price overlay toggles (dot color = the line color drawn on the chart) ──
   const overlayToggles = [
@@ -310,11 +325,14 @@ export default function StockDetailPage() {
                 <h1 style={{ fontSize: 30, fontWeight: 800, letterSpacing: '-.02em', lineHeight: 1 }}>{ticker}</h1>
                 <button
                   onClick={(e) => toggleWatchlist(e, ticker)}
+                  className="emx-tap"
                   title={watchlist.has(ticker) ? 'Hapus dari watchlist' : 'Tambah ke watchlist'}
+                  aria-label={watchlist.has(ticker) ? `Hapus ${ticker} dari watchlist` : `Tambah ${ticker} ke watchlist`}
+                  aria-pressed={watchlist.has(ticker)}
                   style={{ fontSize: 18, lineHeight: 1, background: 'none', border: 'none', cursor: 'pointer', color: watchlist.has(ticker) ? ACCENT : '#D6D5CE' }}
                 >★</button>
               </div>
-              <p className="truncate" style={{ fontFamily: MONO, fontSize: 11, color: FAINT, textTransform: 'uppercase', letterSpacing: '.14em', marginTop: 5 }}>{currentStockInfo?.sector || 'Sektor tidak diketahui'}</p>
+              <p className="truncate" style={{ fontFamily: MONO, fontSize: 11, color: FAINT, textTransform: 'uppercase', letterSpacing: '.14em', marginTop: 5 }}>{sector || 'Sektor tidak diketahui'}</p>
             </div>
           </div>
 
@@ -386,6 +404,10 @@ export default function StockDetailPage() {
                       </div>
                       <button
                         onClick={(e) => toggleWatchlist(e, stock.ticker)}
+                        className="emx-tap"
+                        title={watchlist.has(stock.ticker) ? 'Hapus dari watchlist' : 'Tambah ke watchlist'}
+                        aria-label={watchlist.has(stock.ticker) ? `Hapus ${stock.ticker} dari watchlist` : `Tambah ${stock.ticker} ke watchlist`}
+                        aria-pressed={watchlist.has(stock.ticker)}
                         style={{ fontSize: 12, lineHeight: 1, background: 'none', border: 'none', cursor: 'pointer', color: watchlist.has(stock.ticker) ? ACCENT : '#D6D5CE', flex: 'none' }}
                       >★</button>
                       <div style={{ textAlign: 'right', flex: 'none' }}>

@@ -2,7 +2,6 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { api, StockRingkas, MultiPortfolioResponse, OHLCV } from '@/lib/api';
-import type { Sinyal } from '@/lib/marketServer';
 import { INDEX_MEMBERS, INDEX_TABS, IndexKey } from '@/lib/indices';
 import Link from 'next/link';
 import EmetiqNav from '@/components/EmetiqNav';
@@ -43,19 +42,16 @@ const AGENT = {
 };
 
 export default function DashboardClient({
-  sahamAwal, ihsgAwal, sinyalAwal,
+  sahamAwal, ihsgAwal,
 }: {
   sahamAwal: StockRingkas[];
   ihsgAwal: OHLCV[];
-  sinyalAwal: Sinyal[];
 }) {
   const [stocks, setStocks] = useState<StockRingkas[]>(sahamAwal);
   const [portfolio, setPortfolio] = useState<MultiPortfolioResponse | null>(null);
-  const [signals, setSignals] = useState<Sinyal[]>(sinyalAwal);
   const [ihsgData, setIhsgData] = useState<OHLCV[]>(ihsgAwal);
   // Server sudah mengirim data pasar; hanya kosong bila backend gagal dijawab
   const [loading, setLoading] = useState(sahamAwal.length === 0);
-  const [isScanning, setIsRunningScan] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const { watchlist, toggle: toggleWatchlist } = useWatchlist();
   const { user } = useAuth();
@@ -65,19 +61,7 @@ export default function DashboardClient({
   const [visibleCount, setVisibleCount] = useState(30); // progressive (infinite-scroll) render window
   const loadMoreRef = useRef<HTMLDivElement | null>(null);
 
-  const [newTicker, setNewTicker] = useState('');
-  const [isAdding, setIsAdding] = useState(false);
-  const [minMarketCap, setMinMarketCap] = useState(0);
-
   const { toast } = useToast();
-
-  const MARKET_CAP_FILTERS = [
-    { label: 'Semua', value: 0 },
-    { label: 'Mid+', value: 1_000_000_000_000 },
-    { label: 'Large', value: 10_000_000_000_000 },
-    { label: 'Blue Chip', value: 50_000_000_000_000 },
-  ];
-
 
   const loadData = async () => {
     try {
@@ -85,14 +69,12 @@ export default function DashboardClient({
       const fromDate = new Date();
       fromDate.setMonth(fromDate.getMonth() - 2);
       const ihsgFrom = fromDate.toISOString().slice(0, 10);
-      const [stocksData, ihsg, signalsData] = await Promise.all([
+      const [stocksData, ihsg] = await Promise.all([
         api.getStocksRingkas(),
         api.getOHLCV('^JKSE', ihsgFrom),
-        api.getSignals()
       ]);
       setStocks(stocksData);
       setIhsgData(ihsg.data || []);
-      setSignals(signalsData || []);
     } catch (err) {
       toast('Gagal memuat data pasar. Periksa koneksi backend.', 'error');
     } finally {
@@ -117,39 +99,6 @@ export default function DashboardClient({
   // tanpa kedip — bukan sebagai kata terakhir: HTML-nya datang dari cache ISR yang
   // bisa jauh lebih tua dari lima menit.
   usePollingSaatTerlihat(loadData);
-
-  const handleScan = async () => {
-    setIsRunningScan(true);
-    try {
-      await api.triggerScan();
-      await loadData();
-    } catch (err) {
-      toast('Scan gagal. Periksa koneksi backend.', 'error');
-    } finally {
-      setIsRunningScan(false);
-    }
-  };
-
-  const handleAddStock = async () => {
-    if (!newTicker) return;
-    setIsAdding(true);
-    try {
-      await api.addStock(newTicker);
-      setNewTicker('');
-      loadData();
-    } catch (err) {
-      toast(`Ticker "${newTicker}" tidak ditemukan.`, 'error');
-    } finally {
-      setIsAdding(false);
-    }
-  };
-
-  // Gabungkan semua portofolio untuk total P&L jika portfolio sudah terisi
-  const totalUnrealized = portfolio ? (portfolio.USER.unrealized + portfolio.GEMINI.unrealized + portfolio.CLAUDE.unrealized) : 0;
-
-  const filteredSignals = signals.filter(sig =>
-    minMarketCap === 0 || (sig.market_cap != null && sig.market_cap >= minMarketCap)
-  );
 
   const filteredStocks = stocks.filter(s =>
     s.ticker !== '^JKSE' &&
@@ -320,8 +269,11 @@ export default function DashboardClient({
                 >
                   <button
                     onClick={(e) => toggleWatchlist(e, stock.ticker)}
+                    className="emx-tap"
                     style={{ fontSize: 15, lineHeight: 1, background: 'none', border: 'none', cursor: 'pointer', color: starred ? ACCENT : '#D6D5CE', transition: 'color .15s ease' }}
                     title={starred ? 'Hapus dari watchlist' : 'Tambah ke watchlist'}
+                    aria-label={starred ? `Hapus ${stock.ticker} dari watchlist` : `Tambah ${stock.ticker} ke watchlist`}
+                    aria-pressed={starred}
                   >★</button>
                   <div className="min-w-0">
                     <div className="flex items-center gap-2">

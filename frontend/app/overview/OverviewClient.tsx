@@ -41,7 +41,10 @@ function QuoteRow({ stock, starred, onStar }: { stock: StockRingkas; starred?: b
         {onStar && (
           <button
             onClick={onStar}
+            className="emx-tap"
             title={starred ? 'Hapus dari watchlist' : 'Tambah ke watchlist'}
+            aria-label={starred ? `Hapus ${stock.ticker} dari watchlist` : `Tambah ${stock.ticker} ke watchlist`}
+            aria-pressed={starred}
             style={{ fontSize: 14, lineHeight: 1, background: 'none', border: 'none', cursor: 'pointer', color: starred ? ACCENT : '#D6D5CE', flex: 'none' }}
           >★</button>
         )}

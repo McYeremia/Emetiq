@@ -6,13 +6,29 @@ import ta as ta_lib
 from sqlalchemy.orm import Session
 import models
 
-def get_ohlcv_df(db: Session, stock_id: int) -> pd.DataFrame:
-    rows = (
-        db.query(models.OHLCVDaily)
-        .filter(models.OHLCVDaily.stock_id == stock_id)
-        .order_by(models.OHLCVDaily.date)
-        .all()
-    )
+def get_ohlcv_df(db: Session, stock_id: int, max_rows: int = None) -> pd.DataFrame:
+    """OHLCV satu saham sebagai DataFrame, urut menaik.
+
+    `max_rows=None` (bawaan) mengambil SELURUH riwayat — backtester bergantung
+    pada itu, jadi jangan diberi batas.
+
+    Isi `max_rows` bila yang dibutuhkan cuma nilai indikator TERAKHIR. Rata-rata
+    satu saham punya ~1.121 baris, dan menariknya utuh dari Postgres remote hanya
+    untuk membaca satu baris terakhir adalah egress yang terbuang.
+
+    Batasnya JUMLAH BARIS, bukan rentang tanggal. Jendela berbasis tanggal
+    (mis. "700 hari terakhir") tampak setara, tapi menghapus data ~131 saham
+    suspensi yang terakhir berdagang berbulan lalu: jendelanya kosong, indikatornya
+    hilang, dan tak ada galat yang muncul. `routers/stocks.py:list_stocks` sudah
+    menolak batas tanggal untuk alasan yang persis sama.
+    """
+    q = db.query(models.OHLCVDaily).filter(models.OHLCVDaily.stock_id == stock_id)
+    if max_rows is not None:
+        # ambil N terbaru lalu balik urutannya — indikator butuh urutan menaik
+        rows = q.order_by(models.OHLCVDaily.date.desc()).limit(max_rows).all()
+        rows.reverse()
+    else:
+        rows = q.order_by(models.OHLCVDaily.date).all()
     if not rows:
         return pd.DataFrame()
     df = pd.DataFrame([{
@@ -91,5 +107,19 @@ def calculate_indicators_from_df(df: pd.DataFrame) -> dict:
     return r
 
 
-def calculate_indicators(db: Session, stock: models.Stock) -> dict:
-    return calculate_indicators_from_df(get_ohlcv_df(db, stock.id))
+# Berapa baris terakhir yang cukup untuk menghitung SEMUA indikator di sini.
+#
+# 200 adalah syarat keras MA_200, window terpanjang yang dihitung. 300 memberi
+# 100 baris tambahan supaya EMA (yang rekursif sejak batang pertama) sudah jauh
+# konvergen: pada EMA_26, pengaruh batang pertama setelah 300 langkah tinggal
+# sekitar 1e-10 — tak pernah sampai ke desimal yang ditampilkan.
+#
+# Diverifikasi 3 Sep 2026 pada 10 saham besar: hasil dengan 300 baris identik
+# dengan riwayat penuh, termasuk MA_200 sampai 4 desimal.
+INDICATOR_MAX_ROWS = 300
+
+
+def calculate_indicators(db: Session, stock: models.Stock,
+                         max_rows: int = INDICATOR_MAX_ROWS) -> dict:
+    """Indikator terakhir satu saham. Lihat catatan di `get_ohlcv_df`."""
+    return calculate_indicators_from_df(get_ohlcv_df(db, stock.id, max_rows))

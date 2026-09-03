@@ -10,15 +10,10 @@ const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:8000';
  *  banyak ditanya sekali per lima menit. */
 const REVALIDASI_DETIK = 300;
 
-export interface Sinyal {
-  ticker: string;
-  name: string;
-  type: string;
-  strategies: string[];
-  max_strength: number;
-  date: string;
-  market_cap: number | null;
-}
+// `Sinyal` dan `ambilSinyal()` dihapus 3 Sep 2026. Dashboard menariknya di server
+// DAN tiap siklus polling (6.123 byte per siklus), lalu memfilternya ke
+// `filteredSignals` yang tak pernah sekali pun dirender. Kalau sinyal mau
+// ditampilkan lagi, endpoint `/stocks/signals` masih ada — tinggal dipanggil.
 
 /** Kegagalan backend tak boleh menjatuhkan halaman — kembalikan `null` dan
  *  biarkan komponen klien mencoba lagi lewat polling. Halaman kosong yang
@@ -37,10 +32,6 @@ async function ambil<T>(path: string): Promise<T | null> {
 
 export function ambilSaham() {
   return ambil<StockRingkas[]>('/stocks?ringkas=true');
-}
-
-export function ambilSinyal() {
-  return ambil<Sinyal[]>('/stocks/signals');
 }
 
 export function ambilIhsg(dariTanggal: string) {
