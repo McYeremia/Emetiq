@@ -383,7 +383,23 @@ def get_trade_detail(trade_id: int, db: Session = Depends(get_db),
 def create_trade(req: TradeRequest, db: Session = Depends(get_db),
                  user: CurrentUser = Depends(get_current_user)):
     trade_type_upper = req.trade_type.upper()
+
     # Trade AI (AUTO_*) tetap global (user_id NULL); trade manual menjadi milik user ini.
+    #
+    # Tapi `trade_type` datang dari KLIEN. Tanpa penjagaan di bawah, user tier
+    # `free` cukup mengirim {"trade_type": "AUTO_AI"} untuk menulis ke bucket AI
+    # global — bucket yang dibaca `_visible_trades` untuk SEMUA user, jadi
+    # tulisannya muncul di porto orang lain.
+    #
+    # Ditolak 403, bukan diam-diam diturunkan ke MANUAL: kalau permintaannya
+    # ditulis ulang tanpa pemberitahuan, user melihat trade-nya "hilang" dan tak
+    # punya cara tahu kenapa.
+    if trade_type_upper in AI_TRADE_TYPES and user.tier != "dev":
+        raise HTTPException(
+            status_code=403,
+            detail=f"Tipe trade {trade_type_upper} hanya untuk tier dev",
+        )
+
     owner_id = None if trade_type_upper in AI_TRADE_TYPES else user.id
     try:
         execute_trade(

@@ -12,7 +12,7 @@ const INK = '#14140F';
 const MUTED = '#56564F';
 const HAIR = '#ECEBE6';
 const UP = '#138A50';
-const SANS = "'Plus Jakarta Sans', system-ui, sans-serif";
+const SANS = "var(--font-jakarta), system-ui, sans-serif";
 
 const inputStyle: React.CSSProperties = {
   width: '100%', padding: '11px 14px', borderRadius: 11, border: `1px solid ${HAIR}`,
@@ -72,8 +72,6 @@ function RegisterForm() {
 
   return (
     <main style={{ minHeight: '100vh', background: BG, color: INK, fontFamily: SANS, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
-      <link rel="preconnect" href="https://fonts.googleapis.com" />
-      <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
 
       <div style={{ width: '100%', maxWidth: 400, background: '#fff', border: `1px solid ${HAIR}`, borderRadius: 18, padding: 28, boxShadow: '0 18px 44px -28px rgba(20,20,15,.24)' }}>
         <Link href="/" style={{ textDecoration: 'none', color: INK, fontWeight: 800, fontSize: 19, letterSpacing: '.06em' }}>EMETIQ</Link>

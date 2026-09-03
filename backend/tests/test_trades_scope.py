@@ -65,3 +65,28 @@ def test_trade_detail_ownership(make_client):
     assert c1.get(f"/trades/{tid}").status_code == 200
     c2 = make_client("u2")
     assert c2.get(f"/trades/{tid}").status_code == 404
+
+
+def test_user_biasa_tak_bisa_menulis_ke_bucket_ai(make_client):
+    """`trade_type` datang dari klien, dan trade AI disimpan dengan user_id NULL
+    sehingga terlihat oleh SEMUA user lewat `_visible_trades`. Tanpa pagar ini,
+    user tier `free` cukup mengirim {"trade_type": "AUTO_AI"} untuk menitipkan
+    posisi palsu ke porto orang lain."""
+    c = make_client("u1", tier="free")
+    for tipe in ("AUTO_AI", "AUTO_GEMINI", "AUTO_CLAUDE", "auto_ai"):
+        res = c.post("/trades", json={"ticker": "BBRI", "action": "BUY",
+                                      "quantity": 5, "price": 4000, "trade_type": tipe})
+        assert res.status_code == 403, tipe
+
+    # Dan bucket AI-nya memang tetap kosong — bukan sekadar status kodenya benar.
+    assert c.get("/trades/portfolio").json()["AI"]["assets"] == []
+
+
+def test_dev_tetap_bisa_menulis_ke_bucket_ai(make_client):
+    """Pagar di atas tak boleh mematikan AI Porto, yang justru bekerja dengan
+    menulis ke bucket global itu."""
+    c = make_client("dev1", tier="dev")
+    res = c.post("/trades", json={"ticker": "BBRI", "action": "BUY",
+                                  "quantity": 5, "price": 4000, "trade_type": "AUTO_AI"})
+    assert res.status_code == 200
+    assert any(a["ticker"] == "BBRI" for a in c.get("/trades/portfolio").json()["AI"]["assets"])

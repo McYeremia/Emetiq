@@ -28,8 +28,8 @@ const UP = '#138A50';
 const DOWN = '#D23B3B';
 const UP_BG = '#E7F6EE';
 const DOWN_BG = '#FBE9E9';
-const SANS = "'Plus Jakarta Sans', system-ui, sans-serif";
-const MONO = "'IBM Plex Mono', monospace";
+const SANS = "var(--font-jakarta), system-ui, sans-serif";
+const MONO = "var(--font-plex-mono), monospace";
 
 const CARD: React.CSSProperties = {
   background: '#fff',
@@ -301,13 +301,6 @@ export default function StockDetailPage() {
 
   return (
     <main style={{ minHeight: '100vh', background: BG, color: INK, fontFamily: SANS, WebkitFontSmoothing: 'antialiased' }}>
-      {/* Fonts — React 19 hoists these into <head> */}
-      <link rel="preconnect" href="https://fonts.googleapis.com" />
-      <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="" />
-      <link
-        href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500;600&display=swap"
-        rel="stylesheet"
-      />
 
       <EmetiqNav active="market" />
 
@@ -364,7 +357,11 @@ export default function StockDetailPage() {
         <div className="term-grid">
           {/* LEFT: Market watch */}
           <aside className="term-side">
-            <div style={{ ...CARD, padding: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column', maxHeight: 'calc(100vh - 108px)' }}>
+            {/* dvh, bukan vh: `100vh` di Safari iOS mengabaikan bilah alamat, jadi
+                daftar saham ini lebih tinggi daripada yang terlihat dan ujungnya
+                tertutup chrome browser. Hanya height/maxHeight yang diubah; 22
+                pemakaian `minHeight: 100vh` lain hanya berdampak ruang kosong. */}
+            <div style={{ ...CARD, padding: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column', maxHeight: 'calc(100dvh - 108px)' }}>
               <div style={{ padding: 14, borderBottom: `1px solid ${HAIR}` }}>
                 <input
                   type="text"

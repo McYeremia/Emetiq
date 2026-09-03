@@ -1,9 +1,22 @@
+"""Backtest & screener strategi. Seluruh router butuh login.
+
+Kenapa dipagari di level ROUTER, bukan per-endpoint: kedua endpoint di sini
+CPU-bound di proses yang sama yang melayani permintaan lain — `/screen/ma-cross`
+terukur 4,63 detik dan `/screen/defensive-bull` 9,75 detik pada SQLite + CPU
+laptop (AUDIT-OPTIMALISASI.md §5). Pagar di level router berarti endpoint yang
+ditambahkan nanti ikut terlindungi tanpa ada yang perlu mengingatnya.
+
+Frontend tak perlu diubah: `/screener` sudah dibungkus `RequireAuth` dan
+`apiFetch` di lib/api.ts sudah menyisipkan header Authorization saat ada sesi.
+"""
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
+from auth import get_current_user
 from database import get_db
 import services.backtester as bt_svc
 
-router = APIRouter(prefix="/backtest", tags=["backtest"])
+router = APIRouter(prefix="/backtest", tags=["backtest"],
+                   dependencies=[Depends(get_current_user)])
 
 @router.get("/run/{ticker}/{strategy_id}")
 def run_backtest_endpoint(

@@ -6,8 +6,8 @@ import { useEffect, useState } from 'react';
 // ── Design tokens (from Landing.dc.html) ──────────────────────
 const ACCENT = '#F26A1B';
 const RADIUS = '11px';
-const SANS = "'Plus Jakarta Sans', system-ui, sans-serif";
-const MONO = "'IBM Plex Mono', monospace";
+const SANS = "var(--font-jakarta), system-ui, sans-serif";
+const MONO = "var(--font-plex-mono), monospace";
 
 // ── Screener presets (ported from DCLogic.renderVals) ─────────
 interface Preset {
@@ -99,13 +99,6 @@ export default function LandingPage() {
         WebkitFontSmoothing: 'antialiased',
       }}
     >
-      {/* Fonts — React 19 hoists these into <head> */}
-      <link rel="preconnect" href="https://fonts.googleapis.com" />
-      <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="" />
-      <link
-        href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500;600&display=swap"
-        rel="stylesheet"
-      />
 
       {/* ── NAV ─────────────────────────────────────────────── */}
       <header

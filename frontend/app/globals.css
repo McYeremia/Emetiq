@@ -8,8 +8,8 @@
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --font-sans: var(--font-jakarta);
+  --font-mono: var(--font-plex-mono);
 }
 
 @media (prefers-color-scheme: dark) {
@@ -23,10 +23,14 @@ html {
   scroll-behavior: smooth;
 }
 
+/* `Arial` di sini adalah sisa scaffold Next. Ia tak pernah terlihat di halaman
+   mana pun — setiap halaman menimpanya dengan style inline — tapi ia yang
+   melukis apa pun yang lolos dari style itu, termasuk saat font gagal dimuat.
+   Sekarang ia menunjuk ke font yang sama dengan sisanya. */
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--font-jakarta), system-ui, sans-serif;
 }
 
 /* Safari iOS memperbesar SELURUH halaman begitu sebuah kolom isian difokuskan

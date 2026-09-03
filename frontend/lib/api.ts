@@ -132,19 +132,6 @@ export interface TradeHistory {
   notes: string;
 }
 
-export interface BrokerFlowEntry {
-  broker_code: string;
-  broker_name: string;
-  total_value: number;
-  volume: number;
-  frequency: number;
-}
-
-export interface BrokerFlowResponse {
-  date: string | null;
-  data: BrokerFlowEntry[];
-}
-
 export interface BacktestResult {
   strategy_id: string;
   ticker: string;
@@ -322,27 +309,6 @@ export const api = {
 
   async getTradeHistory(agent: 'USER' | 'GEMINI' | 'CLAUDE' | 'AI'): Promise<TradeHistory[]> {
     const res = await apiFetch(`${API_BASE_URL}/trades/history?agent=${agent}`);
-    return res.json();
-  },
-
-  async getBrokerFlow(date?: string): Promise<BrokerFlowResponse> {
-    const url = date
-      ? `${API_BASE_URL}/broker-flow?date=${date}`
-      : `${API_BASE_URL}/broker-flow`;
-    const res = await apiFetch(url);
-    return res.json();
-  },
-
-  async getBrokerFlowDates(): Promise<{ dates: string[] }> {
-    const res = await apiFetch(`${API_BASE_URL}/broker-flow/available-dates`);
-    return res.json();
-  },
-
-  async scrapeBrokerFlow(date?: string): Promise<{ status: string; brokers_saved?: number; detail?: string }> {
-    const url = date
-      ? `${API_BASE_URL}/broker-flow/scrape?date=${date}`
-      : `${API_BASE_URL}/broker-flow/scrape`;
-    const res = await apiFetch(url, { method: 'POST' });
     return res.json();
   },
 

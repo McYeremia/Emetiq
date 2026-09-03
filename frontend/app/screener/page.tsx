@@ -20,8 +20,8 @@ const FAINT = '#9A9A92';
 const HAIR = '#ECEBE6';
 const UP = '#138A50';
 const DOWN = '#D23B3B';
-const SANS = "'Plus Jakarta Sans', system-ui, sans-serif";
-const MONO = "'IBM Plex Mono', monospace";
+const SANS = "var(--font-jakarta), system-ui, sans-serif";
+const MONO = "var(--font-plex-mono), monospace";
 
 const CARD: React.CSSProperties = {
   background: '#fff',
@@ -611,13 +611,6 @@ function ScreenerInner() {
 
   return (
     <main style={{ minHeight: '100vh', background: BG, color: INK, fontFamily: SANS, WebkitFontSmoothing: 'antialiased' }}>
-      {/* Fonts — React 19 hoists these into <head> */}
-      <link rel="preconnect" href="https://fonts.googleapis.com" />
-      <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="" />
-      <link
-        href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500;600&display=swap"
-        rel="stylesheet"
-      />
 
       <EmetiqNav active="screener" />
 

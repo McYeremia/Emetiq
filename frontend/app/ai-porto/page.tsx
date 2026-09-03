@@ -16,8 +16,8 @@ const HAIR = '#ECEBE6';
 const UP = '#138A50';
 const DOWN = '#D23B3B';
 const AMBER = '#B7791F';
-const SANS = "'Plus Jakarta Sans', system-ui, sans-serif";
-const MONO = "'IBM Plex Mono', monospace";
+const SANS = "var(--font-jakarta), system-ui, sans-serif";
+const MONO = "var(--font-plex-mono), monospace";
 
 const CARD: React.CSSProperties = {
   background: '#fff', border: `1px solid ${HAIR}`, borderRadius: 16,
@@ -120,16 +120,16 @@ function AiPortoInner() {
 
   return (
     <main style={{ minHeight: '100vh', background: BG, color: INK, fontFamily: SANS, WebkitFontSmoothing: 'antialiased' }}>
-      <link rel="preconnect" href="https://fonts.googleapis.com" />
-      <link
-        href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500;600&display=swap"
-        rel="stylesheet"
-      />
       <EmetiqNav active="ai-porto" />
 
       <div style={{ maxWidth: 1080, margin: '0 auto', padding: '24px 18px 28px', display: 'grid', gridTemplateColumns: 'minmax(0,1fr) 340px', gap: 20, alignItems: 'start' }} className="aip-grid">
         {/* Chat column */}
-        <div style={{ display: 'flex', flexDirection: 'column', height: 'calc(100vh - 116px)' }}>
+        {/* dvh, bukan vh: di Safari iOS `100vh` bernilai tinggi layar TANPA bilah
+            alamat, jadi kotak ini melebihi area yang terlihat dan bagian bawahnya
+            tersembunyi di balik chrome browser. 22 pemakaian `100vh` lain di aplikasi
+            ini `minHeight` — di sana kelebihannya cuma jadi ruang kosong, jadi
+            dibiarkan. Yang diubah hanya yang memakai height/maxHeight. */}
+        <div style={{ display: 'flex', flexDirection: 'column', height: 'calc(100dvh - 116px)' }}>
           <div className="mb-4">
             <h1 style={{ fontSize: 26, fontWeight: 800, letterSpacing: '-.02em' }}>AI Porto</h1>
             <p style={{ marginTop: 3, fontSize: 13.5, color: MUTED }}>Portofolio otonom — AI memilih saham & mengeksekusi trade atas perintahmu.</p>

@@ -19,7 +19,7 @@ export default function RequireAuth({ children }: { children: React.ReactNode })
   if (loading || !user) {
     return (
       <div
-        style={{ minHeight: '100vh', background: '#FCFCFB', color: '#F26A1B', fontFamily: "'IBM Plex Mono', monospace" }}
+        style={{ minHeight: '100vh', background: '#FCFCFB', color: '#F26A1B', fontFamily: "var(--font-plex-mono), monospace" }}
         className="flex items-center justify-center text-xs tracking-[0.3em] uppercase animate-pulse"
       >
         Memeriksa sesi...

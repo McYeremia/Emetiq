@@ -35,7 +35,7 @@ function CallbackInner() {
   }, [router, next]);
 
   return (
-    <main style={{ minHeight: '100vh', background: BG, color: ACCENT, fontFamily: "'IBM Plex Mono', monospace" }}
+    <main style={{ minHeight: '100vh', background: BG, color: ACCENT, fontFamily: "var(--font-plex-mono), monospace" }}
           className="flex items-center justify-center text-xs tracking-[0.3em] uppercase">
       {err ? <span style={{ color: '#D23B3B' }}>{err}</span> : <span className="animate-pulse">Menyelesaikan login...</span>}
     </main>

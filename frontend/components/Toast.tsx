@@ -51,7 +51,7 @@ function ToastItem({ item, onDismiss }: { item: ToastItem; onDismiss: (id: numbe
         minWidth: '240px',
         maxWidth: '320px',
         boxShadow: '0 8px 32px rgba(0,0,0,0.5)',
-        fontFamily: 'var(--font-geist-mono, monospace)',
+        fontFamily: 'var(--font-plex-mono, monospace)',
         fontSize: '11px',
         letterSpacing: '0.01em',
         color: '#e5e5e5',

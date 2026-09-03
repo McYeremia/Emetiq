@@ -3,8 +3,9 @@
 Hanya bicara HTTP: tidak tahu apa-apa soal database maupun model ORM.
 
 IDX memeriksa TLS fingerprint, jadi `requests` biasa akan ditolak. `curl_cffi`
-dengan impersonate Chrome lolos — pola yang sama sudah dipakai
-services/broker_scraper.py.
+dengan impersonate Chrome lolos. Pola ini dulu juga dipakai
+`services/broker_scraper.py`, yang dihapus 3 Sep 2026 — modul ini satu-satunya
+klien IDX yang tersisa.
 
 Hari non-bursa (akhir pekan, libur) dibalas HTTP 200 dengan nol baris, bukan
 error. Terverifikasi: Sabtu 2026-07-04 → 0 baris; Rabu 2026-07-08 → 963 baris.

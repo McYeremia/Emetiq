@@ -11,9 +11,19 @@ import yfinance as yf
 import models
 import services.data_fetcher as fetcher
 import services.indicators as ind_svc
+from auth import CurrentUser, get_current_user, require_dev
 from database import get_db
 
 router = APIRouter(prefix="/stocks", tags=["stocks"])
+
+# Endpoint BACA di router ini sengaja tetap publik — landing dan dashboard
+# memanggilnya dari Server Component tanpa token, dan header CACHE_PASAR di
+# bawah hanya sah selama jawabannya sama untuk semua orang.
+#
+# Endpoint TULIS tidak. Tiga di antaranya (`/refresh`, `/scan`, `POST /{ticker}`)
+# tak punya satu pun pemanggil di frontend — `api.refreshData`, `api.triggerScan`,
+# dan `api.addStock` ada di lib/api.ts tapi tak dipakai berkas mana pun — jadi
+# selama ini mereka terbuka tanpa ada yang memakainya.
 
 # Harga di aplikasi ini berasal dari `daily_sync` yang jalan sekali sehari setelah
 # bursa tutup, jadi jawaban yang sama diulang sepanjang hari. Tanpa header ini
@@ -317,7 +327,13 @@ def _do_refresh_all():
 
 
 @router.post("/refresh")
-def refresh_all(background_tasks: BackgroundTasks):
+def refresh_all(background_tasks: BackgroundTasks,
+                _: CurrentUser = Depends(require_dev)):
+    """Sync ~740 saham dari yfinance di background. Tier dev saja.
+
+    Bukan sekadar "berat": ia menulis ke seluruh tabel harga. Satu orang iseng
+    yang tahu URL Space bisa menjadwalkannya berulang kali.
+    """
     with _sync_lock:
         if _sync_state["is_running"]:
             return {"status": "already_running", "message": "Sync sedang berjalan"}
@@ -326,7 +342,14 @@ def refresh_all(background_tasks: BackgroundTasks):
 
 
 @router.post("/scan")
-def trigger_scan(db: Session = Depends(get_db)):
+def trigger_scan(db: Session = Depends(get_db),
+                 _: CurrentUser = Depends(require_dev)):
+    """Pindai sinyal seluruh pasar. Tier dev saja.
+
+    Jalannya SINKRON di worker yang sama yang melayani permintaan lain — selama
+    ia berjalan, pengunjung lain menunggu. Itu alasan `require_dev`, bukan
+    sekadar `get_current_user`.
+    """
     import services.watcher as watcher
     print("LOG: Triggering AI Market Scan via API...")
     count = watcher.scan_market_signals()
@@ -335,7 +358,13 @@ def trigger_scan(db: Session = Depends(get_db)):
 
 # Parameterized routes after static ones
 @router.post("/{ticker}")
-def add_custom_stock(ticker: str, db: Session = Depends(get_db)):
+def add_custom_stock(ticker: str, db: Session = Depends(get_db),
+                     _: CurrentUser = Depends(get_current_user)):
+    """Tambah saham baru ke semesta aplikasi. Butuh login.
+
+    Cukup `get_current_user` (bukan dev): dampaknya satu baris `stocks` dan satu
+    panggilan yfinance, bukan seluruh pasar.
+    """
     ticker = ticker.upper()
     existing = db.query(models.Stock).filter(models.Stock.ticker == ticker).first()
     if existing:
@@ -413,7 +442,13 @@ def get_indicators(ticker: str, db: Session = Depends(get_db)):
 
 
 @router.post("/{ticker}/refresh")
-def refresh_stock(ticker: str, db: Session = Depends(get_db)):
+def refresh_stock(ticker: str, db: Session = Depends(get_db),
+                  _: CurrentUser = Depends(get_current_user)):
+    """Tarik ulang harga satu saham. Butuh login.
+
+    Tidak disebut di AUDIT-OPTIMALISASI.md §9 — terlewat di sana. Bentuknya sama
+    dengan `POST /{ticker}`: yfinance + tulis ke `ohlcv_daily`.
+    """
     stock = db.query(models.Stock).filter(models.Stock.ticker == ticker.upper()).first()
     if not stock:
         raise HTTPException(status_code=404, detail=f"Stock {ticker.upper()} not found")

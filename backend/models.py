@@ -193,6 +193,17 @@ class BrokerFlow(Base):
     """
     Ringkasan aktivitas broker harian dari IDX (aggregate seluruh pasar, bukan per-saham).
     Source: idx.co.id/primary/TradingSummary/GetBrokerSummary
+
+    PENINGGALAN. Router `/broker-flow`, `services/broker_scraper.py`, dan halaman
+    `/broker-flow` dihapus 3 Sep 2026: halamannya tak tertaut dari mana pun, tak
+    punya satu pun tes, isinya 88 baris dari satu tanggal saja, dan tombol
+    scrape-nya menembak host IDX yang membalas 403 ke IP datacenter — jadi ia
+    tak mungkin jalan dari Space. Fungsinya sudah digantikan Big Money, yang
+    justru per-saham.
+
+    Model dan tabelnya SENGAJA dipertahankan: menjatuhkan tabel butuh migrasi
+    Supabase demi menghemat 88 baris, dan `scripts/migrate_sqlite_to_postgres.py`
+    masih mengimpor kelas ini. Tak ada kode hidup yang menulis ke sini lagi.
     """
     __tablename__ = "broker_flows"
     __table_args__ = (UniqueConstraint("date", "broker_code", name="uq_broker_flow"),)
