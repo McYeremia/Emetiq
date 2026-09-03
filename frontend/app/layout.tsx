@@ -42,7 +42,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}>
+    <html lang="id" className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}>
       {/* Latar EMETIQ. Sebelumnya hitam #050505 warisan IDXAnalyst, yang berkedip
           gelap tiap hard refresh sebelum halaman terang menutupinya. Halaman
           warisan yang masih gelap (/broker-flow) membawa latarnya sendiri. */}

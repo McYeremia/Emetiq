@@ -28,3 +28,28 @@ body {
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
 }
+
+/* Safari iOS memperbesar SELURUH halaman begitu sebuah kolom isian difokuskan
+   dan font-size terhitungnya di bawah 16px — dan halaman itu tidak mengecil lagi
+   setelah fokus dilepas. Semua 19 kolom isian di aplikasi ini memakai 13-14,5px,
+   jadi setiap ketukan pada kolom pencarian membuat tata letak melompat.
+   Paling merepotkan di /advisor dan /ai-porto yang sudah memasang penanganan
+   visualViewport sendiri — zoom itu justru melawannya.
+
+   Kenapa satu aturan, bukan menyunting 19 kolom: menyunting semuanya ikut
+   mengubah tampilan desktop yang tak bermasalah, dan menyebar keputusan ini ke
+   11 berkas.
+
+   Kenapa !important: gaya inline (style={{ fontSize: 13 }}) mengalahkan
+   stylesheet, kecuali stylesheet-nya !important.
+
+   Kenapa `pointer: coarse` dan bukan lebar layar: bug ini milik perangkat sentuh,
+   bukan layar sempit. iPad lanskap itu lebar tapi tetap kena; jendela desktop yang
+   dikecilkan itu sempit tapi tidak kena. */
+@media (pointer: coarse) {
+  input,
+  select,
+  textarea {
+    font-size: 16px !important;
+  }
+}
