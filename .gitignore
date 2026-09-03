@@ -29,3 +29,6 @@ frontend/.env.local
 !.env.example
 DEPLOY.txt
 DEPLOY_HUGGINGFACE.txt
+frontend/AUDIT-OPTIMALISASI.md
+frontend/CATATAN-BACKEND.md
+frontend/CATATAN-FRONTEND.md

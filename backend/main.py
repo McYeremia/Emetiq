@@ -3,6 +3,7 @@ import os
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import JSONResponse
 from database import Base, engine
 import models  # noqa: F401 — register ORM models
@@ -34,6 +35,22 @@ class SafeJSONResponse(JSONResponse):
 
 
 app = FastAPI(title="IDXAnalyst API", version="1.0.0", default_response_class=SafeJSONResponse)
+
+# Kompresi respons. JSON di sini sangat repetitif (nama kolom berulang tiap baris),
+# jadi gzip memangkas 76-86%: /stocks 174 KB -> 25 KB, ringkas 66 KB -> 15 KB,
+# OHLCV satu saham 165 KB -> 38 KB (diukur 2026-09-03).
+#
+# Ini bukan pengulangan pekerjaan proxy: Space HF TIDAK mengompresi di tepi —
+# /openapi.json dibalas 25.210 byte tanpa content-encoding walau klien memintanya.
+#
+# minimum_size=1000: respons kecil tak perlu dibungkus. Mengompresi 342 byte
+# (/stocks/{t}/indicators) justru menambah ukuran dan membuang CPU.
+#
+# Ditambahkan SEBELUM CORS dengan sengaja. `add_middleware` menyisipkan di indeks 0,
+# jadi yang ditambahkan TERAKHIR menjadi lapisan TERLUAR. CORS harus terluar supaya
+# headernya ikut menempel pada respons galat, dan preflight OPTIONS dijawab CORS
+# sebelum sempat masuk ke GZip.
+app.add_middleware(GZipMiddleware, minimum_size=1000)
 
 # Origins yang diizinkan — dari env (comma-separated) saat deploy; default localhost dev.
 _origins = os.getenv("ALLOWED_ORIGINS", "http://localhost:3000,http://127.0.0.1:3000")
