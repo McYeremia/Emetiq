@@ -1,9 +1,10 @@
 'use client';
 
-import { Suspense, useState } from 'react';
+import { Suspense, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { supabase, supabaseConfigured, siteUrl } from '@/lib/supabase';
+import { getSupabase, supabaseConfigured, siteUrl } from '@/lib/supabase';
+import { useAuth } from '@/components/AuthProvider';
 import PasswordInput from '@/components/PasswordInput';
 
 const ACCENT = '#F26A1B';
@@ -29,24 +30,36 @@ const btnGoogle: React.CSSProperties = {
 
 function LoginForm() {
   const router = useRouter();
+  const { mulaiSesi } = useAuth();
   const next = useSearchParams().get('next') || '/overview';
   const [email, setEmail] = useState('');
   const [pw, setPw] = useState('');
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
+  // Panaskan pustaka auth begitu halaman ini terbuka. Ia diunduh malas sejak
+  // 4 Sep 2026, dan di sinilah ia pasti dibutuhkan — memulai unduhannya saat orang
+  // baru mengetik email membuatnya sudah siap ketika tombol ditekan.
+  useEffect(() => { if (supabaseConfigured) void getSupabase(); }, []);
+
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     setErr(null); setBusy(true);
-    const { error } = await supabase.auth.signInWithPassword({ email, password: pw });
+    const sb = await getSupabase();
+    const { error } = await sb.auth.signInWithPassword({ email, password: pw });
+    if (error) { setBusy(false); setErr(error.message); return; }
+    // Wajib sebelum redirect: `router.replace` itu navigasi sisi klien, jadi
+    // AuthProvider tak di-mount ulang dan — bagi pengunjung yang tadinya anonim —
+    // belum punya langganan yang bisa melihat sesi baru ini.
+    await mulaiSesi();
     setBusy(false);
-    if (error) { setErr(error.message); return; }
     router.replace(next);
   };
 
   const google = async () => {
     setErr(null);
-    const { error } = await supabase.auth.signInWithOAuth({
+    const sb = await getSupabase();
+    const { error } = await sb.auth.signInWithOAuth({
       provider: 'google',
       options: { redirectTo: `${siteUrl()}/auth/callback?next=${encodeURIComponent(next)}` },
     });

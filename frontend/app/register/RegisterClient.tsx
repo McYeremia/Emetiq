@@ -1,9 +1,9 @@
 'use client';
 
-import { Suspense, useState } from 'react';
+import { Suspense, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
-import { supabase, supabaseConfigured, siteUrl } from '@/lib/supabase';
+import { getSupabase, supabaseConfigured, siteUrl } from '@/lib/supabase';
 import PasswordInput from '@/components/PasswordInput';
 
 const ACCENT = '#F26A1B';
@@ -36,12 +36,17 @@ function RegisterForm() {
   const [done, setDone] = useState(false);
   const [busy, setBusy] = useState(false);
 
+  // Sama seperti di halaman login: pustaka auth diunduh malas, dan di sini ia pasti
+  // dibutuhkan — jadi dipanaskan sejak halaman terbuka.
+  useEffect(() => { if (supabaseConfigured) void getSupabase(); }, []);
+
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     setErr(null);
     if (pw.length < 8) { setErr('Password minimal 8 karakter.'); return; }
     setBusy(true);
-    const { data, error } = await supabase.auth.signUp({
+    const sb = await getSupabase();
+    const { data, error } = await sb.auth.signUp({
       email,
       password: pw,
       options: { emailRedirectTo: `${siteUrl()}/auth/callback?next=${encodeURIComponent(next)}` },
@@ -62,7 +67,8 @@ function RegisterForm() {
 
   const google = async () => {
     setErr(null);
-    const { error } = await supabase.auth.signInWithOAuth({
+    const sb = await getSupabase();
+    const { error } = await sb.auth.signInWithOAuth({
       provider: 'google',
       options: { redirectTo: `${siteUrl()}/auth/callback?next=${encodeURIComponent(next)}` },
     });
