@@ -29,6 +29,11 @@ const CARD: React.CSSProperties = {
  *  ditulis ulang di sini persis seperti di halaman AI Porto tier dev. */
 const MODAL_AWAL = 15_000_000;
 
+/** Berapa transaksi terbaru yang ditampilkan sebelum daftarnya dibentangkan.
+ *  Cukup untuk menjawab "AI barusan ngapain?" tanpa membuat halaman jadi gulungan
+ *  panjang; sisanya di balik satu ketukan. */
+const HISTORI_AWAL = 5;
+
 /** Tier terendah yang boleh memantau. Backend tetap yang menolak (403) — nilai di
  *  sini hanya menentukan layar mana yang ditampilkan, bukan pengamanannya. */
 const TIER_BOLEH = ['pro', 'premium', 'dev'];
@@ -93,6 +98,7 @@ function Pantauan() {
   const [histori, setHistori] = useState<TradeHistory[]>([]);
   const [memuat, setMemuat] = useState(true);
   const [galat, setGalat] = useState<string | null>(null);
+  const [bentangkan, setBentangkan] = useState(false);
 
   // Sekali jalan, tanpa polling — lihat catatan di kepala berkas.
   useEffect(() => {
@@ -111,8 +117,13 @@ function Pantauan() {
   const pnl = snapshot ? snapshot.total_value - MODAL_AWAL : 0;
   const pnlPct = snapshot ? (pnl / MODAL_AWAL) * 100 : 0;
   const naik = pnl >= 0;
-  // Transaksi terakhir = tanggal data terbaru yang dipunya halaman ini.
-  const tanggalTerakhir = histori.length ? histori[histori.length - 1].date : undefined;
+  // `GET /trades/history` memulangkan TERBARU DI DEPAN (endpoint-nya mengurut
+  // menurun). Jadi transaksi terakhir ada di indeks 0 — bukan di ujung. Versi
+  // pertama halaman ini mengambil ujungnya dan menampilkan tanggal transaksi
+  // PALING LAMA sebagai "transaksi terakhir".
+  const tanggalTerakhir = histori[0]?.date;
+  const historiTampil = bentangkan ? histori : histori.slice(0, HISTORI_AWAL);
+  const adaSisa = histori.length > HISTORI_AWAL;
 
   return (
     <main style={{ minHeight: '100vh', background: BG, color: INK, fontFamily: SANS, WebkitFontSmoothing: 'antialiased' }}>
@@ -203,10 +214,29 @@ function Pantauan() {
               </h2>
               {histori.length > 0 ? (
                 <div style={{ display: 'flex', flexDirection: 'column' }}>
-                  {[...histori].reverse().map((t, i) => <BarisHistori key={t.id} t={t} pertama={i === 0} />)}
+                  {historiTampil.map((t, i) => <BarisHistori key={t.id} t={t} pertama={i === 0} />)}
                 </div>
               ) : (
                 <p style={{ fontSize: 13, color: FAINT }}>Belum ada transaksi.</p>
+              )}
+
+              {adaSisa && (
+                <button
+                  type="button"
+                  onClick={() => setBentangkan(b => !b)}
+                  aria-expanded={bentangkan}
+                  style={{
+                    marginTop: 14, width: '100%', minHeight: 40, borderRadius: 10,
+                    border: `1px solid ${HAIR}`, background: '#FBFBF9', cursor: 'pointer',
+                    fontFamily: SANS, fontSize: 13, fontWeight: 700, color: MUTED,
+                    display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+                  }}
+                >
+                  {bentangkan
+                    ? 'Ringkas'
+                    : `Tampilkan ${histori.length - HISTORI_AWAL} transaksi lainnya`}
+                  <span style={{ fontSize: 11, transform: bentangkan ? 'rotate(180deg)' : 'none' }}>▾</span>
+                </button>
               )}
             </div>
           </>

@@ -160,6 +160,21 @@ ikut membawa modul realtime yang tak terpakai. Memangkasnya berarti **mengganti*
 penanganan sesi, bukan menundanya — dan titik paling rawannya persis di sana. Jadi
 pekerjaan tersendiri, bukan tambahan.
 
+**Ajakan naik tier di kartu "khusus tier X".** Kartu yang muncul untuk tier yang
+belum berhak sengaja hanya **menjelaskan** fitur dan tier pengguna saat ini — tanpa
+tombol apa pun. Alasannya sederhana: **aplikasi ini belum punya jalur naik tier sama
+sekali.** Tak ada halaman paket, tak ada pembayaran, dan halaman profil hanya
+menampilkan tier tanpa cara mengubahnya; tier diatur manual oleh pemilik lewat
+dashboard basis data.
+
+Menambahkan tombol sekarang berarti mengarahkan orang ke jalan buntu yang lain.
+Keputusan pemilik repo (4 Sep 2026): biarkan apa adanya, **halaman paket menyusul** —
+dan begitu halaman itu ada, ia menjadi tujuan yang benar untuk semua kartu bertier di
+aplikasi, bukan cuma yang di pantauan AI Porto.
+
+> Gap ini berlaku di seluruh aplikasi, bukan hanya satu halaman: Big Money dan kuota
+> AI Advisor juga bertingkat tier tanpa jalan naik.
+
 **Menampilkan jam pembaruan data.** Data harian hanya membawa tanggal, tidak jam.
 Menuliskan jam berarti mengarang ketelitian yang tak dimiliki datanya.
 
@@ -201,8 +216,13 @@ Yang perlu diketahui orang berikutnya:
 - Datanya dimuat **sekali**, tanpa polling. Porto AI hanya berubah saat pemiliknya
   menjalankan AI; polling berkala oleh tiap penonton berarti kueri berulang untuk
   angka yang sama.
-- Tier di bawah `pro` melihat kartu ajakan upgrade, bukan halaman kosong. Yang
-  benar-benar menahan akses tetap backend, yang menolak dengan 403.
+- Tier di bawah `pro` **tak melihat menunya sama sekali**; membuka alamatnya
+  langsung memberi kartu ajakan upgrade, bukan halaman kosong. Yang benar-benar
+  menahan akses tetap backend, yang menolak dengan 403.
+- Histori ditampilkan **lima terbaru** lebih dulu, sisanya di balik satu tombol.
+  Endpoint histori memulangkan **terbaru di depan** — jangan membaliknya, dan
+  "transaksi terakhir" ada di indeks 0, bukan di ujung. Versi pertama halaman ini
+  salah di dua-duanya sekaligus karena satu asumsi urutan yang keliru.
 
 ---
 
