@@ -30,9 +30,26 @@ const ITEMS = [
 
 export type NavKey = typeof ITEMS[number]['key'];
 
+// Siapa melihat AI Porto, dan versi mana.
+//
+// Tier `dev` membuka halaman penuh — bisa memerintahkan AI dan mengeksekusi trade.
+// Tier `pro` ke atas membuka halaman pantauan: porto dan histori yang sama, tanpa
+// satu pun jalur perintah. Namanya sengaja sama di menu; yang membedakan isinya.
+//
+// Ini hanya soal tampilan menu. Yang benar-benar menahan akses adalah backend, yang
+// menolak 403 untuk tier di bawah `pro`.
+const TIER_PANTAU_AI = ['pro', 'premium', 'dev'];
+
+function tautanAiPorto(tier: string | null): string | null {
+  const t = (tier || '').toLowerCase();
+  if (t === 'dev') return '/ai-porto';
+  return TIER_PANTAU_AI.includes(t) ? '/ai-porto-monitor' : null;
+}
+
 export default function EmetiqNav({ active }: { active?: NavKey | 'advisor' | 'ai-porto' | 'big-money' }) {
   const [open, setOpen] = useState(false);
   const { user, tier, loading } = useAuth();
+  const hrefAiPorto = tautanAiPorto(tier);
 
   const navItem = (isActive: boolean): React.CSSProperties => ({
     textDecoration: 'none',
@@ -66,8 +83,8 @@ export default function EmetiqNav({ active }: { active?: NavKey | 'advisor' | 'a
           {ITEMS.map(it => (
             <Link key={it.key} href={it.href} style={navItem(active === it.key)}>{it.label}</Link>
           ))}
-          {tier === 'dev' && (
-            <Link href="/ai-porto" style={navItem(active === 'ai-porto')}>AI Porto</Link>
+          {hrefAiPorto && (
+            <Link href={hrefAiPorto} style={navItem(active === 'ai-porto')}>AI Porto</Link>
           )}
           {tier === 'dev' && isBigMoneyEnabled && (
             <Link href="/big-money" style={navItem(active === 'big-money')}>Big Money</Link>
@@ -128,9 +145,9 @@ export default function EmetiqNav({ active }: { active?: NavKey | 'advisor' | 'a
               </Link>
             );
           })}
-          {tier === 'dev' && (
+          {hrefAiPorto && (
             <Link
-              href="/ai-porto"
+              href={hrefAiPorto}
               onClick={() => setOpen(false)}
               style={{ padding: '11px 13px', borderRadius: 11, textDecoration: 'none', fontSize: 15, fontWeight: active === 'ai-porto' ? 700 : 600, color: active === 'ai-porto' ? ACCENT : INK, background: active === 'ai-porto' ? `color-mix(in oklab, ${ACCENT}, white 88%)` : 'transparent' }}
             >

@@ -9,6 +9,7 @@ diperiksa.
 |---|---|---|
 | [`KEADAAN-APLIKASI.md`](KEADAAN-APLIKASI.md) | Keadaan aplikasi hari ini: susunan sistem, angka kinerja, dan **daftar hal yang tak boleh dibongkar** | …Anda akan menyentuh kode ini |
 | [`RIWAYAT-OPTIMALISASI.md`](RIWAYAT-OPTIMALISASI.md) | Apa yang berubah 3–4 September 2026, beserta angka dan nomor commit-nya | …Anda ingin tahu kenapa sesuatu dibuat begitu |
+| [`KEAMANAN.md`](KEAMANAN.md) | Apa yang menahan eksekusi trade, apa yang sudah diuji, dan apa yang tetap tanggung jawab pemilik | …Anda menyentuh autentikasi, tier, atau apa pun di dekat AI Porto |
 
 ## Kenapa folder ini ter-commit, sementara catatan lain tidak
 

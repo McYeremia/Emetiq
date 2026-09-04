@@ -17,8 +17,10 @@ berguna ada di bawah: **"Jangan diulang"** dan **"Jangan dibongkar"**.
 | Pipeline Big Money | Dijadwalkan dari mesin lokal — IDX menolak permintaan dari IP pusat data | laptop pemilik |
 
 Halaman: landing, Overview, Market/Dashboard, Screener, Portofolio, detail saham,
-AI Advisor, AI Porto (tier `dev`), Big Money (tier `dev`), Admin (tier `dev`),
-Profil, Masuk, Daftar.
+AI Advisor, AI Porto (tier `dev`), **pantauan AI Porto (tier `pro` ke atas)**,
+Big Money (tier `dev`), Admin (tier `dev`), Profil, Masuk, Daftar.
+
+Tier yang dikenal, dari terendah: `free`, `basic`, `pro`, `premium`, `dev`.
 
 ---
 
@@ -34,7 +36,7 @@ Semua diukur dari hasil `next build` produksi dan header respons nyata.
 | Kompresi respons API | tak ada | gzip, −77% s.d. −87% |
 | Judul halaman ada di HTML awal | 2 dari 14 rute | **14 dari 14** |
 | Halaman galat berbahasa Indonesia | tidak ada | 404, 500, dan 500 tingkat aplikasi |
-| Tes backend | 408 | **476** |
+| Tes backend | 408 | **511** |
 
 Berkas statis (`/_next/static/*`) disajikan Vercel dengan
 `cache-control: public, max-age=31536000, immutable`, jadi kunjungan berikutnya tak
@@ -93,6 +95,13 @@ tanpa membaca alasannya kemungkinan besar mengembalikan bug yang sudah mati.
 - **Laporan (Telegram, ringkasan LLM) adalah lapisan kabar, bukan data.**
   Kegagalannya tak boleh menjatuhkan pipeline: skor yang sudah tersimpan lebih
   berharga daripada narasinya.
+- **Server menolak menyala bila mode bypass autentikasi aktif di atas basis data
+  jauh.** Ada flag pengembangan yang meloloskan setiap permintaan sebagai user dev —
+  berguna di laptop, bencana di server: siapa pun bisa mengubah tier orang lain dan
+  memerintahkan AI Porto mengeksekusi trade. Yang membuatnya berbahaya adalah
+  diamnya; aplikasi tetap jalan normal dengan pintu terbuka. Penjaga di `auth.py`
+  mengubahnya jadi kegagalan keras saat boot. Jangan dilepas, dan jangan dipindah ke
+  posisi setelah aplikasi menyentuh basis data.
 - **Hari non-bursa bukan kegagalan.** Bursa membalas "tak ada baris" di akhir pekan
   dan libur; pipeline berhenti tenang dan job tetap hijau. Job merah tiap Sabtu
   hanya melatih orang mengabaikan alarm.
@@ -118,6 +127,15 @@ tanpa membaca alasannya kemungkinan besar mengembalikan bug yang sudah mati.
 - **Label tanggal data mengambil tanggal dari data yang sudah ada di halaman.**
   Jangan menambahkannya kembali ke payload ringkas — payload itu di-polling tiap
   lima menit oleh setiap tab yang terbuka.
+- **AI Porto (tier `dev`) dan pantauannya (tier `pro` ke atas) adalah dua hal
+  terpisah, dan sengaja begitu.** Halaman `dev` mengeksekusi trade sungguhan lewat
+  LLM; halaman pantauan hanya membaca. Keduanya tak berbagi router, tak berbagi
+  komponen tampilan, dan pantauannya tak mengimpor satu pun pipeline AI. Menyatukan
+  keduanya "supaya tidak duplikat" berarti membuat permukaan yang mengeksekusi trade
+  bisa tersentuh dari jalur yang dipakai penonton. Harga dari pemisahan ini nyata —
+  mengubah tampilan di satu tempat tak mengubah yang lain — dan itu memang harga yang
+  dipilih. Satu-satunya yang dipakai bersama adalah fungsi layanan yang murni
+  membaca, dan ada tes yang menuntut keduanya memulangkan angka yang identik.
 
 ---
 
@@ -166,7 +184,29 @@ Jujur soal yang belum terbukti, supaya tak ada yang menganggapnya beres:
 
 ---
 
-## 7. Cara mengukur tanpa menyentuh basis data produksi
+## 7. Fitur yang ditambahkan setelah audit
+
+**Pantauan AI Porto (4 Sep 2026), tier `pro` ke atas.** Tier di bawah `dev` kini bisa
+melihat portofolio yang dikelola AI: nilai, posisi terbuka, dan histori jual/beli
+lengkap dengan **alasan AI di tiap transaksi**. Alasan itu sudah tersimpan sejak lama
+tapi tak pernah ditampilkan; justru itu isi yang membuat halaman ini layak dibuka.
+
+Yang perlu diketahui orang berikutnya:
+
+- Halaman ini **hanya melihat**. Perintah dan eksekusi tetap khusus `dev`.
+- Ia hidup di router dan halaman yang **terpisah sepenuhnya** dari AI Porto — lihat
+  alasannya di §4 dan di [`KEAMANAN.md`](KEAMANAN.md).
+- Badge rezim risiko tak ikut ditampilkan: nilainya datang dari balasan pipeline AI,
+  bukan dari data tersimpan. Menampilkannya berarti menjalankan AI-nya.
+- Datanya dimuat **sekali**, tanpa polling. Porto AI hanya berubah saat pemiliknya
+  menjalankan AI; polling berkala oleh tiap penonton berarti kueri berulang untuk
+  angka yang sama.
+- Tier di bawah `pro` melihat kartu ajakan upgrade, bukan halaman kosong. Yang
+  benar-benar menahan akses tetap backend, yang menolak dengan 403.
+
+---
+
+## 8. Cara mengukur tanpa menyentuh basis data produksi
 
 Ada salinan basis data lokal (SQLite) berisi ratusan ribu baris harga untuk keperluan
 ini. Datanya berhenti di suatu tanggal di masa lalu, jadi ia dipakai untuk mengukur

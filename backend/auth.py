@@ -155,3 +155,89 @@ def get_optional_user(
         return get_current_user(authorization, db)
     except HTTPException:
         return None
+
+
+# Urutan tier dari yang paling rendah. Sumber kebenaran daftar tiernya ada di
+# `routers/admin.py` (VALID_TIERS); di sini yang ditambahkan adalah URUTANNYA.
+#
+# `dev` diletakkan paling atas karena ia tier pemilik: apa pun yang boleh dilihat
+# `premium` sudah pasti boleh dilihat `dev`. Itu membuat pagar "pro ke atas" tak
+# perlu menyebut `dev` satu per satu — dan tak akan lupa menyebutnya nanti.
+URUTAN_TIER = ("free", "basic", "pro", "premium", "dev")
+
+
+def require_tier_minimal(minimal: str):
+    """Dependency: menolak 403 bila tier user berada DI BAWAH `minimal`.
+
+    Berbeda dari `require_dev` yang mencocokkan satu tier persis, ini berbasis
+    urutan — dipakai fitur yang dibuka bertahap ke tier berbayar.
+
+    Tier yang tak dikenal (mis. sisa data lama atau salah ketik di dashboard admin)
+    diperlakukan sebagai paling rendah, bukan diloloskan. Gagal ke arah aman.
+    """
+    if minimal not in URUTAN_TIER:
+        raise ValueError(f"Tier tak dikenal: {minimal}")
+    batas = URUTAN_TIER.index(minimal)
+
+    def penjaga(user: CurrentUser = Depends(get_current_user)) -> CurrentUser:
+        tier = (user.tier or "").lower()
+        posisi = URUTAN_TIER.index(tier) if tier in URUTAN_TIER else -1
+        if posisi < batas:
+            raise HTTPException(
+                status_code=403,
+                detail=f"Fitur ini untuk tier {minimal} ke atas.",
+            )
+        return user
+
+    return penjaga
+
+
+# Host yang dianggap "mesin ini juga". Basis data di sini aman dibypass: yang bisa
+# menyentuhnya cuma orang yang sudah duduk di depan komputernya.
+_HOST_LOKAL = {"", "localhost", "127.0.0.1", "::1", "[::1]"}
+
+
+def pastikan_bypass_aman(database_url: Optional[str] = None) -> None:
+    """Menolak menyalakan server bila `AUTH_DEV_BYPASS` aktif atas basis data JAUH.
+
+    `AUTH_DEV_BYPASS=1` membuat `get_current_user` meloloskan setiap permintaan
+    sebagai user dev — tanpa token sama sekali. Itu memang gunanya saat
+    mengembangkan di laptop. Tapi flag yang sama menyala di server berarti seluruh
+    aplikasi terbuka untuk siapa pun: membaca portofolio, mengubah tier orang lain,
+    dan memerintahkan AI Porto mengeksekusi trade.
+
+    Yang membuat kesalahan konfigurasi seperti itu berbahaya adalah DIAMNYA — tak ada
+    galat, tak ada log aneh, aplikasinya jalan normal dengan pintu terbuka. Fungsi ini
+    mengubahnya jadi kegagalan keras saat boot, yang mustahil tak disadari.
+
+    Aturannya: bypass hanya untuk basis data lokal (SQLite, atau Postgres di
+    localhost). Selain itu — Supabase termasuk — server menolak menyala.
+
+    Pesan galatnya sengaja TIDAK memuat `DATABASE_URL`: ia mengandung kata sandi, dan
+    pesan ini berakhir di log server yang bisa tersalin ke mana-mana.
+    """
+    if not _env_flag("AUTH_DEV_BYPASS"):
+        return
+
+    url = database_url if database_url is not None else os.getenv("DATABASE_URL", "")
+    url = (url or "").strip()
+    if not url:
+        return  # database.py jatuh ke berkas SQLite lokal
+
+    skema, _, sisa = url.partition("://")
+    if skema.lower().startswith("sqlite"):
+        return
+
+    # Ambil host tanpa mengurai kredensial: bagian setelah '@' terakhir, sebelum
+    # '/' atau ':' berikutnya.
+    otoritas = sisa.rsplit("@", 1)[-1]
+    host = otoritas.split("/", 1)[0].rsplit(":", 1)[0].lower()
+    if host in _HOST_LOKAL:
+        return
+
+    raise RuntimeError(
+        "AUTH_DEV_BYPASS aktif sementara DATABASE_URL menunjuk basis data non-lokal "
+        f"(skema '{skema}'). Kombinasi itu membuka SELURUH aplikasi tanpa autentikasi "
+        "— termasuk eksekusi trade AI Porto. Matikan AUTH_DEV_BYPASS, atau arahkan "
+        "DATABASE_URL ke basis data lokal."
+    )

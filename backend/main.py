@@ -5,8 +5,14 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import JSONResponse
+from auth import pastikan_bypass_aman
 from database import Base, engine
 import models  # noqa: F401 — register ORM models
+
+# Dipanggil SEBELUM create_all, yakni sebelum apa pun menyentuh basis data: kalau
+# AUTH_DEV_BYPASS menyala di atas basis data jauh, server harus menolak menyala,
+# bukan menyala dengan pintu terbuka. Penjelasan lengkap ada di `auth.py`.
+pastikan_bypass_aman()
 
 Base.metadata.create_all(bind=engine)
 
@@ -71,6 +77,7 @@ from routers.advisor import router as advisor_router  # noqa: E402
 from routers.watchlist import router as watchlist_router  # noqa: E402
 from routers.account import router as account_router    # noqa: E402
 from routers.ai_porto import router as ai_porto_router  # noqa: E402
+from routers.ai_porto_monitor import router as ai_porto_monitor_router  # noqa: E402
 from routers.admin import router as admin_router  # noqa: E402
 from routers.bigmoney import router as bigmoney_router  # noqa: E402
 app.include_router(stocks_router)
@@ -80,5 +87,6 @@ app.include_router(advisor_router)
 app.include_router(watchlist_router)
 app.include_router(account_router)
 app.include_router(ai_porto_router)
+app.include_router(ai_porto_monitor_router)
 app.include_router(admin_router)
 app.include_router(bigmoney_router)

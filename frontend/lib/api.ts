@@ -367,6 +367,17 @@ export const api = {
     return res.json();
   },
 
+  /** Snapshot yang SAMA, lewat endpoint baca-saja untuk tier `pro` ke atas.
+   *
+   *  Sengaja tidak memakai `getAiPorto()` di atas: endpoint itu khusus tier `dev`
+   *  dan berada di router yang juga memuat jalur eksekusi trade. Pemisahan ini yang
+   *  membuat halaman pantauan tak mungkin menyentuh apa pun milik AI Porto. */
+  async getAiPortoMonitor(): Promise<AiPortoSnapshot> {
+    const res = await apiFetch(`${API_BASE_URL}/ai-porto-monitor/portfolio`);
+    if (!res.ok) throw new Error(`Gagal memuat porto AI (${res.status})`);
+    return res.json();
+  },
+
   // ── Watchlist (per user, butuh login) ──────────────────────────────────────
   async getWatchlist(): Promise<string[]> {
     const res = await apiFetch(`${API_BASE_URL}/watchlist`);
