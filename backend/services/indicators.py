@@ -73,6 +73,30 @@ def _last(series):
     return round(float(s.iloc[-1]), 4) if not s.empty else None
 
 
+def _atr_terakhir(high, low, close, window: int = 14):
+    """ATR terakhir, atau None bila deretnya lebih pendek dari jendelanya.
+
+    `ta` 0.11.0 tidak seragam di titik ini. Semua indikator lain di bawah
+    memulangkan NaN untuk deret pendek — dan `_last()` mengubah NaN jadi None —
+    tapi `AverageTrueRange` menulis ke `atr[window - 1]` tanpa memeriksa panjang
+    deret, jadi ia melempar `IndexError`.
+
+    Efeknya di endpoint ganjil: 0 baris AMAN (dijaga `df.empty` di awal
+    `calculate_indicators_from_df`), sedangkan 1-13 baris membuat
+    `GET /stocks/{ticker}/indicators` membalas 500 — saham yang baru melantai
+    persis berada di rentang itu. Jalur AI Advisor
+    (`services/advisor/data_provider.py`) memanggil fungsi indikator ini di dalam
+    perulangan tanpa penangkap galat, jadi satu saham tipis di hasil screener
+    cukup untuk menjatuhkan seluruh balasan.
+
+    Penjaganya `tests/test_indicators_deret_pendek.py`.
+    """
+    if len(close) < window:
+        return None
+    atr = ta_lib.volatility.AverageTrueRange(high=high, low=low, close=close, window=window)
+    return _last(atr.average_true_range())
+
+
 def calculate_indicators_from_df(df: pd.DataFrame) -> dict:
     """Hitung indikator dari df OHLCV yang sudah di-fetch (dipakai jalur batch)."""
     if df is None or df.empty:
@@ -87,7 +111,7 @@ def calculate_indicators_from_df(df: pd.DataFrame) -> dict:
     r["EMA_12"]      = _last(ta_lib.trend.EMAIndicator(close=close, window=12).ema_indicator())
     r["EMA_26"]      = _last(ta_lib.trend.EMAIndicator(close=close, window=26).ema_indicator())
     r["RSI_14"]      = _last(ta_lib.momentum.RSIIndicator(close=close, window=14).rsi())
-    r["ATR_14"]      = _last(ta_lib.volatility.AverageTrueRange(high=high, low=low, close=close, window=14).average_true_range())
+    r["ATR_14"]      = _atr_terakhir(high, low, close, window=14)
     r["VOLUME_MA_20"] = _last(ta_lib.trend.SMAIndicator(close=volume, window=20).sma_indicator())
 
     macd = ta_lib.trend.MACD(close=close, window_slow=26, window_fast=12, window_sign=9)

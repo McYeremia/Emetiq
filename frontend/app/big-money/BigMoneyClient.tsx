@@ -125,7 +125,6 @@ export default function BigMoneyClient() {
 }
 
 function BigMoneyInner() {
-  useEffect(() => { document.title = 'Big Money — EMETIQ'; }, []);
 
   const { tier } = useAuth();
   const [regime, setRegime] = useState<BigMoneyRegime | null>(null);

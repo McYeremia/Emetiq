@@ -4,7 +4,7 @@ import DashboardClient from './DashboardClient';
 import { ambilIhsg, ambilSaham, tanggalAwalIhsg } from '@/lib/marketServer';
 
 export const metadata: Metadata = {
-  title: 'Dashboard - EMETIQ',
+  title: 'Dashboard — EMETIQ',
 };
 
 /**

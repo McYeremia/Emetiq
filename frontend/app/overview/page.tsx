@@ -4,7 +4,7 @@ import OverviewClient from './OverviewClient';
 import { ambilIhsg, ambilSaham, tanggalAwalIhsg } from '@/lib/marketServer';
 
 export const metadata: Metadata = {
-  title: 'Overview - EMETIQ',
+  title: 'Overview — EMETIQ',
 };
 
 /** Lihat catatan di `app/dashboard/page.tsx` — pola yang sama: data pasar
