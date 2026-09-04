@@ -1,0 +1,28 @@
+# Dokumentasi EMETIQ
+
+Folder ini menjawab satu pertanyaan: **apa yang sudah dikerjakan, sampai mana, dan
+apa yang tak perlu diulang.** Ia dibuat supaya pekerjaan berikutnya — oleh siapa pun,
+di komputer mana pun — tidak mulai dari nol dan tidak mengulang hal yang sudah
+diperiksa.
+
+| Berkas | Isinya | Baca kalau… |
+|---|---|---|
+| [`KEADAAN-APLIKASI.md`](KEADAAN-APLIKASI.md) | Keadaan aplikasi hari ini: susunan sistem, angka kinerja, dan **daftar hal yang tak boleh dibongkar** | …Anda akan menyentuh kode ini |
+| [`RIWAYAT-OPTIMALISASI.md`](RIWAYAT-OPTIMALISASI.md) | Apa yang berubah 3–4 September 2026, beserta angka dan nomor commit-nya | …Anda ingin tahu kenapa sesuatu dibuat begitu |
+
+## Kenapa folder ini ter-commit, sementara catatan lain tidak
+
+Repo ini punya empat dokumen internal yang **sengaja** di-`.gitignore` dan hanya hidup
+di disk pemiliknya: `CLAUDE.md`, `frontend/AUDIT-OPTIMALISASI.md`,
+`frontend/CATATAN-FRONTEND.md`, dan `frontend/CATATAN-BACKEND.md`. Keempatnya jauh
+lebih rinci daripada folder ini.
+
+Masalahnya: dokumen yang tak ter-commit **tidak berpindah**. Sesi kerja di komputer
+lain tak akan melihatnya sama sekali — dan itulah persis yang membuat pekerjaan
+terulang. Folder ini ter-commit supaya kesimpulan pentingnya ikut ke mana pun repo
+ini pergi.
+
+> **Repositori ini publik.** Karena itu folder ini ditulis dengan asumsi siapa pun
+> bisa membacanya: tak ada nilai konfigurasi, tak ada kunci, tak ada rincian yang
+> memudahkan orang mengganggu layanan. Rincian operasional yang lebih terbuka tetap
+> tinggal di empat dokumen lokal di atas.
