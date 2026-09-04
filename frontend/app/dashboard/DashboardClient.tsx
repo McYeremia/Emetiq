@@ -7,6 +7,7 @@ import Link from 'next/link';
 import EmetiqNav from '@/components/EmetiqNav';
 import { useToast } from '@/components/Toast';
 import { useWatchlist } from '@/components/WatchlistProvider';
+import TanggalData from '@/components/TanggalData';
 import { usePollingSaatTerlihat } from '@/lib/usePolling';
 import { useAuth } from '@/components/AuthProvider';
 import dynamic from 'next/dynamic';
@@ -186,7 +187,12 @@ export default function DashboardClient({
         <div className="mb-5">
           <div className="flex items-center justify-between mb-4 gap-3">
             <h2 style={{ fontFamily: MONO, fontSize: 12, fontWeight: 600, letterSpacing: '.18em', textTransform: 'uppercase', color: FAINT }}>Market Terminal</h2>
-            <span style={{ fontFamily: MONO, fontSize: 11.5, color: FAINT }}>{visibleStocks.length} saham</span>
+            <div className="flex items-center gap-3" style={{ flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+              {/* Tanggal perdagangan terakhir yang datanya kita punya, diambil dari
+                  deret IHSG yang toh sudah ada di halaman ini. */}
+              <TanggalData tanggal={ihsgData[ihsgData.length - 1]?.date} />
+              <span style={{ fontFamily: MONO, fontSize: 11.5, color: FAINT }}>{visibleStocks.length} saham</span>
+            </div>
           </div>
 
           {/* Index quick actions */}

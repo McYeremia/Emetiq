@@ -9,6 +9,7 @@ import EmetiqNav from '@/components/EmetiqNav';
 import { useToast } from '@/components/Toast';
 import { useAuth } from '@/components/AuthProvider';
 import { useWatchlist } from '@/components/WatchlistProvider';
+import TanggalData from '@/components/TanggalData';
 
 const StockChart = dynamic(() => import("@/components/StockChart"), { ssr: false });
 const IndicatorSubChart = dynamic(() => import("@/components/IndicatorSubChart"), { ssr: false });
@@ -321,7 +322,13 @@ export default function StockDetailPage() {
                   style={{ fontSize: 18, lineHeight: 1, background: 'none', border: 'none', cursor: 'pointer', color: watchlist.has(ticker) ? ACCENT : '#D6D5CE' }}
                 >★</button>
               </div>
-              <p className="truncate" style={{ fontFamily: MONO, fontSize: 11, color: FAINT, textTransform: 'uppercase', letterSpacing: '.14em', marginTop: 5 }}>{sector || 'Sektor tidak diketahui'}</p>
+              <div className="flex items-center gap-2" style={{ marginTop: 5, flexWrap: 'wrap' }}>
+                <p className="truncate" style={{ fontFamily: MONO, fontSize: 11, color: FAINT, textTransform: 'uppercase', letterSpacing: '.14em' }}>{sector || 'Sektor tidak diketahui'}</p>
+                {/* Di sini tanggalnya milik SAHAM INI, bukan pasar secara umum —
+                    saham yang disuspensi akan memperlihatkan tanggal lama, dan itu
+                    memang yang ingin terlihat. */}
+                <TanggalData tanggal={ohlcv[ohlcv.length - 1]?.date} />
+              </div>
             </div>
           </div>
 

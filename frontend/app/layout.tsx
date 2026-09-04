@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import { IBM_Plex_Mono, Plus_Jakarta_Sans } from "next/font/google";
 import "./globals.css";
+import BilahKoneksi from "@/components/BilahKoneksi";
 import { ToastProvider } from "@/components/Toast";
 import AuthProvider from "@/components/AuthProvider";
 import WatchlistProvider from "@/components/WatchlistProvider";
@@ -67,6 +68,9 @@ export default function RootLayout({
         <AuthProvider>
           <ToastProvider>
             <WatchlistProvider>
+              {/* Di luar `flex-1` supaya ia menambah tinggi, bukan memakan ruang
+                  halaman. Ia hanya merender sesuatu saat koneksi putus. */}
+              <BilahKoneksi />
               <div className="flex-1">
                 {children}
               </div>

@@ -8,6 +8,7 @@ import EmetiqNav from '@/components/EmetiqNav';
 import { useToast } from '@/components/Toast';
 import { useAuth } from '@/components/AuthProvider';
 import { useWatchlist } from '@/components/WatchlistProvider';
+import TanggalData from '@/components/TanggalData';
 import dynamic from 'next/dynamic';
 
 const StockChart = dynamic(() => import('@/components/StockChart'), { ssr: false });
@@ -149,7 +150,11 @@ export default function OverviewClient({
               <div className="mb-4">
                 <p style={{ fontFamily: MONO, fontSize: 11, fontWeight: 600, letterSpacing: '.16em', textTransform: 'uppercase', color: ACCENT, marginBottom: 6 }}>IHSG Today</p>
                 <div className="flex flex-wrap justify-between items-center gap-3">
-                  <h2 style={{ fontSize: 26, fontWeight: 800, letterSpacing: '-.02em' }}>JCX</h2>
+                  <div className="flex items-baseline gap-3" style={{ flexWrap: 'wrap' }}>
+                    <h2 style={{ fontSize: 26, fontWeight: 800, letterSpacing: '-.02em' }}>JCX</h2>
+                    {/* Tanggal perdagangan terakhir, dari deret IHSG yang sudah ada. */}
+                    <TanggalData tanggal={ihsgData[ihsgData.length - 1]?.date} />
+                  </div>
                   <div className="flex items-center gap-3">
                     <p style={{ fontFamily: MONO, fontSize: 22, fontWeight: 600 }}>{currentIhsg.toLocaleString('id-ID')}</p>
                     <span style={{ fontFamily: MONO, fontSize: 12, fontWeight: 600, color: ihsgUp ? UP : DOWN, background: ihsgUp ? UP_BG : DOWN_BG, padding: '3px 9px', borderRadius: 7, display: 'inline-block' }}>

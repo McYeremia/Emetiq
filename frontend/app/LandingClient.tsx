@@ -356,7 +356,7 @@ export default function LandingPage() {
             }}
           >
             <span style={{ width: 7, height: 7, borderRadius: '50%', background: ACCENT }} />
-            Data EOD • Refresh 16:00 WIB
+            Data EOD • Refresh 18:00 WIB
           </div>
           <h1 style={{ margin: '22px 0 0', fontSize: 'clamp(40px,5vw,60px)', lineHeight: 1.04, fontWeight: 800, letterSpacing: '-.03em' }}>
             Pantau Saham,
@@ -400,7 +400,7 @@ export default function LandingPage() {
             </Link>
           </div>
           <p style={{ margin: '22px 0 0', fontFamily: MONO, fontSize: 12.5, color: '#8C8C84', letterSpacing: '.01em' }}>
-            Data end-of-day • Refresh otomatis tiap hari 16:00 WIB
+            Data end-of-day • Refresh otomatis tiap hari 18:00 WIB
           </p>
         </div>
 
@@ -442,7 +442,7 @@ export default function LandingPage() {
                     borderRadius: 999,
                   }}
                 >
-                  EOD 16:00
+                  EOD 18:00
                 </span>
               </div>
               <span style={{ fontFamily: MONO, fontSize: 11, color: '#9A9A92' }}>29 Jun</span>
@@ -832,7 +832,7 @@ export default function LandingPage() {
         <div className="lp-grid-3" style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 18, marginTop: 38 }}>
           {[
             { n: '01', title: 'Buat watchlist', desc: 'Tambahkan saham yang ingin kamu pantau dari 900+ emiten IDX.' },
-            { n: '02', title: 'Pantau tiap sore', desc: 'Data ditarik saat market tutup (16:00 WIB) — harga, P&L, dan sinyal screener langsung diperbarui.' },
+            { n: '02', title: 'Pantau tiap sore', desc: 'Data ditarik tiap sore setelah market tutup (sekitar 18:00 WIB) — harga, P&L, dan sinyal screener langsung diperbarui.' },
             { n: '03', title: 'Raih peluang', desc: 'Open portofolio dan ambil keputusan dengan data di depan mata.' },
           ].map((step) => (
             <div key={step.n} className="lp-card" style={{ background: '#fff', border: `1px solid ${HAIR}`, borderRadius: 16, padding: 28 }}>
@@ -969,7 +969,7 @@ export default function LandingPage() {
             }}
           >
             <span>© 2026 EMETIQ</span>
-            <span>Data IDX • update 16:00 WIB</span>
+            <span>Data IDX • update 18:00 WIB</span>
           </div>
         </div>
       </footer>
