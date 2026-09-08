@@ -1,0 +1,27 @@
+name = "emetiq-daily-sync-cron"
+main = "worker.js"
+compatibility_date = "2026-09-08"
+
+# Perlu supaya ada URL *.workers.dev untuk uji manual (POST + X-Cron-Secret).
+workers_dev = true
+
+[triggers]
+# Waktu Cloudflare selalu UTC. 10:30 UTC = 17:30 WIB.
+#
+# HARINYA DITULIS MON-FRI, BUKAN ANGKA. Cron Cloudflare memakai konvensi
+# 1 = Minggu sampai 7 = Sabtu — BERBEDA dari cron POSIX (0 = Minggu, 1 = Senin)
+# yang dipakai GitHub Actions. Jadi `1-5` yang di `daily-sync.yml` berarti
+# Senin-Jumat, tapi `1-5` yang di SINI berarti Minggu-Kamis. Dua sistem, dua
+# konvensi, sintaks kembar. Singkatan huruf tak punya ambiguitas itu, dan
+# dokumentasi Cloudflare sendiri menganjurkannya.
+crons = ["30 10 * * MON-FRI"]
+
+# Menit 30, bukan 37: masalah "menit 0 itu puncak beban" adalah masalah
+# PENJADWAL GITHUB. Penjadwal Cloudflare tak punya antrean sepanjang itu,
+# jadi menitnya bebas — yang dipilih cuma "lewat ~1,5 jam sesudah IDX tutup".
+
+# Rahasia diset lewat CLI, BUKAN di berkas ini (ia ikut ter-commit):
+#   npx wrangler secret put GITHUB_TOKEN
+#   npx wrangler secret put CRON_SECRET
+#   npx wrangler secret put TELEGRAM_BOT_TOKEN   (opsional)
+#   npx wrangler secret put TELEGRAM_CHAT_ID     (opsional)
