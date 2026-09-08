@@ -25,6 +25,34 @@ const CARD: React.CSSProperties = {
 
 const TIERS = ['free', 'basic', 'pro', 'premium', 'dev'] as const;
 
+// Tanggal kedaluwarsa PAT GitHub yang dipakai Cloudflare Worker untuk memicu
+// "Daily Sync" (`cloudflare/daily-sync-cron/`). Cron GitHub sendiri dimatikan
+// karena antreannya telat berjam-jam; kalau token ini habis, pemicunya berhenti
+// dan sinkron harian ikut mati TANPA KABAR APA PUN — itu sebabnya ada countdown.
+//
+// Angkanya HARDCODED, tidak diambil dari mana pun. Waktu tokennya diperpanjang,
+// ganti tanggal di sini lalu deploy ulang frontend; kalau lupa, countdown ini
+// menghitung mundur ke tanggal yang sudah salah. Nilai pastinya ada di
+// https://github.com/settings/personal-access-tokens ("Expires on ...").
+const PAT_KEDALUWARSA = '2026-12-07';
+
+/** Selisih HARI KALENDER menuju `iso` (YYYY-MM-DD); negatif kalau sudah lewat.
+ *  Dihitung antar tengah malam, bukan per 24 jam, supaya tak ada "sisa 0 hari"
+ *  yang menggantung setengah hari. `Math.round` menahan geser jam akibat DST. */
+function sisaHariKalender(iso: string): number {
+  const kini = new Date();
+  const hariIni = new Date(kini.getFullYear(), kini.getMonth(), kini.getDate());
+  return Math.round((tanggalLokal(iso).getTime() - hariIni.getTime()) / 86_400_000);
+}
+
+/** `YYYY-MM-DD` → tengah malam WAKTU LOKAL. `new Date('2026-12-07')` mengurainya
+ *  sebagai tengah malam UTC, yang di zona ber-offset negatif mundur sehari —
+ *  dan campur-aduk dua cara urai untuk satu tanggal itu sumber bug klasik. */
+function tanggalLokal(iso: string): Date {
+  const [y, m, d] = iso.split('-').map(Number);
+  return new Date(y, m - 1, d);
+}
+
 export default function AdminPage() {
   return (
     <RequireAuth>
@@ -53,6 +81,59 @@ function NotDev() {
         </div>
       </div>
     </main>
+  );
+}
+
+function KartuTokenGitHub() {
+  const [sisa, setSisa] = useState<number | null>(null);
+
+  // Dihitung setelah mount, BUKAN saat render: `new Date()` di badan render bisa
+  // memberi tanggal berbeda antara render server dan klien. Interval sejam sekali
+  // menjaga angkanya tetap benar di tab yang dibiarkan terbuka melewati tengah malam.
+  useEffect(() => {
+    const hitung = () => setSisa(sisaHariKalender(PAT_KEDALUWARSA));
+    hitung();
+    const t = setInterval(hitung, 3_600_000);
+    return () => clearInterval(t);
+  }, []);
+
+  if (sisa === null) return null;
+
+  const habis = sisa < 0;
+  const warna = habis || sisa <= 14 ? DOWN : sisa <= 30 ? ACCENT : INK;
+  const tanggal = tanggalLokal(PAT_KEDALUWARSA).toLocaleDateString('id-ID', {
+    day: '2-digit', month: 'short', year: 'numeric',
+  });
+
+  return (
+    <div style={{
+      ...CARD, padding: 20, marginBottom: 24, display: 'flex', flexWrap: 'wrap',
+      alignItems: 'center', justifyContent: 'space-between', gap: 16,
+      ...(habis || sisa <= 14 ? { borderColor: '#F3C7C7', background: '#FDF5F5' } : null),
+    }}>
+      <div style={{ minWidth: 200, flex: '1 1 320px' }}>
+        <div style={{
+          fontFamily: MONO, fontSize: 10.5, letterSpacing: '.06em', textTransform: 'uppercase',
+          color: FAINT, fontWeight: 600,
+        }}>
+          Token GitHub · pemicu Daily Sync
+        </div>
+        <p style={{ marginTop: 6, fontSize: 13, color: MUTED, lineHeight: 1.6 }}>
+          PAT yang dipakai Cloudflare Worker untuk memicu sinkron harian.
+          Begitu kedaluwarsa, sinkron berhenti tanpa kabar.
+        </p>
+      </div>
+
+      <div style={{ textAlign: 'right', flex: '0 0 auto' }}>
+        <div style={{ fontSize: 30, fontWeight: 800, letterSpacing: '-.02em', color: warna, lineHeight: 1.1 }}>
+          {habis ? 'Kedaluwarsa' : sisa}
+          {!habis && <span style={{ fontSize: 15, fontWeight: 700, marginLeft: 6, color: MUTED }}>hari</span>}
+        </div>
+        <div style={{ fontFamily: MONO, fontSize: 11.5, color: FAINT, marginTop: 4 }}>
+          {habis ? `sejak ${tanggal}` : tanggal}
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -121,6 +202,8 @@ function AdminInner() {
             Daftar user terdaftar. Ubah tier lewat dropdown. Tier akunmu sendiri tidak bisa diubah dari sini.
           </p>
         </div>
+
+        <KartuTokenGitHub />
 
         {error && (
           <div style={{ ...CARD, padding: 20, marginBottom: 24, borderColor: '#F3C7C7', background: '#FBE9E9' }}>
