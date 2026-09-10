@@ -96,7 +96,10 @@ class ScreenRanking(BaseModel):
 class AnalyzeSpecialist(BaseModel):
     technical: str = ""
     fundamental: str = ""
-    ml_risk: str = ""
+    # Dulu `ml_risk`. Lapisan ML dihapus Juli 2026 dan DATA-nya tak pernah lagi memuat
+    # angka ML, jadi bidang itu hanya memancing karangan. Kini penilaian risiko dari
+    # data yang benar-benar ada — lihat ANALYZE_SPECIALIST_SYSTEM.
+    risiko: str = ""
     score: float = 50.0               # 0-100 condong bullish
 
 

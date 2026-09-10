@@ -137,7 +137,7 @@ def test_run_analyze_needs_ticker(db):
 
 def test_run_analyze_full(db, monkeypatch):
     _mock(monkeypatch, {
-        "tim spesialis":     {"technical": "uptrend, RSI sehat", "fundamental": "PE 9 murah", "ml_risk": "n/a", "score": 72},
+        "tim spesialis":     {"technical": "uptrend, RSI sehat", "fundamental": "PE 9 murah", "risiko": "n/a", "score": 72},
         "kepala strategi":   {"decision": "BELI", "entry": 4500, "take_profit": 5000, "cut_loss": 4300, "reasoning": "Tren naik, PE 9 murah."},
         "devil's advocate":  {"confidence": 0.68, "notes": "ok", "warnings": ["likuiditas"]},
     })
@@ -152,7 +152,7 @@ def test_run_analyze_full(db, monkeypatch):
 
 def test_run_analyze_rounds_price_targets(db, monkeypatch):
     _mock(monkeypatch, {
-        "tim spesialis":    {"technical": "x", "fundamental": "y", "ml_risk": "z", "score": 70},
+        "tim spesialis":    {"technical": "x", "fundamental": "y", "risiko": "z", "score": 70},
         "kepala strategi":  {"decision": "BELI", "entry": 4512.3456, "take_profit": 5001.9876,
                              "cut_loss": 4299.4499, "reasoning": "ok"},
         "devil's advocate": {"confidence": 0.5, "notes": "", "warnings": []},

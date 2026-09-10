@@ -48,7 +48,7 @@ def client(session_factory):
 def _install_groq(monkeypatch, router_payload):
     payloads = {
         "router niat":     router_payload,
-        "tim spesialis":   {"technical": "uptrend", "fundamental": "PE 9 murah", "ml_risk": "n/a", "score": 70},
+        "tim spesialis":   {"technical": "uptrend", "fundamental": "PE 9 murah", "risiko": "n/a", "score": 70},
         "kepala strategi": {"decision": "BELI", "entry": 4500, "take_profit": 5000, "cut_loss": 4300, "reasoning": "Tren naik, PE 9 murah."},
         "devil's advocate": {"confidence": 0.66, "notes": "ok", "warnings": []},
         "juri pemilih":    {"items": [{"ticker": "BBRI", "score": 88, "reason": "PE 9 termurah", "key_numbers": {"pe": 9}}]},

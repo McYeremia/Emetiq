@@ -50,6 +50,33 @@ def _clamp_count(requested, default: int) -> int:
     return max(1, min(n, config.SCREEN_MAX_COUNT))
 
 
+def _catatan_pemangkasan(requested, dipakai: int) -> str:
+    """Kalimat jujur saat permintaan jumlah user dipangkas oleh SCREEN_MAX_COUNT.
+
+    Batasnya sendiri masuk akal (jawaban tetap ringkas & fokus), tapi memangkas
+    diam-diam membuat user mengira sistem mengabaikan permintaannya.
+    """
+    try:
+        diminta = int(requested) if requested else 0
+    except (TypeError, ValueError):
+        return ""
+    if diminta > dipakai:
+        return f"\n\n(Kamu minta {diminta} saham; saya tampilkan {dipakai} terbaik agar tetap fokus.)"
+    return ""
+
+
+def _tanpa_alasan(kandidat: list) -> list:
+    """Buang bidang `reason` dari kandidat giliran sebelumnya.
+
+    `reason` berisi 2-4 kalimat pembelaan yang ditulis LLM sendiri di giliran lalu.
+    Mengirimnya balik lalu meminta penilaian "independen" adalah jangkar yang dipasang
+    sendiri: pemenang sebelumnya hampir pasti menang lagi karena argumennya sudah
+    tertulis paling meyakinkan. Router sudah melakukan hal yang benar (hanya mengambil
+    ticker); pipeline rank kini mengikutinya. Sekalian memangkas token.
+    """
+    return [{k: v for k, v in c.items() if k != "reason"} for c in kandidat]
+
+
 def _rank_reply(items: list) -> str:
     """Narasi tegas: sebut pemenang lebih dulu, lalu peringkat sisanya (bila ada)."""
     best = items[0]
@@ -106,8 +133,11 @@ def run_screen(db: Session, params: RouterParams, deadline: Optional[float] = No
         }
 
     count = _clamp_count(params.count, config.SCREEN_DEFAULT_COUNT)
+    catatan = _catatan_pemangkasan(params.count, count)
     # Hanya kirim pool kecil ke LLM & minta ia mengembalikan yang terbaik saja — bukan
     # menilai 40 saham (yang membuat keluaran meledak & JSON terpotong / kena rate limit).
+    # `candidates` kini sudah terurut per skor kecocokan (bukan kapitalisasi), jadi 15
+    # yang sampai ke LLM benar-benar yang paling cocok dengan kriteria user.
     pool = candidates[: config.SCREEN_RANK_POOL]
     ranking = _stage_json(
         ScreenRanking, prompts.SCREEN_RANK_SYSTEM,
@@ -127,14 +157,15 @@ def run_screen(db: Session, params: RouterParams, deadline: Optional[float] = No
         # LLM gagal me-rank — tetap tampilkan sebagian kandidat mentah agar tidak buntu
         shown = candidates[:count]
         return {
-            "reply": f"Ditemukan {len(candidates)} saham yang lolos kriteria. Menampilkan {len(shown)} teratas (per kapitalisasi).",
+            "reply": (f"Ditemukan {len(candidates)} saham yang lolos kriteria. "
+                      f"Menampilkan {len(shown)} teratas (per kecocokan dengan kriteriamu)." + catatan),
             "data": {"intent": "screen", "candidates": shown, "top_pick": None},
             "confidence": None,
         }
 
     top = items[:count]
     return {
-        "reply": _rank_reply(top),
+        "reply": _rank_reply(top) + catatan,
         "data": {"intent": "screen", "candidates": [i.model_dump() for i in top],
                  "top_pick": top[0].ticker},
         "confidence": None,
@@ -159,7 +190,8 @@ def run_rank(db: Session, params: RouterParams, context: Optional[AdvisorContext
     count = _clamp_count(params.count, 1)
     ranking = _stage_json(
         ScreenRanking, prompts.RANK_SELECT_SYSTEM,
-        {"jumlah_diminta": count, "kandidat": candidates[: config.SCREEN_RANK_POOL]},
+        {"jumlah_diminta": count,
+         "kandidat": _tanpa_alasan(candidates[: config.SCREEN_RANK_POOL])},
         model=REASONING, effort=EFFORT["rank"], deadline=deadline,
     )
     items = [i for i in ranking.items if i.score > 0]

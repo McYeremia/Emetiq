@@ -64,15 +64,39 @@ SCREEN_DEFAULT_COUNT = int(os.getenv("ADVISOR_SCREEN_DEFAULT_COUNT", "5"))
 # Batas ATAS jumlah saham yang diberikan, berapa pun yang diminta user — jaga hasil tetap
 # ringkas & fokus (mis. minta 10 -> tetap 5 terbaik).
 SCREEN_MAX_COUNT = int(os.getenv("ADVISOR_SCREEN_MAX_COUNT", "5"))
-# Berapa banyak kandidat (teratas per kapitalisasi) yang benar-benar dikirim ke LLM
+# Berapa banyak kandidat (teratas per SKOR KECOCOKAN) yang benar-benar dikirim ke LLM
 # untuk di-ranking. Jauh lebih kecil dari SCREEN_MAX_CANDIDATES agar keluaran ringkas
 # (LLM hanya perlu memilih beberapa terbaik, bukan menilai 40 saham satu per satu).
 SCREEN_RANK_POOL = int(os.getenv("ADVISOR_SCREEN_RANK_POOL", "15"))
-# Batas berapa saham (urut market cap desc) yang dihitung indikatornya saat screening,
-# agar latency terjaga walau filter fundamental longgar.
+# Batas berapa saham yang dihitung indikatornya saat screening, agar latency & egress
+# terjaga walau filter fundamental longgar. Working set dipilih per kapitalisasi
+# (yang di bawah peringkat ini memang sangat kecil & sulit diperjualbelikan), tapi
+# kapitalisasi TIDAK lagi menentukan urutan hasil — lihat `scoring.py`.
 SCREEN_WORKING_SET = int(os.getenv("ADVISOR_SCREEN_WORKING_SET", "250"))
 # Portofolio: batasi jumlah posisi yang dianalisa per-posisi (stage termahal).
 PORTFOLIO_MAX_POSITIONS = int(os.getenv("ADVISOR_PORTFOLIO_MAX", "20"))
+
+# ── Skor kecocokan screening (services/advisor/scoring.py) ───────────────────
+# Bobot tiap komponen skor 0-100. Jumlahnya sengaja 100 supaya skornya langsung
+# terbaca sebagai persentase kecocokan.
+#
+# `kriteria` mendapat bobot terbesar karena itulah yang selama ini hilang: dulu
+# kriteria user cuma jadi gerbang lolos/tidak, tak pernah menentukan peringkat.
+# `likuiditas` sengaja kecil — kapitalisasi tetap diperhitungkan (saham terlalu
+# kecil sulit dijual) tapi tak boleh lagi jadi penentu tunggal seperti sebelumnya.
+#
+# Bila user tak menyebut kriteria bernilai angka, bobot `kriteria` dibagikan rata
+# ke tiga komponen sisanya — lihat `scoring.skor_kecocokan`.
+SKOR_BOBOT = {
+    "kriteria":   50.0,
+    "tren":       20.0,
+    "rsi":        20.0,
+    "likuiditas": 10.0,
+}
+# Rentang kapitalisasi (rupiah) yang dipetakan ke skor likuiditas 0..1 pada skala
+# log10. Di bawah lantai dianggap 0, di atas atap dianggap 1.
+SKOR_LIKUIDITAS_LANTAI = float(os.getenv("ADVISOR_SKOR_MCAP_LANTAI", "1e12"))
+SKOR_LIKUIDITAS_ATAP   = float(os.getenv("ADVISOR_SKOR_MCAP_ATAP", "1e15"))
 
 # Ringkasan N giliran percakapan terakhir yang dikirim ke router (multi-turn).
 HISTORY_TURNS = int(os.getenv("ADVISOR_HISTORY_TURNS", "6"))

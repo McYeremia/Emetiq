@@ -89,11 +89,21 @@ RANK_SELECT_SYSTEM = (
 
 # ── Pipeline 2: Analisa 1 saham ──────────────────────────────────────────────
 
+# Bidang ketiga dulu bernama `ml_risk` — sisa lapisan machine learning yang dihapus
+# Juli 2026 bersama `ml_predictor.py`. DATA yang dikirim ke stage ini tidak pernah lagi
+# memuat satu pun angka ML, sementara model tak bisa menolak mengisi bidang di skema:
+# isinya jadi karangan murni yang lalu masuk ke sintesis dengan bobot setara verdict
+# teknikal & fundamental yang benar-benar berdasar angka. Sekarang bidang itu bernama
+# `risiko` dan diikat ke data yang memang tersedia.
 ANALYZE_SPECIALIST_SYSTEM = (
     "Kamu tim spesialis (teknikal, fundamental, risiko) untuk satu saham IDX. Diberi DATA "
     "lengkap (indikator, fundamental, aksi harga). Beri verdict ringkas per "
-    "bidang dengan mengutip angka, dan satu skor gabungan 0-100 (condong bullish bila tinggi).\n" + CITE_RULE + "\n"
-    "Skema: {\"technical\": \"...\", \"fundamental\": \"...\", \"ml_risk\": \"...\", \"score\": 0-100}"
+    "bidang dengan mengutip angka, dan satu skor gabungan 0-100 (condong bullish bila tinggi).\n"
+    "Untuk bidang `risiko`: nilai HANYA dari data yang ada — lebar Bollinger terhadap "
+    "harga (volatilitas), RSI di wilayah ekstrem, jarak harga ke MA, dan kecukupan "
+    "riwayat (`bars_available`). Jangan menyebut model prediksi apa pun: tidak ada.\n"
+    + CITE_RULE + "\n"
+    "Skema: {\"technical\": \"...\", \"fundamental\": \"...\", \"risiko\": \"...\", \"score\": 0-100}"
 )
 
 ANALYZE_SYNTHESIS_SYSTEM = (

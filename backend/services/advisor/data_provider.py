@@ -1,19 +1,22 @@
 """Data deterministik untuk AI Advisor — TIDAK memanggil LLM.
 
 Tiga builder: screen(), analyze(), portfolio(). Semua angka diambil dari DB nyata
-(fundamental, OHLCV, indikator, prediksi ML) sehingga LLM hanya menalar di atas angka
-yang sudah pasti benar. Lihat spec bagian 4 ("Detail Pipeline").
+(fundamental, OHLCV, indikator) sehingga LLM hanya menalar di atas angka yang sudah
+pasti benar. Lihat spec bagian 4 ("Detail Pipeline").
 """
 from typing import Optional, List, Dict, Any
 from sqlalchemy.orm import Session, joinedload
-from sqlalchemy import desc
+from sqlalchemy import desc, func, nullslast
 
 import models
-from services.indicators import calculate_indicators, calculate_indicators_from_df, get_ohlcv_df_bulk
-from services.advisor import config
+from services.indicators import (
+    INDICATOR_MAX_ROWS, calculate_indicators, calculate_indicators_from_df,
+    calculate_screen_indicators_from_df, get_ohlcv_df_bulk,
+)
+from services.advisor import config, scoring
 from services.advisor.formatting import round_numbers
 
-INITIAL_MODAL = 15_000_000  # samakan dengan routers/trades.py
+INITIAL_MODAL = 15_000_000  # samakan dengan services/trade_exec.py
 
 # Lookback saat menghitung indikator utk BANYAK saham sekaligus (screening/kandidat).
 # Nilai indikator terakhir (RSI/MA/MACD dst) praktis sama dgn histori penuh selama
@@ -61,41 +64,64 @@ def screen(
     price_min: Optional[float] = None,
     limit: Optional[int] = None,
 ) -> List[Dict[str, Any]]:
-    """Saring saham deterministik. Filter fundamental dulu (murah), baru indikator."""
+    """Saring saham deterministik, lalu URUTKAN per skor kecocokan dengan kriteria.
+
+    Dua hal yang dulu keliru dan sekarang tidak lagi:
+
+    1. Indikator hanya dihitung bila user memfilter RSI/tren. Screening "PE di bawah
+       15" mengirim seluruh kandidat ke LLM dengan `rsi=None, trend=None` — padahal
+       prompt mewajibkan alasan teknikal. Sekarang SELALU dihitung. Ini tidak menambah
+       egress sedikit pun: baris harganya toh sudah ditarik di bawah, dengan atau
+       tanpa filter. Yang bertambah cuma ~0,4 detik CPU (lihat
+       `calculate_screen_indicators_from_df`).
+
+    2. Hasil diurutkan per kapitalisasi dan dipotong, sehingga 15 kursi yang sampai ke
+       LLM selalu ditempati perusahaan terbesar. Sekarang kapitalisasi hanya MEMILIH
+       working set (demi latency & egress); urutan akhir ditentukan `scoring`.
+    """
     limit = limit or config.SCREEN_MAX_CANDIDATES
+    filters = {"pe_max": pe_max, "pbv_max": pbv_max, "div_min": div_min}
 
+    # 1) Filter fundamental DI SQL — dulu seluruh tabel Stock (~737 baris, semua
+    #    kolom) ditarik ke memori lalu disaring di Python.
     q = db.query(models.Stock).filter(models.Stock.ticker != "^JKSE")
-    stocks = q.all()
+    if pe_max is not None:
+        q = q.filter(models.Stock.pe_ratio.isnot(None),
+                     models.Stock.pe_ratio > 0, models.Stock.pe_ratio <= pe_max)
+    if pbv_max is not None:
+        q = q.filter(models.Stock.pbv_ratio.isnot(None),
+                     models.Stock.pbv_ratio > 0, models.Stock.pbv_ratio <= pbv_max)
+    if div_min is not None:
+        q = q.filter(models.Stock.dividend_yield.isnot(None),
+                     models.Stock.dividend_yield >= div_min)
+    if sector:
+        # Sektor NULL tak pernah cocok — sama seperti perilaku lama `(s.sector or "")`.
+        q = q.filter(func.lower(models.Stock.sector) == sector.lower())
 
-    # 1) Filter fundamental (kolom Stock, tanpa baca OHLCV) — murah
-    def passes_fundamental(s: models.Stock) -> bool:
-        if pe_max is not None and (s.pe_ratio is None or s.pe_ratio <= 0 or s.pe_ratio > pe_max):
-            return False
-        if pbv_max is not None and (s.pbv_ratio is None or s.pbv_ratio <= 0 or s.pbv_ratio > pbv_max):
-            return False
-        if div_min is not None and (s.dividend_yield is None or s.dividend_yield < div_min):
-            return False
-        if sector and (s.sector or "").lower() != sector.lower():
-            return False
-        return True
-
-    survivors = [s for s in stocks if passes_fundamental(s)]
-    # Batasi jumlah yang dihitung indikatornya (urut market cap desc) demi latency
-    survivors.sort(key=lambda s: (s.market_cap or 0), reverse=True)
-    survivors = survivors[: config.SCREEN_WORKING_SET]
-
-    needs_indicators = rsi is not None or trend is not None
-    results: List[Dict[str, Any]] = []
+    # `nullslast()` WAJIB: pada `ORDER BY ... DESC`, Postgres menaruh NULL PALING
+    # DEPAN sedangkan SQLite paling belakang. Tanpa ini, saham tanpa market_cap akan
+    # memborong seluruh working set di produksi tapi tak pernah muncul di tes.
+    survivors = (
+        q.order_by(nullslast(desc(models.Stock.market_cap)))
+        .limit(config.SCREEN_WORKING_SET)
+        .all()
+    )
 
     # 1 query utk histori OHLCV semua survivor (bukan 1 query per saham) — hindari N+1
     ohlcv_by_id = get_ohlcv_df_bulk(
         db, [s.id for s in survivors], lookback_days=SCREEN_INDICATOR_LOOKBACK_DAYS
     )
 
+    results: List[Dict[str, Any]] = []
     for s in survivors:
         df = ohlcv_by_id.get(s.id)
         last_close = float(df["close"].iloc[-1]) if df is not None and not df.empty else None
-        inds = calculate_indicators_from_df(df) if needs_indicators else {}
+        # Satu saham berdata tipis tak boleh menjatuhkan seluruh balasan — lihat
+        # catatan `_atr_terakhir` di services/indicators.py.
+        try:
+            inds = calculate_screen_indicators_from_df(df)
+        except Exception:
+            inds = {}
 
         if price_max is not None and (last_close is None or last_close > price_max):
             continue
@@ -109,7 +135,7 @@ def screen(
             if trend_of(inds, last_close) != trend:
                 continue
 
-        results.append({
+        kandidat = {
             "ticker": s.ticker,
             "name": s.name,
             "sector": s.sector,
@@ -120,12 +146,17 @@ def screen(
             "dividend_yield": s.dividend_yield,
             "rsi": inds.get("RSI_14"),
             "trend": trend_of(inds, last_close) if inds else None,
-        })
-        if len(results) >= limit:
-            break
+        }
+        # Skor dihitung di atas presisi penuh, SEBELUM pembulatan di bawah.
+        kandidat["match_score"] = scoring.skor_kecocokan(kandidat, filters)
+        results.append(kandidat)
+
+    # Tak ada `break` di dalam perulangan: seluruh working set harus dinilai lebih
+    # dulu, kalau tidak pemotongan kembali memilih per kapitalisasi seperti dulu.
+    results.sort(key=lambda c: c["match_score"], reverse=True)
 
     # Bulatkan semua angka (indikator & fundamental) sebelum dipakai LLM/UI.
-    return round_numbers(results)
+    return round_numbers(results[:limit])
 
 
 # ── Pipeline 2: Analisa 1 saham ──────────────────────────────────────────────
@@ -152,9 +183,16 @@ def analyze(db: Session, ticker: str) -> Dict[str, Any]:
         if last_close is not None and prev_close not in (None, 0)
         else None
     )
-    window = closes[:20]
-    high_20 = max(window) if window else None
-    low_20 = min(window) if window else None
+    # Tertinggi/terendah 20 hari diambil dari kolom high/low, BUKAN dari close.
+    # Sebelumnya keduanya dihitung dari `closes` — seperti mengukur tinggi badan
+    # orang dari foto saat ia duduk. Angka ini disuntikkan ke prompt sintesis yang
+    # menyarankan take-profit "berbasis support/resistance", jadi resistance yang
+    # ditaksir terlalu rendah membuat target jual sistematis terlalu cepat.
+    # Kolomnya sudah ikut ditarik query di atas — tak ada egress tambahan.
+    highs = [float(r.high) for r in rows[:20] if r.high is not None]
+    lows = [float(r.low) for r in rows[:20] if r.low is not None]
+    high_20 = max(highs) if highs else None
+    low_20 = min(lows) if lows else None
 
     # Bulatkan semua angka (indikator & fundamental) sebelum dipakai LLM/UI.
     return round_numbers({
@@ -206,8 +244,18 @@ def portfolio(db: Session, user_id: str) -> Dict[str, Any]:
             pos["shares"] -= qty
 
     active = {tk: p for tk, p in positions.items() if p["shares"] > 0}
-    # 1 query utk histori OHLCV semua posisi aktif (bukan 1 query per posisi)
-    ohlcv_by_id = get_ohlcv_df_bulk(db, [p["stock_id"] for p in active.values()])
+    # 1 query utk histori OHLCV semua posisi aktif (bukan 1 query per posisi).
+    #
+    # `max_rows`, BUKAN `lookback_days`: yang dibutuhkan cuma nilai indikator terakhir,
+    # dan tanpa batas apa pun ini menarik SELURUH riwayat tiap posisi (~1.121 baris)
+    # hanya untuk membaca ujungnya — sekitar 4x lipat egress yang terbuang setiap kali
+    # ada yang minta evaluasi porto. Jendela berbasis TANGGAL tidak dipakai di sini
+    # karena ia diam-diam mengosongkan saham suspensi yang terakhir berdagang berbulan
+    # lalu — dan di portofolio, posisi yang disuspensi justru yang paling perlu
+    # terlihat. Lihat peringatan di `services/indicators.get_ohlcv_df`.
+    ohlcv_by_id = get_ohlcv_df_bulk(
+        db, [p["stock_id"] for p in active.values()], max_rows=INDICATOR_MAX_ROWS
+    )
 
     prelim: List[Dict[str, Any]] = []
     invested = 0.0

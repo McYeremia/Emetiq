@@ -30,6 +30,7 @@ from sqlalchemy.pool import StaticPool
 from database import Base
 import models
 from services.indicators import (
+    get_ohlcv_df_bulk,
     INDICATOR_MAX_ROWS,
     calculate_indicators,
     calculate_indicators_from_df,
@@ -154,3 +155,61 @@ def test_riwayat_penuh_tetap_bawaan(saham_aktif):
     """
     db, stock = saham_aktif
     assert len(get_ohlcv_df(db, stock.id)) == _JUMLAH_BARIS
+
+
+# ── get_ohlcv_df_bulk(max_rows=...) — pelajaran yang sama, jalur batch ────────
+#
+# Ditambahkan saat Tahap 3 audit Advisor. `data_provider.portfolio()` memanggil
+# get_ohlcv_df_bulk TANPA batas apa pun, sehingga seluruh riwayat tiap posisi ditarik
+# hanya untuk membaca nilai indikator terakhir. Perbaikannya WAJIB memakai batas
+# JUMLAH BARIS, bukan jendela tanggal — persis alasan yang ditulis panjang di
+# docstring berkas ini. Tes di bawah yang menahannya.
+
+def test_bulk_max_rows_mengambil_baris_TERBARU(saham_aktif):
+    db, stock = saham_aktif
+    penuh = get_ohlcv_df_bulk(db, [stock.id])[stock.id]
+    dibatasi = get_ohlcv_df_bulk(db, [stock.id], max_rows=300)[stock.id]
+
+    assert len(penuh) == _JUMLAH_BARIS
+    assert len(dibatasi) == 300
+    # Yang diambil harus ujung TERBARU, bukan 300 baris pertama.
+    assert dibatasi.index[-1] == penuh.index[-1]
+    assert dibatasi.index[0] == penuh.index[-300]
+
+
+def test_bulk_max_rows_tetap_menaik(saham_aktif):
+    db, stock = saham_aktif
+    df = get_ohlcv_df_bulk(db, [stock.id], max_rows=120)[stock.id]
+    assert list(df.index) == sorted(df.index), "indikator butuh urutan menaik"
+
+
+def test_bulk_max_rows_memisahkan_per_saham(saham_aktif):
+    """Batasnya per saham, bukan total — window function harus di-partition."""
+    db, aktif = saham_aktif
+    lain = _semai(db, "LAIN", 400, date.today())
+    hasil = get_ohlcv_df_bulk(db, [aktif.id, lain.id], max_rows=50)
+    assert len(hasil[aktif.id]) == 50
+    assert len(hasil[lain.id]) == 50
+
+
+def test_bulk_max_rows_menyelamatkan_saham_suspensi(saham_suspensi):
+    """INI tes yang menangkap kalau seseorang mengganti max_rows jadi jendela tanggal.
+
+    Sahamnya terakhir berdagang dua tahun lalu. `lookback_days` mengosongkannya tanpa
+    galat; `max_rows` menghitung mundur dari baris terakhir yang dimiliki saham itu,
+    jadi ia tetap memulangkan data yang sah. Di portofolio, posisi yang disuspensi
+    justru yang paling perlu terlihat.
+    """
+    db, stock = saham_suspensi
+    lewat_tanggal = get_ohlcv_df_bulk(db, [stock.id], lookback_days=400)
+    lewat_baris = get_ohlcv_df_bulk(db, [stock.id], max_rows=INDICATOR_MAX_ROWS)
+
+    assert stock.id not in lewat_tanggal, "jendela tanggal memang mengosongkannya"
+    assert len(lewat_baris[stock.id]) == INDICATOR_MAX_ROWS
+    assert calculate_indicators_from_df(lewat_baris[stock.id]).get("MA_200") is not None
+
+
+def test_bulk_tanpa_max_rows_tetap_riwayat_penuh(saham_aktif):
+    """Bawaannya tak berubah — pemanggil lama (mis. AI Porto) tak boleh terpengaruh."""
+    db, stock = saham_aktif
+    assert len(get_ohlcv_df_bulk(db, [stock.id])[stock.id]) == _JUMLAH_BARIS

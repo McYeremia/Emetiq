@@ -42,6 +42,62 @@ const QUICK = [
   { label: 'Saran portofolio', prompt: 'Tolong evaluasi portofolio saya' },
 ];
 
+// ── Filter pasti (ScreenForm) ──────────────────────────────────────────────
+// Backend sudah lama menerima `form` dan memberinya PRESEDENS di atas hasil router
+// (`_merge_form`: "form menang karena itu input eksplisit user"), tapi frontend tak
+// pernah mengirimnya — seluruh jalur itu kode mati. Panel ini menghidupkannya, supaya
+// kriteria tidak lagi bergantung pada router LLM menebak benar dari kalimat bebas.
+// Bidangnya sengaja persis sama dengan `ScreenForm` di backend — tak ada yang ditambah.
+type FilterForm = {
+  pe_max: string;
+  pbv_max: string;
+  div_min: string;
+  sector: string;
+  trend: string;
+  rsi: string;
+};
+
+const FILTER_KOSONG: FilterForm = { pe_max: '', pbv_max: '', div_min: '', sector: '', trend: '', rsi: '' };
+const FILTER_KEY = 'emetiq-advisor-filter';
+
+/** Ubah isian panel jadi payload `form`; bidang kosong tidak dikirim sama sekali. */
+function formPayload(f: FilterForm): Record<string, unknown> | undefined {
+  const out: Record<string, unknown> = {};
+  const angka = (v: string) => {
+    const n = Number(v);
+    return v.trim() !== '' && Number.isFinite(n) ? n : undefined;
+  };
+  if (angka(f.pe_max) !== undefined) out.pe_max = angka(f.pe_max);
+  if (angka(f.pbv_max) !== undefined) out.pbv_max = angka(f.pbv_max);
+  if (angka(f.div_min) !== undefined) out.div_min = angka(f.div_min);
+  if (f.sector.trim()) out.sector = f.sector.trim();
+  if (f.trend) out.trend = f.trend;
+  if (f.rsi) out.rsi = f.rsi;
+  return Object.keys(out).length ? out : undefined;
+}
+
+function jumlahFilterAktif(f: FilterForm): number {
+  return Object.keys(formPayload(f) ?? {}).length;
+}
+
+// Tahapan yang BENAR-BENAR dijalankan tiap pipeline, berurutan. Ambang detiknya
+// perkiraan (backend tidak mengirim kabar kemajuan), tapi URUTANNYA sesuai kode:
+// router intent -> pembangun data -> stage LLM -> perakitan jawaban.
+// Penghitung detik di sebelahnya angka sungguhan — itu yang menghapus kesan macet.
+const TAHAP: { sejak: number; teks: string }[] = [
+  { sejak: 0, teks: 'Memahami pertanyaan…' },
+  { sejak: 3, teks: 'Mengambil data pasar…' },
+  { sejak: 7, teks: 'Menganalisa…' },
+  { sejak: 20, teks: 'Menyusun jawaban…' },
+  { sejak: 35, teks: 'Masih berjalan — analisa mendalam butuh waktu…' },
+];
+
+function tahapUntuk(detik: number): string {
+  let teks = TAHAP[0].teks;
+  for (const t of TAHAP) if (detik >= t.sejak) teks = t.teks;
+  return teks;
+}
+
 function decisionColor(d: string) {
   if (d === 'BELI') return UP;
   if (d === 'JUAL') return DOWN;
@@ -66,8 +122,19 @@ function AdvisorInner() {
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
   const [quota, setQuota] = useState<AdvisorQuota | null>(null);
+  const [filter, setFilter] = useState<FilterForm>(FILTER_KOSONG);
+  const [filterBuka, setFilterBuka] = useState(false);
+  const [detik, setDetik] = useState(0);
   const scrollRef = useRef<HTMLDivElement>(null);
   const mainRef = useRef<HTMLElement>(null);
+
+  // Penghitung detik selama menunggu. Tanpa ini user cuma melihat tiga titik berkedip
+  // sampai ~55 detik dan wajar mengira aplikasinya macet.
+  useEffect(() => {
+    if (!loading) { setDetik(0); return; }
+    const t = setInterval(() => setDetik(d => d + 1), 1000);
+    return () => clearInterval(t);
+  }, [loading]);
 
   // App-like mobile keyboard handling: pin the chat to the *visual* viewport so
   // when the on-screen keyboard opens the layout shrinks smoothly (input rides
@@ -102,8 +169,26 @@ function AdvisorInner() {
       }
       const q = sessionStorage.getItem(QUOTA_KEY);
       if (q) setQuota(JSON.parse(q));
+      const f = sessionStorage.getItem(FILTER_KEY);
+      if (f) {
+        const p = JSON.parse(f);
+        if (p && typeof p === 'object') setFilter({ ...FILTER_KOSONG, ...p });
+      }
     } catch {}
   }, []);
+
+  const ubahFilter = (patch: Partial<FilterForm>) => {
+    setFilter(prev => {
+      const next = { ...prev, ...patch };
+      try { sessionStorage.setItem(FILTER_KEY, JSON.stringify(next)); } catch {}
+      return next;
+    });
+  };
+
+  const bersihkanFilter = () => {
+    setFilter(FILTER_KOSONG);
+    try { sessionStorage.removeItem(FILTER_KEY); } catch {}
+  };
 
   const persist = (msgs: Msg[]) => {
     try { sessionStorage.setItem(STORE_KEY, JSON.stringify(msgs)); } catch {}
@@ -142,7 +227,9 @@ function AdvisorInner() {
       : undefined;
 
     try {
-      const resp = await api.advisorChat({ message, history, context });
+      // `form` menang atas hasil router di backend (`_merge_form`), jadi kriteria yang
+      // diisi user di panel tak bisa ditebak keliru oleh LLM.
+      const resp = await api.advisorChat({ message, history, context, form: formPayload(filter) });
       const withReply: Msg[] = [...next, { role: 'assistant', content: resp.reply, resp }];
       setMessages(withReply);
       persist(withReply);
@@ -164,6 +251,8 @@ function AdvisorInner() {
       ? 'Tak terbatas'
       : `${quota.remaining ?? 0}/${quota.limit} hari ini`
     : null;
+
+  const aktifFilter = jumlahFilterAktif(filter);
 
   return (
     <main ref={mainRef} style={{ position: 'fixed', top: 0, left: 0, right: 0, height: '100dvh', overflow: 'hidden', overscrollBehavior: 'none', background: BG, color: INK, fontFamily: SANS, WebkitFontSmoothing: 'antialiased' }}>
@@ -202,13 +291,17 @@ function AdvisorInner() {
             <MessageBubble key={i} msg={m} />
           ))}
           {loading && (
-            <div style={{ alignSelf: 'flex-start', ...CARD, padding: '12px 16px', display: 'flex', gap: 6, alignItems: 'center' }}>
-              <Dot /> <Dot d={0.15} /> <Dot d={0.3} />
+            <div style={{ alignSelf: 'flex-start', ...CARD, padding: '12px 16px', display: 'flex', gap: 10, alignItems: 'center' }}>
+              <span style={{ display: 'flex', gap: 5, alignItems: 'center', flex: 'none' }}>
+                <Dot /> <Dot d={0.15} /> <Dot d={0.3} />
+              </span>
+              <span style={{ fontSize: 13, color: MUTED }}>{tahapUntuk(detik)}</span>
+              <span style={{ fontFamily: MONO, fontSize: 11, color: FAINT, flex: 'none' }}>{detik} dtk</span>
             </div>
           )}
         </div>
 
-        {/* Quick actions */}
+        {/* Quick actions + pemicu panel filter */}
         <div className="flex gap-2 flex-wrap mt-4 mb-2">
           {QUICK.map(q => (
             <button
@@ -221,7 +314,46 @@ function AdvisorInner() {
               {q.label}
             </button>
           ))}
+          <button
+            onClick={() => setFilterBuka(v => !v)}
+            className="emx-chip"
+            aria-expanded={filterBuka}
+            style={{
+              fontSize: 12.5, fontWeight: 600, padding: '7px 13px', borderRadius: 999, cursor: 'pointer',
+              color: aktifFilter ? ACCENT : MUTED,
+              background: aktifFilter ? `color-mix(in oklab, ${ACCENT}, white 92%)` : '#fff',
+              border: `1px solid ${aktifFilter ? `color-mix(in oklab, ${ACCENT}, white 74%)` : HAIR}`,
+            }}
+          >
+            Filter{aktifFilter ? ` · ${aktifFilter}` : ''}
+          </button>
         </div>
+
+        {/* Panel filter pasti — dikirim sebagai `form`, menang atas tebakan router */}
+        {filterBuka && (
+          <div style={{ ...CARD, padding: 14, marginBottom: 10 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(132px, 1fr))', gap: 10 }}>
+              <Isian label="PE maks" value={filter.pe_max} onChange={v => ubahFilter({ pe_max: v })} placeholder="15" />
+              <Isian label="PBV maks" value={filter.pbv_max} onChange={v => ubahFilter({ pbv_max: v })} placeholder="2" />
+              <Isian label="Dividen min %" value={filter.div_min} onChange={v => ubahFilter({ div_min: v })} placeholder="3" />
+              <Isian label="Sektor" value={filter.sector} onChange={v => ubahFilter({ sector: v })} placeholder="mis. Finance" tipe="text" />
+              <Pilihan label="Tren" value={filter.trend} onChange={v => ubahFilter({ trend: v })}
+                       opsi={[['', 'Apa saja'], ['up', 'Naik'], ['down', 'Turun']]} />
+              <Pilihan label="RSI" value={filter.rsi} onChange={v => ubahFilter({ rsi: v })}
+                       opsi={[['', 'Apa saja'], ['oversold', 'Jenuh jual'], ['neutral', 'Netral'], ['overbought', 'Jenuh beli']]} />
+            </div>
+            <div className="flex items-center justify-between gap-3" style={{ marginTop: 12 }}>
+              <p style={{ fontSize: 11.5, color: FAINT, lineHeight: 1.5 }}>
+                Filter di sini bersifat pasti — ia menimpa kriteria yang ditebak dari kalimatmu.
+              </p>
+              {aktifFilter > 0 && (
+                <button onClick={bersihkanFilter} className="emx-chip" style={{ flex: 'none', fontSize: 11.5, fontWeight: 600, color: MUTED, background: '#fff', border: `1px solid ${HAIR}`, padding: '5px 11px', borderRadius: 999, cursor: 'pointer' }}>
+                  Bersihkan
+                </button>
+              )}
+            </div>
+          </div>
+        )}
 
         {/* Input */}
         <div style={{ ...CARD, padding: 8, display: 'flex', alignItems: 'flex-end', gap: 8 }}>
@@ -256,6 +388,9 @@ function AdvisorInner() {
         .emx-send { transition: transform .15s ease, filter .15s ease; }
         .emx-send:hover { filter: brightness(1.03); }
         .emx-textarea::placeholder { color: #A9A9A1; }
+        .emx-kendali { transition: border-color .14s ease; }
+        .emx-kendali:focus { border-color: ${ACCENT}; }
+        .emx-kendali::placeholder { color: #C2C1B9; }
         ::selection { background: color-mix(in oklab, ${ACCENT}, white 70%); }
         @keyframes emxblink { 0%, 80%, 100% { opacity: .25; } 40% { opacity: 1; } }
       `}</style>
@@ -265,6 +400,47 @@ function AdvisorInner() {
 
 function Dot({ d = 0 }: { d?: number }) {
   return <span style={{ width: 7, height: 7, borderRadius: '50%', background: ACCENT, display: 'inline-block', animation: `emxblink 1.2s ${d}s infinite ease-in-out` }} />;
+}
+
+const LABEL_KECIL: React.CSSProperties = {
+  fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.06em',
+  color: FAINT, display: 'block', marginBottom: 4,
+};
+const KENDALI: React.CSSProperties = {
+  width: '100%', border: `1px solid ${HAIR}`, borderRadius: 9, background: '#fff',
+  padding: '7px 9px', fontSize: 13, color: INK, fontFamily: SANS, outline: 'none',
+};
+
+function Isian({ label, value, onChange, placeholder, tipe = 'number' }: {
+  label: string; value: string; onChange: (v: string) => void; placeholder?: string; tipe?: string;
+}) {
+  return (
+    <label>
+      <span style={LABEL_KECIL}>{label}</span>
+      <input
+        type={tipe}
+        inputMode={tipe === 'number' ? 'decimal' : undefined}
+        value={value}
+        placeholder={placeholder}
+        onChange={e => onChange(e.target.value)}
+        className="emx-kendali"
+        style={KENDALI}
+      />
+    </label>
+  );
+}
+
+function Pilihan({ label, value, onChange, opsi }: {
+  label: string; value: string; onChange: (v: string) => void; opsi: [string, string][];
+}) {
+  return (
+    <label>
+      <span style={LABEL_KECIL}>{label}</span>
+      <select value={value} onChange={e => onChange(e.target.value)} className="emx-kendali" style={KENDALI}>
+        {opsi.map(([v, teks]) => <option key={v} value={v}>{teks}</option>)}
+      </select>
+    </label>
+  );
 }
 
 function MessageBubble({ msg }: { msg: Msg }) {
