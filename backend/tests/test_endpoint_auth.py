@@ -186,3 +186,33 @@ def test_rute_broker_flow_sudah_dihapus(make_client, method, path):
     Ia tak dipagari melainkan dihapus — halamannya tak tertaut dari mana pun dan
     fungsinya sudah digantikan Big Money. Lihat docstring `models.BrokerFlow`."""
     assert make_client().request(method, path).status_code == 404
+
+
+# --- 4. AI Advisor: endpoint termahal, dan satu-satunya yang tak berpagar tes -
+#
+# Ditambahkan saat Tahap 2 audit Advisor. `POST /advisor/chat` sudah memakai
+# `Depends(get_current_user)` sejak awal, tapi tak satu pun tes menahannya — padahal
+# ia endpoint paling mahal di aplikasi: tiap permintaan memicu beberapa panggilan LLM
+# berbayar dan bisa menahan worker sampai ~55 detik. Kalau dependensi itu hilang saat
+# refactor, tak ada yang merah dan tagihan Groq yang memberi tahu.
+
+def test_advisor_chat_menolak_anonim(make_client):
+    c = make_client()
+    res = c.post("/advisor/chat", json={"message": "cari saham PE di bawah 15"})
+    assert res.status_code == 401
+
+
+def test_advisor_chat_tak_memanggil_groq_untuk_anonim(make_client, monkeypatch):
+    """Penolakan harus terjadi SEBELUM satu token pun dibelanjakan.
+
+    Kalau pagar auth suatu saat pindah ke belakang pemanggilan router intent, tes ini
+    yang menangkapnya — bukan laporan tagihan bulan depan.
+    """
+    from services.advisor import groq_client
+
+    def jangan_dipanggil(*a, **k):  # pragma: no cover
+        raise AssertionError("Groq dipanggil untuk permintaan anonim")
+
+    monkeypatch.setattr(groq_client, "chat_json", jangan_dipanggil)
+    c = make_client()
+    assert c.post("/advisor/chat", json={"message": "halo"}).status_code == 401

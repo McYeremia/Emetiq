@@ -160,3 +160,112 @@ def test_portfolio_excludes_bot_trades(db):
     db.commit()
     p = dp.portfolio(db, "u1")
     assert p["position_count"] == 0          # trade bot tidak masuk portofolio user
+
+
+# ── Tahap 2 audit: kebenaran angka portofolio ────────────────────────────────
+
+@pytest.fixture
+def db_banyak_posisi():
+    """Porto dengan posisi LEBIH BANYAK dari PORTFOLIO_MAX_POSITIONS.
+
+    Tak ada tes yang pernah melewati batas itu — dan itulah sebabnya cacat
+    `position_count` bisa hidup tenang: porto 22 posisi dilaporkan "20", sementara
+    uang dari 2 posisi sisanya tetap ikut menghitung kas dan total nilai.
+    """
+    from services.advisor import config as advisor_config
+
+    engine = create_engine("sqlite://", connect_args={"check_same_thread": False},
+                           poolclass=StaticPool)
+    Base.metadata.create_all(bind=engine)
+    s = sessionmaker(bind=engine)()
+
+    n = advisor_config.PORTFOLIO_MAX_POSITIONS + 2
+    for i in range(n):
+        st = _add_stock(s, f"SHM{i:02d}", f"Saham {i}", "Uji",
+                        pe=10.0, pbv=1.0, div=2.0, mcap=10 ** 12)
+        _add_series(s, st, start=1000, step=1, n=40)
+        # Nilai beli berbeda-beda supaya urutan pemotongan (per cost_basis) pasti.
+        s.add(models.TradeLog(stock_id=st.id, action="BUY", date=date(2026, 2, 1),
+                              price=1000.0 + i, quantity=1, trade_type="MANUAL",
+                              user_id="u1"))
+    s.commit()
+    yield s, n
+    s.close()
+
+
+def test_position_count_melaporkan_jumlah_SEBENARNYA(db_banyak_posisi):
+    s, n = db_banyak_posisi
+    p = dp.portfolio(s, "u1")
+    assert p["position_count"] == n, "jumlah posisi sebenarnya, bukan yang ditampilkan"
+    assert p["positions_shown"] == len(p["holdings"]) < n
+
+
+def test_daftar_dipotong_tidak_boleh_senyap(db_banyak_posisi):
+    """LLM diminta menilai konsentrasi & alokasi kas; ia harus tahu daftarnya sebagian."""
+    s, n = db_banyak_posisi
+    p = dp.portfolio(s, "u1")
+    catatan = p.get("catatan_pemotongan") or ""
+    assert str(n) in catatan and str(p["positions_shown"]) in catatan
+
+
+def test_kas_dan_total_tetap_menghitung_SELURUH_posisi(db_banyak_posisi):
+    """Yang dipotong cuma daftar rinciannya — uangnya tidak boleh ikut hilang."""
+    s, n = db_banyak_posisi
+    p = dp.portfolio(s, "u1")
+    invested_seharusnya = sum((1000.0 + i) * 100 for i in range(n))
+    assert p["invested"] == pytest.approx(invested_seharusnya)
+    assert p["cash"] == pytest.approx(15_000_000 - invested_seharusnya)
+
+
+def test_tanpa_pemotongan_tak_ada_catatan(db):
+    bbri = db.query(models.Stock).filter_by(ticker="BBRI").first()
+    db.add(models.TradeLog(stock_id=bbri.id, action="BUY", date=date(2026, 2, 1),
+                           price=4000, quantity=5, trade_type="MANUAL", user_id="u1"))
+    db.commit()
+    p = dp.portfolio(db, "u1")
+    assert "catatan_pemotongan" not in p
+    assert p["position_count"] == p["positions_shown"] == 1
+
+
+def test_lots_bilangan_bulat(db):
+    """Lot tak pernah pecahan, dan angka ini ikut masuk ke prompt."""
+    bbri = db.query(models.Stock).filter_by(ticker="BBRI").first()
+    db.add(models.TradeLog(stock_id=bbri.id, action="BUY", date=date(2026, 2, 1),
+                           price=4000, quantity=7, trade_type="MANUAL", user_id="u1"))
+    db.commit()
+    lots = dp.portfolio(db, "u1")["holdings"][0]["lots"]
+    assert lots == 7 and isinstance(lots, int)
+
+
+def test_satu_sumber_kebenaran_dengan_trade_exec(db):
+    """Advisor dan trade_exec harus SEPAKAT — dulu keduanya punya replay sendiri-sendiri.
+
+    Tanpa tes ini, perbaikan di satu sisi tak pernah tercermin di sisi lain dan tak
+    ada yang memberi tahu.
+    """
+    from services import trade_exec
+
+    bbri = db.query(models.Stock).filter_by(ticker="BBRI").first()
+    tlkm = db.query(models.Stock).filter_by(ticker="TLKM").first()
+    for stock, aksi, harga, lot in [
+        (bbri, "BUY", 4000, 5), (bbri, "BUY", 4200, 5), (bbri, "SELL", 4500, 3),
+        (tlkm, "BUY", 5000, 2),
+    ]:
+        db.add(models.TradeLog(stock_id=stock.id, action=aksi, date=date(2026, 2, 1),
+                               price=harga, quantity=lot, trade_type="MANUAL", user_id="u1"))
+    db.commit()
+
+    p = dp.portfolio(db, "u1")
+    lewat_exec = trade_exec.holdings_for(db, "USER", "u1")
+
+    assert p["cash"] == pytest.approx(trade_exec.available_cash(db, "USER", "u1"))
+    assert p["position_count"] == len([x for x in lewat_exec.values() if x["shares"] > 0])
+    for h in p["holdings"]:
+        assert h["shares"] == lewat_exec[h["ticker"]]["shares"]
+        assert h["avg_price"] == pytest.approx(lewat_exec[h["ticker"]]["avg_price"], rel=1e-9)
+
+
+def test_modal_awal_tidak_diduplikasi():
+    """Satu konstanta, satu makna. Dulu nilainya diketik ulang di data_provider."""
+    from services import trade_exec
+    assert dp.INITIAL_MODAL is trade_exec.INITIAL_MODAL

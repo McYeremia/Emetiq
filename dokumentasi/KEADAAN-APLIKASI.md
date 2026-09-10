@@ -14,6 +14,7 @@ berguna ada di bawah: **"Jangan diulang"** dan **"Jangan dibongkar"**.
 | Basis data | Postgres | Supabase |
 | Autentikasi | Supabase Auth (email + Google), tier disimpan di tabel profil | — |
 | Pekerjaan harian | GitHub Actions (`daily-sync`) menarik harga & fundamental, lalu memindai sinyal | runner GitHub |
+| Pemicu pekerjaan harian | Cloudflare Worker menekan `workflow_dispatch` — penjadwal GitHub sendiri pernah tertunda berjam-jam di antrean | Cloudflare |
 | Pipeline Big Money | Dijadwalkan dari mesin lokal — IDX menolak permintaan dari IP pusat data | laptop pemilik |
 
 Halaman: landing, Overview, Market/Dashboard, Screener, Portofolio, detail saham,

@@ -298,6 +298,10 @@ def run_portfolio(db: Session, user_id: str, deadline: Optional[float] = None) -
     reply = synth.overview or "Berikut tinjauan portofoliomu."
     if synth.cash_advice:
         reply += "\n\nKas: " + synth.cash_advice
+    # Pemotongan daftar posisi tak boleh senyap: user berhak tahu saran ini disusun
+    # dari sebagian posisinya saja.
+    if port.get("catatan_pemotongan"):
+        reply += "\n\n" + port["catatan_pemotongan"]
     return {
         "reply": reply,
         "data": {
@@ -306,7 +310,9 @@ def run_portfolio(db: Session, user_id: str, deadline: Optional[float] = None) -
             "actions": [a.model_dump() for a in synth.actions],
             "cash_advice": synth.cash_advice,
             "snapshot": {"cash": port["cash"], "total_value": port["total_value"],
-                         "invested": port["invested"], "unrealized": port["unrealized"]},
+                         "invested": port["invested"], "unrealized": port["unrealized"],
+                         "position_count": port["position_count"],
+                         "positions_shown": port.get("positions_shown")},
         },
         "confidence": crit.confidence,
     }

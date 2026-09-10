@@ -5,7 +5,7 @@ Tiga builder: screen(), analyze(), portfolio(). Semua angka diambil dari DB nyat
 pasti benar. Lihat spec bagian 4 ("Detail Pipeline").
 """
 from typing import Optional, List, Dict, Any
-from sqlalchemy.orm import Session, joinedload
+from sqlalchemy.orm import Session
 from sqlalchemy import desc, func, nullslast
 
 import models
@@ -13,10 +13,19 @@ from services.indicators import (
     INDICATOR_MAX_ROWS, calculate_indicators, calculate_indicators_from_df,
     calculate_screen_indicators_from_df, get_ohlcv_df_bulk,
 )
+from services import trade_exec
 from services.advisor import config, scoring
 from services.advisor.formatting import round_numbers
 
-INITIAL_MODAL = 15_000_000  # samakan dengan services/trade_exec.py
+# Modal dummy dan replay holding punya SATU sumber kebenaran: services/trade_exec.py.
+# Dulu nilainya diketik ulang di sini dengan komentar "samakan dengan routers/trades.py"
+# — dua konstanta, satu makna, tanpa pagar. Mengubahnya di satu tempat membuat kas &
+# total porto yang dilaporkan Advisor menyimpang dari yang dipakai eksekusi trade,
+# tanpa galat apa pun. Bucket "USER" = trade manual milik satu user (di-scope user_id);
+# ia TIDAK menyentuh bucket AI mana pun.
+from services.trade_exec import INITIAL_MODAL
+
+AGENT_USER = "USER"
 
 # Lookback saat menghitung indikator utk BANYAK saham sekaligus (screening/kandidat).
 # Nilai indikator terakhir (RSI/MA/MACD dst) praktis sama dgn histori penuh selama
@@ -220,30 +229,30 @@ def analyze(db: Session, ticker: str) -> Dict[str, Any]:
 # ── Pipeline 3: Portofolio ───────────────────────────────────────────────────
 
 def portfolio(db: Session, user_id: str) -> Dict[str, Any]:
-    """Snapshot holding milik satu user (di-scope berdasarkan user_id trade)."""
-    trades = (
-        db.query(models.TradeLog)
-        .options(joinedload(models.TradeLog.stock))
-        .filter(models.TradeLog.user_id == user_id)
-        .order_by(models.TradeLog.date)
-        .all()
-    )
+    """Snapshot holding milik satu user (di-scope berdasarkan user_id trade).
 
-    positions: Dict[str, Dict[str, Any]] = {}
-    realized = 0.0
-    for t in trades:
-        ticker = t.stock.ticker
-        pos = positions.setdefault(ticker, {"shares": 0, "avg_price": 0.0, "stock_id": t.stock_id})
-        qty = t.quantity * 100
-        if t.action == "BUY":
-            total_cost = pos["shares"] * pos["avg_price"] + qty * t.price
-            pos["shares"] += qty
-            pos["avg_price"] = total_cost / pos["shares"] if pos["shares"] > 0 else 0.0
-        else:  # SELL
-            realized += (t.price - pos["avg_price"]) * qty
-            pos["shares"] -= qty
+    Replay TradeLog dikerjakan `trade_exec.holdings_for`, BUKAN ditulis ulang di sini.
+    Sebelumnya modul ini punya salinan logikanya sendiri — rumus biaya rata-rata,
+    perlakuan `quantity * 100`, akumulasi realized — sehingga perbaikan di satu sisi
+    tak pernah tercermin di sisi lain, dan tak ada tes yang menuntut keduanya sepakat.
+    `trade_exec` memang dibuat untuk itu ("agar aturan dana/holding tidak terduplikasi").
+    """
+    raw = trade_exec.holdings_for(db, AGENT_USER, user_id)
+    realized = sum(p["realized"] for p in raw.values())
+    aktif = {tk: p for tk, p in raw.items() if p["shares"] > 0}
 
-    active = {tk: p for tk, p in positions.items() if p["shares"] > 0}
+    # `holdings_for` memulangkan ticker, bukan stock_id — ambil sekali untuk semuanya.
+    stocks = {
+        s.ticker: s
+        for s in db.query(models.Stock).filter(models.Stock.ticker.in_(list(aktif))).all()
+    } if aktif else {}
+
+    active: Dict[str, Dict[str, Any]] = {}
+    for ticker, pos in aktif.items():
+        stock = stocks.get(ticker)
+        if stock is None:      # ticker hilang dari master — jangan jatuhkan seluruh balasan
+            continue
+        active[ticker] = {**pos, "stock_id": stock.id}
     # 1 query utk histori OHLCV semua posisi aktif (bukan 1 query per posisi).
     #
     # `max_rows`, BUKAN `lookback_days`: yang dibutuhkan cuma nilai indikator terakhir,
@@ -271,6 +280,12 @@ def portfolio(db: Session, user_id: str) -> Dict[str, Any]:
                        "cost_basis": cost_basis, "unrealized": unrealized})
 
     prelim.sort(key=lambda h: h["cost_basis"], reverse=True)
+    # Jumlah posisi SEBENARNYA dicatat sebelum pemotongan. Dulu `position_count`
+    # dihitung setelahnya, sehingga porto 22 posisi dilaporkan "20" — sementara uang
+    # dari 2 posisi sisanya tetap ikut menghitung kas & total. LLM lalu diminta menilai
+    # konsentrasi dan alokasi kas atas porto yang ia kira lebih kecil dari kenyataan,
+    # tanpa satu pun peringatan bahwa daftarnya dipotong.
+    jumlah_posisi = len(prelim)
     prelim = prelim[: config.PORTFOLIO_MAX_POSITIONS]
 
     holdings: List[Dict[str, Any]] = []
@@ -279,7 +294,9 @@ def portfolio(db: Session, user_id: str) -> Dict[str, Any]:
         inds = calculate_indicators_from_df(h["df"])
         holdings.append({
             "ticker": h["ticker"],
-            "lots": pos["shares"] / 100,
+            # `//`, bukan `/`: lot tak pernah pecahan, dan angka ini ikut masuk ke prompt
+            # yang sudah repot-repot meminta angka rapi (STYLE_RULE).
+            "lots": pos["shares"] // 100,
             "shares": pos["shares"],
             "avg_price": round(pos["avg_price"], 2),
             "current_price": round(last_close, 2),
@@ -298,12 +315,22 @@ def portfolio(db: Session, user_id: str) -> Dict[str, Any]:
         market_val = h["current_price"] * h["shares"]
         h["weight_pct"] = round(market_val / total_value * 100, 2) if total_value else None
 
-    return {
+    hasil = {
         "cash": round(cash, 2),
         "invested": round(invested, 2),
         "unrealized": round(unrealized_total, 2),
         "realized": round(realized, 2),
         "total_value": round(total_value, 2),
-        "position_count": len(holdings),
+        "position_count": jumlah_posisi,        # sebenarnya, sebelum pemotongan
+        "positions_shown": len(holdings),       # yang benar-benar terlihat LLM
         "holdings": holdings,
     }
+    if len(holdings) < jumlah_posisi:
+        # Dikirim ke prompt supaya LLM tahu daftarnya tidak lengkap dan tidak menarik
+        # kesimpulan konsentrasi/alokasi kas seolah-olah ia melihat seluruh porto.
+        hasil["catatan_pemotongan"] = (
+            f"Porto ini punya {jumlah_posisi} posisi, tapi hanya {len(holdings)} terbesar "
+            f"(per nilai beli) yang dirinci di sini. Kas dan total nilai sudah "
+            f"memperhitungkan SELURUH {jumlah_posisi} posisi."
+        )
+    return hasil
