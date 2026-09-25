@@ -1,7 +1,10 @@
-# Keadaan aplikasi — 4 September 2026
+# Keadaan aplikasi — 4 September 2026, diperbarui 25 September 2026
 
 Potret EMETIQ hari ini, ditulis untuk orang yang akan mengubahnya. Bagian paling
 berguna ada di bawah: **"Jangan diulang"** dan **"Jangan dibongkar"**.
+
+> Angka kinerja di §2 adalah hasil audit 3–4 September. Yang berubah sesudahnya
+> dicatat di §1 (pemicu pekerjaan harian) dan §7 (fitur & perbaikan setelah audit).
 
 ---
 
@@ -14,7 +17,7 @@ berguna ada di bawah: **"Jangan diulang"** dan **"Jangan dibongkar"**.
 | Basis data | Postgres | Supabase |
 | Autentikasi | Supabase Auth (email + Google), tier disimpan di tabel profil | — |
 | Pekerjaan harian | GitHub Actions (`daily-sync`) menarik harga & fundamental, lalu memindai sinyal | runner GitHub |
-| Pemicu pekerjaan harian | Cloudflare Worker menekan `workflow_dispatch` — penjadwal GitHub sendiri pernah tertunda berjam-jam di antrean | Cloudflare |
+| Pemicu pekerjaan harian | Cloudflare Worker menekan `workflow_dispatch` tiap hari kerja pukul 17:30 WIB — penjadwal GitHub sendiri pernah tertunda berjam-jam di antrean, jadi jadwal cron GitHub dimatikan (10 Sep 2026) | Cloudflare |
 | Pipeline Big Money | Dijadwalkan dari mesin lokal — IDX menolak permintaan dari IP pusat data | laptop pemilik |
 
 Halaman: landing, Overview, Market/Dashboard, Screener, Portofolio, detail saham,
@@ -37,7 +40,7 @@ Semua diukur dari hasil `next build` produksi dan header respons nyata.
 | Kompresi respons API | tak ada | gzip, −77% s.d. −87% |
 | Judul halaman ada di HTML awal | 2 dari 14 rute | **14 dari 14** |
 | Halaman galat berbahasa Indonesia | tidak ada | 404, 500, dan 500 tingkat aplikasi |
-| Tes backend | 408 | **511** |
+| Tes backend | 408 | **511** (4 Sep) → **542** (10 Sep) |
 
 Berkas statis (`/_next/static/*`) disajikan Vercel dengan
 `cache-control: public, max-age=31536000, immutable`, jadi kunjungan berikutnya tak
@@ -86,6 +89,14 @@ tanpa membaca alasannya kemungkinan besar mengembalikan bug yang sudah mati.
   sinyal dijalankan lewat GitHub Actions, bukan permintaan web. Selain berat, jalur
   lamanya mengosongkan tabel sinyal lebih dulu — run yang terpotong meninggalkan
   tabel kosong yang dibaca fitur lain.
+- **Hanya satu pemicu harian.** Alasan yang sama — tabel sinyal dikosongkan dulu
+  sebelum dihitung ulang — membuat dua run yang tumpang tindih berbahaya. Karena itu
+  jadwal cron GitHub dimatikan begitu pemicu Cloudflare terbukti jalan. Berkas
+  workflow-nya **jangan dihapus atau diganti nama**: pemicu memanggilnya lewat nama
+  berkas, dan kegagalan itu tak memunculkan job merah apa pun.
+- **Screening AI Advisor juga sumber kandidat AI Porto.** Mengubah cara Advisor
+  menyaring atau mengurutkan saham ikut mengubah saham yang dipertimbangkan AI Porto,
+  walau tak satu berkas AI Porto pun disentuh.
 - **Rute statis baru di bawah `/stocks` wajib didaftarkan ke daftar penjaga.**
   Semua rute statis di router itu GET, jadi `POST /stocks/<apa pun>` jatuh ke
   penangan "tambah saham bernama itu".
@@ -200,7 +211,7 @@ Jujur soal yang belum terbukti, supaya tak ada yang menganggapnya beres:
 
 ---
 
-## 7. Fitur yang ditambahkan setelah audit
+## 7. Fitur & perbaikan setelah audit
 
 **Pantauan AI Porto (4 Sep 2026), tier `pro` ke atas.** Tier di bawah `dev` kini bisa
 melihat portofolio yang dikelola AI: nilai, posisi terbuka, dan histori jual/beli
@@ -224,6 +235,20 @@ Yang perlu diketahui orang berikutnya:
   Endpoint histori memulangkan **terbaru di depan** — jangan membaliknya, dan
   "transaksi terakhir" ada di indeks 0, bukan di ujung. Versi pertama halaman ini
   salah di dua-duanya sekaligus karena satu asumsi urutan yang keliru.
+
+**Perbaikan AI Advisor (10 Sep 2026).** Hasil pencarian saham kini diurutkan menurut
+**seberapa cocok dengan kriteria yang diminta**, bukan menurut besar perusahaan;
+indikator teknikal selalu dihitung untuk kandidat; angka portofolio memakai satu
+sumber yang sama dengan eksekusi trade; dan layar chat mendapat panel filter serta
+label tahap + penghitung detik selama menunggu. Tes backend 511 → **542**.
+
+Yang perlu diketahui orang berikutnya:
+
+- Karena AI Porto mengambil kandidat dari screening yang sama, **urutan kandidat
+  AI Porto ikut berubah** walau kodenya tak disentuh — lihat §4.
+- Label tahap di layar chat **urutannya benar tapi waktunya perkiraan**: backend
+  belum mengirim kabar kemajuan. Penghitung detiknya angka sungguhan.
+- Kuota harian per tier tidak diubah; itu keputusan harga, bukan teknis.
 
 ---
 

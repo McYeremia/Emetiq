@@ -84,9 +84,15 @@ menyimpan riwayat; `wrangler tail` cuma live).
 
 ### 7. Setelah terbukti 2–3 hari: matikan cron GitHub
 
+> **✅ Sudah dikerjakan 10 Sep 2026** (commit `74ba58b2`). Sejak itu `daily-sync`
+> hanya dipicu Worker ini; run 14–24 Sep 2026 semuanya berlabel `workflow_dispatch`
+> dan mulai tepat 10:30 UTC.
+
 Kalau tidak, job jalan DUA KALI sehari — sekali dari Worker (tepat waktu), sekali
 lagi dari antrean GitHub berjam-jam kemudian. Menit Actions memang gratis, tapi
-egress Supabase tidak. Di `.github/workflows/daily-sync.yml`, komentari `schedule:`
+egress Supabase tidak. Lebih buruk lagi: `scan_market_signals()` mengosongkan tabel
+`signals` lebih dulu, jadi dua run yang tumpang tindih bisa meninggalkannya setengah
+terisi. Di `.github/workflows/daily-sync.yml`, komentari `schedule:`
 (jangan hapus — pola yang sama dipakai `bigmoney-daily.yml`) dan biarkan
 `workflow_dispatch` apa adanya.
 
@@ -99,8 +105,9 @@ egress Supabase tidak. Di `.github/workflows/daily-sync.yml`, komentari `schedul
   Cloudflare sendiri menganjurkan singkatan justru karena jebakan ini.
 
 - **PAT kedaluwarsa itu kegagalan senyap.** Karena itu `kabari()` mengirim Telegram
-  saat GitHub menolak. Kalau Telegram tak diisi, andalkan penanda kesegaran data
-  di dashboard.
+  saat GitHub menolak, dan halaman **Admin** menampilkan hitung mundur tanggal
+  kedaluwarsanya. Kalau Telegram tak diisi, andalkan penanda kesegaran data di
+  dashboard.
 - **Worker ini memperbaiki penjadwal, bukan ketersediaan runner.** Kalau kolam
   runner GitHub sendiri penuh, run hasil dispatch tetap bisa menunggu — hanya saja
   itu belum pernah terjadi ~4 jam seperti antrean cron.

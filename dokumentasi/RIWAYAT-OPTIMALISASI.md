@@ -153,7 +153,11 @@ setahun. Rinciannya di [`KEADAAN-APLIKASI.md` §5](KEADAAN-APLIKASI.md#5-sengaja
 | Halaman detail saham, sekali buka | 339,5 KB | **≈16 KB** (−95%) |
 | Polling dashboard, per siklus | 78,6 KB | **≈16 KB** (−79%) |
 | Rute dengan judul sendiri di HTML | 2 dari 14 | **14 dari 14** |
-| Tes backend | 408 | **476** |
+| Tes backend | 408 | **476** ¹ |
+
+¹ Angka di akhir Tahap 4. Pada hari yang sama tes bertambah jadi **511** (pantauan
+AI Porto + penjaga mode bypass), lalu **542** pada 10 Sep 2026 (perbaikan AI Advisor).
+Angka terkini ada di [`KEADAAN-APLIKASI.md` §2](KEADAAN-APLIKASI.md#2-angka-kinerja-hari-ini).
 
 ---
 

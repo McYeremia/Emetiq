@@ -46,6 +46,9 @@ Portofolio yang dikelola AI lewat percakapan: kamu beri arahan, AI yang menyusun
 mengeksekusi transaksinya di bucket terpisah, lengkap dengan riwayat trade dan alasan
 di balik tiap keputusan.
 
+Tier `pro` ke atas bisa **memantau** porto AI ini — nilai, posisi, dan histori beserta
+alasan AI di tiap transaksi — tanpa bisa memerintah atau mengeksekusi apa pun.
+
 ### 🐋 Big Money _(tier dev)_
 Melacak **jejak uang besar** di bursa. Tiap sore, ringkasan perdagangan IDX ditarik untuk
 seluruh pasar (~965 saham), lalu mesin skor menandai saham yang sedang **diakumulasi**
@@ -77,9 +80,8 @@ Security (RLS) di Supabase. Ada halaman **admin** untuk mengatur tier pengguna.
 | **Database** | PostgreSQL (via **Supabase**) |
 | **Auth** | Supabase Auth (JWT) + Row-Level Security |
 | **AI** | **Groq** (AI Advisor & AI Porto) · **Gemini** (laporan Big Money) |
-| **ML** | scikit-learn — prediksi harga, dilatih ulang tiap hari |
 | **Data** | Yahoo Finance (`yfinance`) untuk harga EOD · **API IDX Trading Summary** untuk aliran dana asing |
-| **Otomasi** | GitHub Actions — sinkron harga + latih ulang ML (17:00 WIB), pipeline Big Money (17:30 WIB), Senin–Jumat |
+| **Otomasi** | GitHub Actions — sinkron harga + fundamental + pindai sinyal, dipicu **Cloudflare Worker** tiap hari kerja 17:30 WIB · pipeline Big Money dari mesin lokal (Windows Task Scheduler) 19:00 WIB, karena IDX menolak IP pusat data |
 | **Notifikasi** | Bot Telegram (laporan harian Big Money) |
 | **Deploy** | Frontend → **Vercel** · Backend → **Hugging Face Spaces** · DB/Auth → **Supabase** |
 
@@ -101,7 +103,7 @@ python -m venv venv
 .\venv\Scripts\activate        # Windows  (atau: source venv/bin/activate)
 pip install -r requirements.txt
 cp .env.example .env           # lalu isi nilainya
-python main.py
+python -m uvicorn main:app --reload --port 8000
 ```
 
 `backend/.env` (lihat `.env.example` untuk penjelasan tiap variabel):
@@ -140,17 +142,23 @@ Pastikan backend berjalan agar data pasar termuat.
 ### 3. Data & pekerjaan batch
 ```bash
 cd backend
-.\venv\Scripts\python.exe scripts/daily_sync.py                    # harga 5 hari terakhir + latih ulang ML
+.\venv\Scripts\python.exe scripts/daily_sync.py                    # harga 5 hari terakhir + fundamental + pindai sinyal
+.\venv\Scripts\python.exe scripts/daily_sync.py --mode penuh       # tambal lubang data lebih dari 5 hari
 .\venv\Scripts\python.exe scripts/bigmoney_daily.py                # ingest IDX + skor + laporan (hari ini)
 .\venv\Scripts\python.exe scripts/bigmoney_daily.py --no-report    # skor saja, tanpa Gemini & Telegram
 .\venv\Scripts\python.exe scripts/bigmoney_backfill.py --days 90   # isi riwayat Big Money
 ```
-Di produksi ketiganya dijadwalkan lewat **GitHub Actions** (`.github/workflows/`).
+Di produksi, `daily_sync.py` berjalan di **GitHub Actions** (`.github/workflows/daily-sync.yml`)
+yang dipicu Cloudflare Worker (`cloudflare/daily-sync-cron/`); `bigmoney_daily.py` berjalan
+dari mesin lokal lewat Windows Task Scheduler (`backend/scripts/register_bigmoney_task.ps1`).
+
+> ⚠️ `backend/.env` yang menunjuk ke Postgres produksi membuat perintah di atas menulis ke
+> produksi. Awali dengan `DATABASE_URL="sqlite:///./idxanalyst.db"` untuk bekerja lokal.
 
 ### Tes
 ```bash
 cd backend
-.\venv\Scripts\python.exe -m pytest tests/ -q      # 358 tes
+.\venv\Scripts\python.exe -m pytest tests/ -q      # 542 tes — dipagari conftest.py, tak menyentuh DB produksi
 ```
 
 ---
@@ -165,10 +173,13 @@ cd backend
 - [x] AI Advisor (chat, Groq, kuota per-tier)
 - [x] AI Porto — portofolio yang dikelola AI lewat percakapan _(tier dev)_
 - [x] Big Money — ingest IDX, mesin skor, pelacakan posisi, tim AI Gemini, bot Telegram _(tier dev)_
-- [x] Prediksi harga berbasis ML + sinkron harian otomatis (GitHub Actions)
-- [ ] **Jalur otomatis Big Money** — IDX menolak IP datacenter (403 dari runner GitHub), pipeline masih dijalankan manual
-- [ ] PWA — installable / standalone (add to home screen)
+- [x] Sinkron harian otomatis (GitHub Actions, dipicu Cloudflare Worker) — lapisan prediksi ML dihapus Juli 2026
+- [x] Jalur otomatis Big Money — dari mesin lokal, karena IDX menolak IP datacenter (403 dari runner GitHub)
+- [x] PWA installable / standalone (manifest + ikon); mode offline sengaja tidak dibuat
+- [x] Pantauan AI Porto untuk tier `pro` ke atas (hanya baca)
 - [ ] Big Money keluar dari tier dev (rilis publik)
+- [ ] Pipeline Big Money di cloud — butuh proxy ber-IP Indonesia
+- [ ] Halaman paket / jalur naik tier
 
 ---
 
